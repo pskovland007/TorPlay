@@ -4,6 +4,9 @@
     <string name="search_hint">Введите название фильма или сериала…</string>
     <string name="btn_search">Найти</string>
     <string name="btn_settings">Настройки</string>
+    <string name="btn_fav_toggle">★ В избранное</string>
+    <string name="btn_fav_active">★ В избранном</string>
+    <string name="btn_check_update">Обновления</string>
     <string name="status_checking">TorrServe: проверка…</string>
     <string name="status_starting">TorrServe: запуск…</string>
     <string name="status_offline">TorrServe: выкл (OK — запустить)</string>
@@ -12,6 +15,7 @@
     <string name="no_results">Ничего не найдено. Попробуйте изменить запрос.</string>
     <string name="no_filtered_results">Нет раздач под выбранный фильтр качества.</string>
     <string name="settings_title">Настройки TorPlay</string>
+    <string name="settings_player_label">Плеер по умолчанию</string>
     <string name="settings_torrserve_label">Адрес TorrServe MatriX</string>
     <string name="settings_jacred_label">Свой JacRed / Jackett URL (необязательно)</string>
     <string name="settings_apikey_label">API-ключ (только для своего сервера)</string>
@@ -26,4 +30,10 @@
     <string name="sort_seeds">Сорт: Сиды ▼</string>
     <string name="sort_size">Сорт: Размер ▼</string>
     <string name="episodes_title">Выберите серию</string>
+    <string name="history_title">История просмотров</string>
+    <string name="favorites_title">Избранное</string>
+    <string name="player_audio_btn">Аудио</string>
+    <string name="player_sub_btn">Субтитры</string>
+    <string name="player_rewind_btn">◀ -15с</string>
+    <string name="player_forward_btn">+30с ▶</string>
 </resources>

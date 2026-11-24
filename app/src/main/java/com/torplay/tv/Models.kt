@@ -79,6 +79,35 @@ data class TorrServeInfo(
     }
 }
 
+data class WatchHistoryEntry(
+    val id: String,
+    val title: String,
+    val link: String,
+    val fileId: Int,
+    val episodeLabel: String,
+    val positionMs: Long,
+    val durationMs: Long,
+    val updatedAt: Long
+) {
+    fun progressText(): String {
+        if (durationMs <= 0L || positionMs <= 0L) {
+            return if (episodeLabel.isNotBlank()) episodeLabel else "Начато"
+        }
+        val cur = formatDuration(positionMs)
+        val tot = formatDuration(durationMs)
+        return if (episodeLabel.isNotBlank()) {
+            "$episodeLabel • $cur / $tot"
+        } else {
+            "$cur / $tot"
+        }
+    }
+}
+
+data class FavoriteQuery(
+    val query: String,
+    val addedAt: Long
+)
+
 fun formatBytes(bytes: Long): String {
     val gb = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
     return if (gb >= 1.0) {
@@ -86,5 +115,17 @@ fun formatBytes(bytes: Long): String {
     } else {
         val mb = bytes.toDouble() / (1024.0 * 1024.0)
         String.format(Locale.US, "%.0f МБ", mb)
+    }
+}
+
+fun formatDuration(ms: Long): String {
+    val totalSec = (ms / 1000L).coerceAtLeast(0L)
+    val hours = totalSec / 3600L
+    val mins = (totalSec % 3600L) / 60L
+    val secs = totalSec % 60L
+    return if (hours > 0L) {
+        String.format(Locale.US, "%d:%02d:%02d", hours, mins, secs)
+    } else {
+        String.format(Locale.US, "%02d:%02d", mins, secs)
     }
 }

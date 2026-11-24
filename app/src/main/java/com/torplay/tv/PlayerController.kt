@@ -12,10 +12,33 @@ class PlayerController(private val context: Context) {
         val error: String? = null
     )
 
+    fun playBuiltIn(
+        streamUrl: String,
+        title: String,
+        episodeLabel: String,
+        link: String,
+        fileId: Int,
+        startPositionMs: Long
+    ): LaunchResult {
+        val intent = Intent(context, BuiltInPlayerActivity::class.java).apply {
+            putExtra(BuiltInPlayerActivity.EXTRA_STREAM_URL, streamUrl)
+            putExtra(BuiltInPlayerActivity.EXTRA_TITLE, title)
+            putExtra(BuiltInPlayerActivity.EXTRA_EPISODE_LABEL, episodeLabel)
+            putExtra(BuiltInPlayerActivity.EXTRA_LINK, link)
+            putExtra(BuiltInPlayerActivity.EXTRA_FILE_ID, fileId)
+            putExtra(BuiltInPlayerActivity.EXTRA_START_POS_MS, startPositionMs)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return if (tryLaunch(intent)) {
+            LaunchResult(true, "Встроенный плеер")
+        } else {
+            LaunchResult(false, error = "Не удалось открыть встроенный плеер")
+        }
+    }
+
     fun playExternal(streamUrl: String, title: String): LaunchResult {
         val uri = Uri.parse(streamUrl)
 
-        // 1. Priority: MX Player (Pro -> Free -> TV)
         for ((pkg, label) in MX_PACKAGES) {
             if (isPackageInstalled(pkg)) {
                 val intent = Intent(Intent.ACTION_VIEW).apply {
@@ -31,7 +54,6 @@ class PlayerController(private val context: Context) {
             }
         }
 
-        // 2. Fallback: other popular Android TV players
         for ((pkg, label) in FALLBACK_PLAYERS) {
             if (isPackageInstalled(pkg)) {
                 val intent = Intent(Intent.ACTION_VIEW).apply {
@@ -47,7 +69,6 @@ class PlayerController(private val context: Context) {
             }
         }
 
-        // 3. System chooser fallback
         val chooser = Intent.createChooser(
             Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "video/*")

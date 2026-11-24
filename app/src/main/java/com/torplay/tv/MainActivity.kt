@@ -37,11 +37,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var searchEngine: SearchEngine
     private lateinit var torrServeClient: TorrServeClient
     private lateinit var playerController: PlayerController
+    private lateinit var updateManager: UpdateManager
     private lateinit var adapter: TorrentAdapter
+    private lateinit var historyAdapter: HistoryAdapter
+    private lateinit var favoriteAdapter: FavoriteAdapter
 
     private lateinit var btnTorrServeStatus: LinearLayout
     private lateinit var viewStatusDot: View
     private lateinit var tvTorrServeStatus: TextView
+    private lateinit var btnFavoriteQuery: TextView
     private lateinit var btnSettings: TextView
     private lateinit var etSearch: EditText
     private lateinit var btnSearch: TextView
@@ -53,6 +57,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnFilterHdr: TextView
     private lateinit var btnSort: TextView
     private lateinit var tvSearchMeta: TextView
+    private lateinit var layoutHomeShelves: LinearLayout
+    private lateinit var tvFavoritesHeader: TextView
+    private lateinit var rvFavorites: RecyclerView
+    private lateinit var tvHistoryHeader: TextView
+    private lateinit var rvHistory: RecyclerView
     private lateinit var rvResults: RecyclerView
     private lateinit var layoutEmpty: LinearLayout
     private lateinit var progressSearch: ProgressBar
@@ -81,15 +90,18 @@ class MainActivity : AppCompatActivity() {
         searchEngine = SearchEngine(storage)
         torrServeClient = TorrServeClient(storage)
         playerController = PlayerController(this)
+        updateManager = UpdateManager(this)
 
         bindViews()
         setupListeners()
         updateFilterChipsUi()
+        updateFavoriteButtonUi()
 
         if (storage.lastQuery.isNotBlank()) {
             etSearch.setText(storage.lastQuery)
             etSearch.setSelection(storage.lastQuery.length)
         }
+        refreshHomeShelves()
         etSearch.requestFocus()
         refreshTorrServeStatus(autoStart = false)
     }
@@ -106,6 +118,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+        refreshHomeShelves()
         refreshTorrServeStatus(autoStart = false)
     }
 
@@ -126,6 +139,16 @@ class MainActivity : AppCompatActivity() {
             }
             return
         }
+        if (rvResults.visibility == View.VISIBLE) {
+            allResults = emptyList()
+            adapter.submitList(emptyList())
+            layoutFilters.visibility = View.GONE
+            rvResults.visibility = View.GONE
+            layoutHomeShelves.visibility = View.VISIBLE
+            refreshHomeShelves()
+            etSearch.requestFocus()
+            return
+        }
         super.onBackPressed()
     }
 
@@ -133,6 +156,7 @@ class MainActivity : AppCompatActivity() {
         btnTorrServeStatus = findViewById(R.id.btnTorrServeStatus)
         viewStatusDot = findViewById(R.id.viewStatusDot)
         tvTorrServeStatus = findViewById(R.id.tvTorrServeStatus)
+        btnFavoriteQuery = findViewById(R.id.btnFavoriteQuery)
         btnSettings = findViewById(R.id.btnSettings)
         etSearch = findViewById(R.id.etSearch)
         btnSearch = findViewById(R.id.btnSearch)
@@ -144,6 +168,11 @@ class MainActivity : AppCompatActivity() {
         btnFilterHdr = findViewById(R.id.btnFilterHdr)
         btnSort = findViewById(R.id.btnSort)
         tvSearchMeta = findViewById(R.id.tvSearchMeta)
+        layoutHomeShelves = findViewById(R.id.layoutHomeShelves)
+        tvFavoritesHeader = findViewById(R.id.tvFavoritesHeader)
+        rvFavorites = findViewById(R.id.rvFavorites)
+        tvHistoryHeader = findViewById(R.id.tvHistoryHeader)
+        rvHistory = findViewById(R.id.rvHistory)
         rvResults = findViewById(R.id.rvResults)
         layoutEmpty = findViewById(R.id.layoutEmpty)
         progressSearch = findViewById(R.id.progressSearch)
@@ -157,11 +186,46 @@ class MainActivity : AppCompatActivity() {
         adapter = TorrentAdapter { item -> openTorrent(item) }
         rvResults.layoutManager = LinearLayoutManager(this)
         rvResults.adapter = adapter
+
+        favoriteAdapter = FavoriteAdapter { fav ->
+            etSearch.setText(fav.query)
+            etSearch.setSelection(fav.query.length)
+            updateFavoriteButtonUi()
+            performSearch()
+        }
+        rvFavorites.layoutManager = LinearLayoutManager(this)
+        rvFavorites.adapter = favoriteAdapter
+
+        historyAdapter = HistoryAdapter { entry ->
+            val torrentItem = TorrentItem(
+                title = entry.title,
+                magnet = entry.link
+            )
+            openHistoryEntry(torrentItem, entry)
+        }
+        rvHistory.layoutManager = LinearLayoutManager(this)
+        rvHistory.adapter = historyAdapter
     }
 
     private fun setupListeners() {
         btnTorrServeStatus.setOnClickListener {
             refreshTorrServeStatus(autoStart = true)
+        }
+
+        btnFavoriteQuery.setOnClickListener {
+            val q = etSearch.text.toString().trim()
+            if (q.isBlank()) {
+                Toast.makeText(this, "Введите название, чтобы добавить в избранное", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            val added = storage.toggleFavorite(q)
+            updateFavoriteButtonUi()
+            refreshHomeShelves()
+            Toast.makeText(
+                this,
+                if (added) "Добавлено в избранное" else "Удалено из избранного",
+                Toast.LENGTH_SHORT
+            ).show()
         }
 
         btnSettings.setOnClickListener {
@@ -199,6 +263,36 @@ class MainActivity : AppCompatActivity() {
             }
             renderFilteredResults(focusFirst = false)
         }
+    }
+
+    private fun updateFavoriteButtonUi() {
+        val fav = storage.isFavorite(etSearch.text.toString())
+        btnFavoriteQuery.text = getString(if (fav) R.string.btn_fav_active else R.string.btn_fav_toggle)
+    }
+
+    private fun refreshHomeShelves() {
+        val favs = storage.getFavorites()
+        val history = storage.getWatchHistory()
+
+        if (favs.isNotEmpty()) {
+            tvFavoritesHeader.visibility = View.VISIBLE
+            rvFavorites.visibility = View.VISIBLE
+            favoriteAdapter.submitList(favs)
+        } else {
+            tvFavoritesHeader.visibility = View.GONE
+            rvFavorites.visibility = View.GONE
+        }
+
+        if (history.isNotEmpty()) {
+            tvHistoryHeader.visibility = View.VISIBLE
+            rvHistory.visibility = View.VISIBLE
+            historyAdapter.submitList(history)
+        } else {
+            tvHistoryHeader.visibility = View.GONE
+            rvHistory.visibility = View.GONE
+        }
+
+        layoutEmpty.visibility = if (favs.isEmpty() && history.isEmpty()) View.VISIBLE else View.GONE
     }
 
     private fun applyFilter(filter: QualityFilter) {
@@ -239,6 +333,7 @@ class MainActivity : AppCompatActivity() {
         tvSearchMeta.text = "Найдено: ${sorted.size}/${allResults.size} • $lastSourceName"
 
         if (sorted.isNotEmpty()) {
+            rvResults.visibility = View.VISIBLE
             layoutEmpty.visibility = View.GONE
             if (focusFirst) {
                 rvResults.post {
@@ -247,6 +342,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         } else {
+            rvResults.visibility = View.GONE
             layoutEmpty.visibility = View.VISIBLE
             tvEmptyMessage.text = getString(R.string.no_filtered_results)
         }
@@ -297,6 +393,7 @@ class MainActivity : AppCompatActivity() {
 
         hideKeyboard()
         storage.lastQuery = query
+        updateFavoriteButtonUi()
 
         searchJob?.cancel()
         searchJob = uiScope.launch {
@@ -305,6 +402,12 @@ class MainActivity : AppCompatActivity() {
             updateFilterChipsUi()
             adapter.submitList(emptyList())
             layoutFilters.visibility = View.GONE
+            rvResults.visibility = View.GONE
+            layoutHomeShelves.visibility = View.VISIBLE
+            tvFavoritesHeader.visibility = View.GONE
+            rvFavorites.visibility = View.GONE
+            tvHistoryHeader.visibility = View.GONE
+            rvHistory.visibility = View.GONE
             layoutEmpty.visibility = View.VISIBLE
             progressSearch.visibility = View.VISIBLE
             tvEmptyMessage.text = getString(R.string.searching)
@@ -315,17 +418,20 @@ class MainActivity : AppCompatActivity() {
             if (response.items.isNotEmpty()) {
                 allResults = response.items
                 lastSourceName = response.sourceName
+                layoutHomeShelves.visibility = View.GONE
                 layoutFilters.visibility = View.VISIBLE
                 renderFilteredResults(focusFirst = true)
             } else {
                 layoutFilters.visibility = View.GONE
+                rvResults.visibility = View.GONE
+                layoutHomeShelves.visibility = View.VISIBLE
                 layoutEmpty.visibility = View.VISIBLE
                 tvEmptyMessage.text = response.error ?: getString(R.string.no_results)
             }
         }
     }
 
-    private fun openTorrent(item: TorrentItem) {
+    private fun openTorrent(item: TorrentItem, forcedFileId: Int? = null, forcedEpisodeLabel: String = "") {
         val link = item.playableLink
         if (link.isBlank()) {
             Toast.makeText(this, "У раздачи нет magnet-ссылки", Toast.LENGTH_SHORT).show()
@@ -379,18 +485,47 @@ class MainActivity : AppCompatActivity() {
                 torrServeClient.waitForVideoFiles(hash, timeoutMs = 14_000L)
             }
 
-            if (files.size > 1) {
+            if (forcedFileId != null) {
+                val matched = files.firstOrNull { it.id == forcedFileId }
+                    ?: TorrServeFile(id = forcedFileId, path = forcedEpisodeLabel.ifBlank { "${item.title}.mkv" }, length = 0L)
+                bufferAndLaunchFile(
+                    hash = hash,
+                    link = link,
+                    displayTitle = item.title,
+                    episodeLabel = forcedEpisodeLabel.ifBlank { matched.fileName },
+                    file = matched
+                )
+            } else if (files.size > 1) {
                 hideLoadingOverlay()
-                showEpisodePickerDialog(item.title, hash, files)
+                showEpisodePickerDialog(item.title, hash, link, files)
             } else {
                 val file = files.firstOrNull()
                     ?: TorrServeFile(id = 1, path = "${item.title}.mkv", length = 0L)
-                bufferAndLaunchFile(hash, item.title, file)
+                bufferAndLaunchFile(
+                    hash = hash,
+                    link = link,
+                    displayTitle = item.title,
+                    episodeLabel = "",
+                    file = file
+                )
             }
         }
     }
 
-    private fun showEpisodePickerDialog(torrentTitle: String, hash: String, files: List<TorrServeFile>) {
+    private fun openHistoryEntry(item: TorrentItem, entry: WatchHistoryEntry) {
+        openTorrent(
+            item = item,
+            forcedFileId = entry.fileId,
+            forcedEpisodeLabel = entry.episodeLabel
+        )
+    }
+
+    private fun showEpisodePickerDialog(
+        torrentTitle: String,
+        hash: String,
+        link: String,
+        files: List<TorrServeFile>
+    ) {
         val dialog = Dialog(this)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
         dialog.setContentView(R.layout.dialog_episodes)
@@ -414,7 +549,13 @@ class MainActivity : AppCompatActivity() {
                 dialog.dismiss()
                 launchJob?.cancel()
                 launchJob = uiScope.launch {
-                    bufferAndLaunchFile(hash, "$torrentTitle — ${selectedFile.fileName}", selectedFile)
+                    bufferAndLaunchFile(
+                        hash = hash,
+                        link = link,
+                        displayTitle = torrentTitle,
+                        episodeLabel = selectedFile.fileName,
+                        file = selectedFile
+                    )
                 }
             }
         )
@@ -432,7 +573,6 @@ class MainActivity : AppCompatActivity() {
 
         dialog.show()
 
-        // Focus first unwatched episode (or 0)
         val firstUnwatched = files.indexOfFirst { !storage.isEpisodeWatched(hash, it.id) }
             .takeIf { it >= 0 } ?: 0
         rvEpisodes.post {
@@ -442,8 +582,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private suspend fun bufferAndLaunchFile(hash: String, displayTitle: String, file: TorrServeFile) {
-        showLoadingOverlay(displayTitle, "Буферизация потока…", showBuffer = true)
+    private suspend fun bufferAndLaunchFile(
+        hash: String,
+        link: String,
+        displayTitle: String,
+        episodeLabel: String,
+        file: TorrServeFile
+    ) {
+        val fullTitle = if (episodeLabel.isNotBlank()) "$displayTitle — $episodeLabel" else displayTitle
+        showLoadingOverlay(fullTitle, "Буферизация потока…", showBuffer = true)
         progressBuffer.progress = 0
         tvLoadingStats.text = "Поиск пиров…"
 
@@ -455,13 +602,37 @@ class MainActivity : AppCompatActivity() {
         }
 
         val streamUrl = torrServeClient.buildStreamUrl(hash, file.id, file.fileName)
-        tvLoadingStep.text = "Запуск MX Player…"
+        val savedPos = storage.getSavedPositionMs(link, file.id)
 
-        val launchResult = playerController.playExternal(streamUrl, displayTitle)
+        val launchResult = if (storage.useBuiltInPlayer) {
+            tvLoadingStep.text = "Запуск встроенного плеера…"
+            playerController.playBuiltIn(
+                streamUrl = streamUrl,
+                title = displayTitle,
+                episodeLabel = episodeLabel,
+                link = link,
+                fileId = file.id,
+                startPositionMs = savedPos
+            )
+        } else {
+            tvLoadingStep.text = "Запуск MX Player…"
+            playerController.playExternal(streamUrl, fullTitle)
+        }
+
         hideLoadingOverlay()
 
         if (launchResult.launched) {
             storage.markEpisodeWatched(hash, file.id)
+            if (!storage.useBuiltInPlayer) {
+                storage.saveWatchPosition(
+                    title = displayTitle,
+                    link = link,
+                    fileId = file.id,
+                    episodeLabel = episodeLabel,
+                    positionMs = 0L,
+                    durationMs = 0L
+                )
+            }
             waitingForPlayerReturn = true
         } else {
             Toast.makeText(
@@ -491,16 +662,55 @@ class MainActivity : AppCompatActivity() {
         dialog.setContentView(R.layout.dialog_settings)
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
         dialog.window?.setLayout(
-            (resources.displayMetrics.widthPixels * 0.62).toInt(),
+            (resources.displayMetrics.widthPixels * 0.66).toInt(),
             WindowManager.LayoutParams.WRAP_CONTENT
         )
 
+        val btnCheckUpdates = dialog.findViewById<TextView>(R.id.btnCheckUpdates)
+        val btnPlayerBuiltin = dialog.findViewById<TextView>(R.id.btnPlayerBuiltin)
+        val btnPlayerExternal = dialog.findViewById<TextView>(R.id.btnPlayerExternal)
         val etTorrServe = dialog.findViewById<EditText>(R.id.etTorrServeUrl)
         val etCustomParser = dialog.findViewById<EditText>(R.id.etCustomParserUrl)
         val etApiKey = dialog.findViewById<EditText>(R.id.etApiKey)
         val etRutorMirror = dialog.findViewById<EditText>(R.id.etRutorMirror)
         val btnCancel = dialog.findViewById<TextView>(R.id.btnCancelSettings)
         val btnSave = dialog.findViewById<TextView>(R.id.btnSaveSettings)
+
+        var selectedBuiltIn = storage.useBuiltInPlayer
+        fun refreshPlayerChips() {
+            btnPlayerBuiltin.isSelected = selectedBuiltIn
+            btnPlayerExternal.isSelected = !selectedBuiltIn
+        }
+        refreshPlayerChips()
+
+        btnPlayerBuiltin.setOnClickListener {
+            selectedBuiltIn = true
+            refreshPlayerChips()
+        }
+        btnPlayerExternal.setOnClickListener {
+            selectedBuiltIn = false
+            refreshPlayerChips()
+        }
+
+        btnCheckUpdates.setOnClickListener {
+            Toast.makeText(this, "Проверяем релизы на GitHub…", Toast.LENGTH_SHORT).show()
+            uiScope.launch {
+                val release = updateManager.checkLatestRelease()
+                if (release != null) {
+                    updateManager.promptAndInstall(
+                        activityContext = this@MainActivity,
+                        release = release,
+                        currentVersionName = BuildConfig.VERSION_NAME
+                    )
+                } else {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Не удалось получить список релизов с GitHub",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
 
         etTorrServe.setText(storage.torrServeUrl)
         etCustomParser.setText(storage.customParserUrl)
@@ -509,6 +719,7 @@ class MainActivity : AppCompatActivity() {
 
         btnCancel.setOnClickListener { dialog.dismiss() }
         btnSave.setOnClickListener {
+            storage.useBuiltInPlayer = selectedBuiltIn
             storage.torrServeUrl = etTorrServe.text.toString()
             storage.customParserUrl = etCustomParser.text.toString()
             storage.parserApiKey = etApiKey.text.toString()

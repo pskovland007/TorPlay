@@ -11,12 +11,22 @@ android {
         applicationId = "com.torplay.tv"
         minSdk = 23
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.2.0-stage2"
+        versionCode = 3
+        versionName = "0.3.0-stage3"
+    }
+
+    signingConfigs {
+        create("torplaySign") {
+            storeFile = file("torplay-release.jks")
+            storePassword = System.getenv("TORPLAY_STORE_PASSWORD") ?: "TorPlayKey2026!"
+            keyAlias = System.getenv("TORPLAY_KEY_ALIAS") ?: "torplay"
+            keyPassword = System.getenv("TORPLAY_KEY_PASSWORD") ?: "TorPlayKey2026!"
+        }
     }
 
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("torplaySign")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -24,6 +34,7 @@ android {
             )
         }
         debug {
+            signingConfig = signingConfigs.getByName("torplaySign")
             isMinifyEnabled = false
         }
     }
@@ -36,6 +47,10 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    buildFeatures {
+        buildConfig = true
+    }
 }
 
 dependencies {
@@ -45,4 +60,10 @@ dependencies {
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Media3 / ExoPlayer for built-in TV playback (AC3/EAC3/DTS ffmpeg extension + UI)
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-ui:1.4.1")
+    implementation("androidx.media3:media3-datasource-okhttp:1.4.1")
+    implementation("androidx.media3:media3-ffmpeg-decoder:1.4.1")
 }
