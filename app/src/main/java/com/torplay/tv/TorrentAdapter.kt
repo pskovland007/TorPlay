@@ -37,6 +37,7 @@ class TorrentAdapter(
         private val tvHdr: TextView = itemView.findViewById(R.id.tvHdr)
         private val tvSize: TextView = itemView.findViewById(R.id.tvSize)
         private val tvSeeds: TextView = itemView.findViewById(R.id.tvSeeds)
+        private val tvDate: TextView = itemView.findViewById(R.id.tvDate)
         private val tvSource: TextView = itemView.findViewById(R.id.tvSource)
 
         fun bind(item: TorrentItem) {
@@ -62,6 +63,14 @@ class TorrentAdapter(
                 else -> R.color.status_err
             }
             tvSeeds.setTextColor(ContextCompat.getColor(itemView.context, seedColor))
+
+            val dateText = item.formattedDate()
+            if (dateText.isNotEmpty()) {
+                tvDate.text = dateText
+                tvDate.visibility = View.VISIBLE
+            } else {
+                tvDate.visibility = View.GONE
+            }
 
             tvSource.text = item.formattedSource()
 

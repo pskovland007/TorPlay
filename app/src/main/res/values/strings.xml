@@ -3,6 +3,10 @@
     <string name="app_name">TorPlay</string>
     <string name="search_hint">Введите название фильма или сериала…</string>
     <string name="btn_search">Найти</string>
+    <string name="btn_voice">Голос</string>
+    <string name="voice_prompt">Скажите название фильма или сериала</string>
+    <string name="voice_unavailable">Голосовой поиск недоступен (нет системной службы распознавания речи)</string>
+    <string name="voice_no_match">Не удалось распознать голосовой запрос</string>
     <string name="btn_settings">Настройки</string>
     <string name="btn_fav_toggle">★ В избранное</string>
     <string name="btn_fav_active">★ В избранном</string>
@@ -10,7 +14,8 @@
     <string name="status_checking">TorrServe: проверка…</string>
     <string name="status_starting">TorrServe: запуск…</string>
     <string name="status_offline">TorrServe: выкл (OK — запустить)</string>
-    <string name="empty_prompt">Введите запрос и нажмите «Найти».\nНавигация: стрелки пульта и OK.</string>
+    <string name="empty_prompt">Введите запрос или нажмите «Голос».
+Навигация: стрелки пульта и OK.</string>
     <string name="searching">Ищем раздачи…</string>
     <string name="no_results">Ничего не найдено. Попробуйте изменить запрос.</string>
     <string name="no_filtered_results">Нет раздач под выбранный фильтр качества.</string>
@@ -29,6 +34,7 @@
     <string name="filter_hdr">HDR</string>
     <string name="sort_seeds">Сорт: Сиды ▼</string>
     <string name="sort_size">Сорт: Размер ▼</string>
+    <string name="sort_date">Сорт: Дата ▼</string>
     <string name="episodes_title">Выберите серию</string>
     <string name="history_title">История просмотров</string>
     <string name="favorites_title">Избранное</string>

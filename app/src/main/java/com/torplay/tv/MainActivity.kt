@@ -1,8 +1,12 @@
 package com.torplay.tv
 
+import android.app.Activity
 import android.app.Dialog
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
+import android.speech.RecognizerIntent
 import android.view.KeyEvent
 import android.view.View
 import android.view.Window
@@ -15,6 +19,7 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -29,7 +34,7 @@ import kotlinx.coroutines.launch
 class MainActivity : AppCompatActivity() {
 
     private enum class QualityFilter { ALL, UHD_4K, FHD_1080, HD_720, HDR }
-    private enum class SortMode { SEEDS, SIZE }
+    private enum class SortMode { SEEDS, SIZE, DATE }
 
     private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -48,6 +53,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnFavoriteQuery: TextView
     private lateinit var btnSettings: TextView
     private lateinit var etSearch: EditText
+    private lateinit var btnVoiceSearch: LinearLayout
     private lateinit var btnSearch: TextView
     private lateinit var layoutFilters: LinearLayout
     private lateinit var btnFilterAll: TextView
@@ -81,6 +87,26 @@ class MainActivity : AppCompatActivity() {
     private var lastSourceName: String = ""
     private var currentFilter: QualityFilter = QualityFilter.ALL
     private var currentSort: SortMode = SortMode.SEEDS
+
+    private val voiceSearchLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val spoken = result.data
+                ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                ?.firstOrNull()
+                ?.trim()
+                .orEmpty()
+            if (spoken.isNotBlank()) {
+                etSearch.setText(spoken)
+                etSearch.setSelection(spoken.length)
+                updateFavoriteButtonUi()
+                performSearch()
+            } else {
+                Toast.makeText(this, getString(R.string.voice_no_match), Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -127,6 +153,29 @@ class MainActivity : AppCompatActivity() {
         uiScope.cancel()
     }
 
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_SEARCH,
+                KeyEvent.KEYCODE_VOICE_ASSIST,
+                KeyEvent.KEYCODE_ASSIST -> {
+                    if (layoutLoadingOverlay.visibility != View.VISIBLE) {
+                        startVoiceSearch()
+                        return true
+                    }
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun onSearchRequested(): Boolean {
+        if (layoutLoadingOverlay.visibility != View.VISIBLE) {
+            startVoiceSearch()
+        }
+        return true
+    }
+
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
         if (layoutLoadingOverlay.visibility == View.VISIBLE) {
@@ -159,6 +208,7 @@ class MainActivity : AppCompatActivity() {
         btnFavoriteQuery = findViewById(R.id.btnFavoriteQuery)
         btnSettings = findViewById(R.id.btnSettings)
         etSearch = findViewById(R.id.etSearch)
+        btnVoiceSearch = findViewById(R.id.btnVoiceSearch)
         btnSearch = findViewById(R.id.btnSearch)
         layoutFilters = findViewById(R.id.layoutFilters)
         btnFilterAll = findViewById(R.id.btnFilterAll)
@@ -232,6 +282,10 @@ class MainActivity : AppCompatActivity() {
             showSettingsDialog()
         }
 
+        btnVoiceSearch.setOnClickListener {
+            startVoiceSearch()
+        }
+
         btnSearch.setOnClickListener {
             performSearch()
         }
@@ -255,13 +309,40 @@ class MainActivity : AppCompatActivity() {
         btnFilterHdr.setOnClickListener { applyFilter(QualityFilter.HDR) }
 
         btnSort.setOnClickListener {
-            currentSort = if (currentSort == SortMode.SEEDS) SortMode.SIZE else SortMode.SEEDS
-            btnSort.text = if (currentSort == SortMode.SEEDS) {
-                getString(R.string.sort_seeds)
-            } else {
-                getString(R.string.sort_size)
+            currentSort = when (currentSort) {
+                SortMode.SEEDS -> SortMode.SIZE
+                SortMode.SIZE -> SortMode.DATE
+                SortMode.DATE -> SortMode.SEEDS
+            }
+            btnSort.text = when (currentSort) {
+                SortMode.SEEDS -> getString(R.string.sort_seeds)
+                SortMode.SIZE -> getString(R.string.sort_size)
+                SortMode.DATE -> getString(R.string.sort_date)
             }
             renderFilteredResults(focusFirst = false)
+        }
+    }
+
+    private fun startVoiceSearch() {
+        hideKeyboard()
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "ru-RU")
+            putExtra(RecognizerIntent.EXTRA_PROMPT, getString(R.string.voice_prompt))
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        }
+        val handler = intent.resolveActivity(packageManager)
+        if (handler == null) {
+            Toast.makeText(this, getString(R.string.voice_unavailable), Toast.LENGTH_LONG).show()
+            return
+        }
+        try {
+            voiceSearchLauncher.launch(intent)
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(this, getString(R.string.voice_unavailable), Toast.LENGTH_LONG).show()
+        } catch (_: Exception) {
+            Toast.makeText(this, getString(R.string.voice_unavailable), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -322,10 +403,18 @@ class MainActivity : AppCompatActivity() {
 
         val sorted = when (currentSort) {
             SortMode.SEEDS -> filtered.sortedWith(
-                compareByDescending<TorrentItem> { it.seeds }.thenByDescending { it.sizeBytes }
+                compareByDescending<TorrentItem> { it.seeds }
+                    .thenByDescending { it.createTime }
+                    .thenByDescending { it.sizeBytes }
             )
             SortMode.SIZE -> filtered.sortedWith(
-                compareByDescending<TorrentItem> { it.sizeBytes }.thenByDescending { it.seeds }
+                compareByDescending<TorrentItem> { it.sizeBytes }
+                    .thenByDescending { it.seeds }
+            )
+            SortMode.DATE -> filtered.sortedWith(
+                compareByDescending<TorrentItem> { it.createTime }
+                    .thenByDescending { it.seeds }
+                    .thenByDescending { it.sizeBytes }
             )
         }
 

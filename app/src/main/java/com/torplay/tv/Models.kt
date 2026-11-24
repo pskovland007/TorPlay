@@ -1,5 +1,6 @@
 package com.torplay.tv
 
+import java.util.Calendar
 import java.util.Locale
 
 data class TorrentItem(
@@ -13,7 +14,8 @@ data class TorrentItem(
     val tracker: String = "",
     val quality: String = "",
     val isHdr: Boolean = false,
-    val voices: List<String> = emptyList()
+    val voices: List<String> = emptyList(),
+    val createTime: Long = 0L
 ) {
     val playableLink: String
         get() = magnet.ifBlank { torrentUrl }
@@ -24,6 +26,8 @@ data class TorrentItem(
         }
         return sizeText.ifBlank { "—" }
     }
+
+    fun formattedDate(): String = formatDate(createTime)
 
     fun formattedSource(): String {
         val parts = mutableListOf<String>()
@@ -128,4 +132,15 @@ fun formatDuration(ms: Long): String {
     } else {
         String.format(Locale.US, "%02d:%02d", mins, secs)
     }
+}
+
+fun formatDate(epochMs: Long): String {
+    if (epochMs <= 0L) return ""
+    val cal = Calendar.getInstance()
+    cal.timeInMillis = epochMs
+    val year = cal.get(Calendar.YEAR)
+    if (year < 1990 || year > 2100) return ""
+    val day = cal.get(Calendar.DAY_OF_MONTH)
+    val month = cal.get(Calendar.MONTH) + 1
+    return String.format(Locale.US, "%02d.%02d.%04d", day, month, year)
 }

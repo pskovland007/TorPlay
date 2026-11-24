@@ -21,6 +21,9 @@
         <package android:name="net.gtvbox.videoplayer" />
         <package android:name="org.courville.nova" />
         <package android:name="org.videolan.vlc" />
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+        </intent>
     </queries>
 
     <application

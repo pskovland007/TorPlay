@@ -10,7 +10,9 @@ import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 import java.io.StringReader
 import java.net.URLEncoder
+import java.util.Calendar
 import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
 class SearchEngine(private val storage: StorageManager) {
@@ -156,6 +158,7 @@ class SearchEngine(private val storage: StorageManager) {
                 val sid = obj.optInt("sid", obj.optInt("Seeders", 0))
                 val pir = obj.optInt("pir", obj.optInt("Peers", 0))
                 val tracker = obj.optString("tracker").ifBlank { obj.optString("Tracker") }.trim()
+                val createTime = extractJsonDate(obj)
 
                 val qualityInt = obj.optInt("quality", 0)
                 val videoType = obj.optString("videotype", "").lowercase(Locale.US)
@@ -185,12 +188,36 @@ class SearchEngine(private val storage: StorageManager) {
                         tracker = tracker,
                         quality = quality,
                         isHdr = isHdr,
-                        voices = voices
+                        voices = voices,
+                        createTime = createTime
                     )
                 )
             }
             return list
         }
+    }
+
+    private fun extractJsonDate(obj: JSONObject): Long {
+        val keys = listOf(
+            "createTime",
+            "CreateTime",
+            "publishDate",
+            "PublishDate",
+            "pubDate",
+            "date",
+            "created"
+        )
+        for (key in keys) {
+            if (!obj.has(key) || obj.isNull(key)) continue
+            val raw = obj.opt(key)
+            val parsed = when (raw) {
+                is Number -> normalizeEpoch(raw.toLong())
+                is String -> parseDateToEpochMillis(raw)
+                else -> 0L
+            }
+            if (parsed > 0L) return parsed
+        }
+        return 0L
     }
 
     private fun queryTorznab(baseUrl: String, apiKey: String, query: String): List<TorrentItem> {
@@ -232,6 +259,7 @@ class SearchEngine(private val storage: StorageManager) {
         var seeds = 0
         var peers = 0
         var tracker = "Jackett"
+        var createTime = 0L
 
         var event = parser.eventType
         while (event != XmlPullParser.END_DOCUMENT) {
@@ -247,11 +275,17 @@ class SearchEngine(private val storage: StorageManager) {
                         seeds = 0
                         peers = 0
                         tracker = "Jackett"
+                        createTime = 0L
                     } else if (inItem) {
                         when (tag) {
                             "title" -> title = parser.nextText().trim()
                             "link" -> link = parser.nextText().trim()
                             "size" -> size = parser.nextText().trim().toLongOrNull() ?: 0L
+                            "pubdate" -> {
+                                val rawDate = parser.nextText().trim()
+                                val parsed = parseDateToEpochMillis(rawDate)
+                                if (parsed > 0L) createTime = parsed
+                            }
                             "jackettindexer" -> tracker = parser.nextText().trim().ifBlank { "Jackett" }
                             "enclosure" -> {
                                 val encUrl = parser.getAttributeValue(null, "url").orEmpty()
@@ -269,6 +303,11 @@ class SearchEngine(private val storage: StorageManager) {
                                     "peers" -> peers = attrVal.toIntOrNull() ?: 0
                                     "magneturl" -> if (attrVal.startsWith("magnet:")) magnet = attrVal
                                     "size" -> if (size == 0L) size = attrVal.toLongOrNull() ?: 0L
+                                    "pubdate", "publishdate" -> {
+                                        if (createTime == 0L) {
+                                            createTime = parseDateToEpochMillis(attrVal)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -288,7 +327,8 @@ class SearchEngine(private val storage: StorageManager) {
                                     peers = peers,
                                     tracker = tracker,
                                     quality = detectQuality(0, title),
-                                    isHdr = detectHdr(title)
+                                    isHdr = detectHdr(title),
+                                    createTime = createTime
                                 )
                             )
                         }
@@ -324,6 +364,11 @@ class SearchEngine(private val storage: StorageManager) {
             "<tr class=\"(?:gai|tum)\">(.*?)</tr>",
             setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
         )
+        val firstCellRegex = Regex(
+            "<td[^>]*>(.*?)</td>",
+            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+        )
+        val htmlTagRegex = Regex("<[^>]+>")
         val magnetRegex = Regex(
             "href=\"(magnet:\\?xt=urn:btih:[^\"]+)\"",
             RegexOption.IGNORE_CASE
@@ -353,6 +398,10 @@ class SearchEngine(private val storage: StorageManager) {
             val title = decodeHtmlEntities(rawTitle).trim()
             if (title.isBlank()) continue
 
+            val rawDateCell = firstCellRegex.find(row)?.groupValues?.get(1).orEmpty()
+            val cleanDateText = decodeHtmlEntities(htmlTagRegex.replace(rawDateCell, " ")).trim()
+            val createTime = parseDateToEpochMillis(cleanDateText)
+
             val sizeText = decodeHtmlEntities(sizeRegex.find(row)?.groupValues?.get(1).orEmpty()).trim()
             val sizeBytes = parseHumanSizeToBytes(sizeText)
             val seeds = seedsRegex.find(row)?.groupValues?.get(1)?.toIntOrNull() ?: 0
@@ -366,11 +415,140 @@ class SearchEngine(private val storage: StorageManager) {
                     seeds = seeds,
                     tracker = "rutor",
                     quality = detectQuality(0, title),
-                    isHdr = detectHdr(title)
+                    isHdr = detectHdr(title),
+                    createTime = createTime
                 )
             )
         }
         return results
+    }
+
+    private fun parseDateToEpochMillis(raw: String): Long {
+        val text = raw
+            .replace("&nbsp;", " ")
+            .replace('\u00A0', ' ')
+            .trim()
+        if (text.isBlank()) return 0L
+
+        // 1. Numeric epoch timestamp (seconds or milliseconds)
+        if (EPOCH_REGEX.matches(text)) {
+            val num = text.toLongOrNull() ?: return 0L
+            return normalizeEpoch(num)
+        }
+
+        // 2. ISO-8601 (e.g. 2024-05-12T18:30:00Z, 2024-05-12T18:30:00+03:00, 2024-05-12)
+        ISO_DATE_REGEX.find(text)?.let { m ->
+            val year = m.groupValues[1].toIntOrNull() ?: return 0L
+            val month = m.groupValues[2].toIntOrNull() ?: return 0L
+            val day = m.groupValues[3].toIntOrNull() ?: return 0L
+            val hasTime = m.groupValues[4].isNotEmpty()
+            val hour = m.groupValues[4].toIntOrNull() ?: 12
+            val minute = m.groupValues[5].toIntOrNull() ?: 0
+            val second = m.groupValues[6].toIntOrNull() ?: 0
+            val tz = m.groupValues[7]
+            return buildUtcMillis(year, month, day, hour, minute, second, if (hasTime) tz else "")
+        }
+
+        // 3. RFC-1123 / RFC-822 (e.g. Sun, 12 May 2024 18:30:00 +0300)
+        RFC_DATE_REGEX.find(text)?.let { m ->
+            val day = m.groupValues[1].toIntOrNull() ?: return 0L
+            val month = parseMonthName(m.groupValues[2]) ?: return 0L
+            val rawYear = m.groupValues[3].toIntOrNull() ?: return 0L
+            val year = normalizeYear(rawYear)
+            val hasTime = m.groupValues[4].isNotEmpty()
+            val hour = m.groupValues[4].toIntOrNull() ?: 12
+            val minute = m.groupValues[5].toIntOrNull() ?: 0
+            val second = m.groupValues[6].toIntOrNull() ?: 0
+            val tz = m.groupValues[7]
+            return buildUtcMillis(year, month, day, hour, minute, second, if (hasTime) tz else "")
+        }
+
+        // 4. Rutor / human localized date (e.g. 12 Май 24, 05 Фев 2024)
+        HUMAN_DATE_REGEX.find(text)?.let { m ->
+            val day = m.groupValues[1].toIntOrNull() ?: return 0L
+            val month = parseMonthName(m.groupValues[2]) ?: return 0L
+            val rawYear = m.groupValues[3].toIntOrNull() ?: return 0L
+            val year = normalizeYear(rawYear)
+            return buildUtcMillis(year, month, day, 12, 0, 0, "")
+        }
+
+        // 5. Numeric DMY (e.g. 12.05.2024 or 12/05/24)
+        DMY_DATE_REGEX.find(text)?.let { m ->
+            val day = m.groupValues[1].toIntOrNull() ?: return 0L
+            val month = m.groupValues[2].toIntOrNull() ?: return 0L
+            val rawYear = m.groupValues[3].toIntOrNull() ?: return 0L
+            val year = normalizeYear(rawYear)
+            return buildUtcMillis(year, month, day, 12, 0, 0, "")
+        }
+
+        return 0L
+    }
+
+    private fun normalizeEpoch(value: Long): Long {
+        if (value <= 0L) return 0L
+        val ms = if (value > 1_000_000_000_000L) value else value * 1000L
+        val cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
+        cal.timeInMillis = ms
+        val year = cal.get(Calendar.YEAR)
+        return if (year in 1990..2100) ms else 0L
+    }
+
+    private fun normalizeYear(rawYear: Int): Int {
+        return if (rawYear in 0..99) 2000 + rawYear else rawYear
+    }
+
+    private fun parseMonthName(rawMonth: String): Int? {
+        val key = rawMonth.trim().lowercase(Locale("ru")).take(3)
+        return when (key) {
+            "янв", "jan" -> 1
+            "фев", "feb" -> 2
+            "мар", "mar" -> 3
+            "апр", "apr" -> 4
+            "май", "мая", "may" -> 5
+            "июн", "jun" -> 6
+            "июл", "jul" -> 7
+            "авг", "aug" -> 8
+            "сен", "sep" -> 9
+            "окт", "oct" -> 10
+            "ноя", "nov" -> 11
+            "дек", "dec" -> 12
+            else -> null
+        }
+    }
+
+    private fun buildUtcMillis(
+        year: Int,
+        month: Int,
+        day: Int,
+        hour: Int,
+        minute: Int,
+        second: Int,
+        tz: String
+    ): Long {
+        if (year !in 1990..2100 || month !in 1..12 || day !in 1..31) return 0L
+        val cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
+        cal.clear()
+        cal.set(year, month - 1, day, hour.coerceIn(0, 23), minute.coerceIn(0, 59), second.coerceIn(0, 59))
+        var millis = cal.timeInMillis
+        val offsetMs = parseTzOffsetMillis(tz)
+        if (offsetMs != 0L) {
+            millis -= offsetMs
+        }
+        return millis
+    }
+
+    private fun parseTzOffsetMillis(tz: String): Long {
+        val clean = tz.trim()
+        if (clean.isEmpty() || clean.equals("Z", ignoreCase = true) ||
+            clean.equals("GMT", ignoreCase = true) || clean.equals("UTC", ignoreCase = true)
+        ) {
+            return 0L
+        }
+        val m = TZ_OFFSET_REGEX.matchEntire(clean) ?: return 0L
+        val sign = if (m.groupValues[1] == "-") -1L else 1L
+        val hours = m.groupValues[2].toLongOrNull() ?: return 0L
+        val mins = m.groupValues[3].toLongOrNull() ?: return 0L
+        return sign * ((hours * 60L + mins) * 60_000L)
     }
 
     private fun sortAndDeduplicate(items: List<TorrentItem>): List<TorrentItem> {
@@ -444,5 +622,20 @@ class SearchEngine(private val storage: StorageManager) {
     companion object {
         private const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 9; MIBOX4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+
+        private val EPOCH_REGEX = Regex("^\\d{10,13}$")
+        private val ISO_DATE_REGEX = Regex(
+            "^(\\d{4})-(\\d{1,2})-(\\d{1,2})(?:[T\\s](\\d{1,2}):(\\d{2})(?::(\\d{2}))?(?:\\.\\d+)?(Z|[+-]\\d{2}:?\\d{2})?)?"
+        )
+        private val RFC_DATE_REGEX = Regex(
+            "(?:[A-Za-z]{3},\\s*)?(\\d{1,2})\\s+([A-Za-z]{3,9})\\s+(\\d{2,4})(?:\\s+(\\d{1,2}):(\\d{2})(?::(\\d{2}))?(?:\\s+([+-]\\d{4}|GMT|UTC))?)?"
+        )
+        private val HUMAN_DATE_REGEX = Regex(
+            "(\\d{1,2})\\s+([А-Яа-яЁёA-Za-z]{3,12})\\.?\\s+(\\d{2,4})"
+        )
+        private val DMY_DATE_REGEX = Regex(
+            "^(\\d{1,2})[./-](\\d{1,2})[./-](\\d{2,4})"
+        )
+        private val TZ_OFFSET_REGEX = Regex("^([+-])(\\d{2}):?(\\d{2})$")
     }
 }
