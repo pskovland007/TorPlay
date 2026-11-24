@@ -124,7 +124,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:layout_marginBottom="10dp"
+            android:layout_marginBottom="8dp"
             android:orientation="horizontal">
 
             <TextView
@@ -137,7 +137,7 @@
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
-                android:nextFocusDown="@+id/etTorrServeUrl"
+                android:nextFocusDown="@+id/btnToggleAutoUpdate"
                 android:nextFocusLeft="@+id/btnTogglePublicJacRed"
                 android:nextFocusRight="@+id/btnToggleRutorFallback"
                 android:nextFocusUp="@+id/btnPlayerBuiltin"
@@ -155,7 +155,7 @@
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
-                android:nextFocusDown="@+id/etTorrServeUrl"
+                android:nextFocusDown="@+id/btnToggleAutoUpdate"
                 android:nextFocusLeft="@+id/btnTogglePublicJacRed"
                 android:nextFocusRight="@+id/btnToggleRutorFallback"
                 android:nextFocusUp="@+id/btnPlayerExternal"
@@ -164,6 +164,24 @@
                 android:textSize="12sp"
                 android:textStyle="bold" />
         </LinearLayout>
+
+        <TextView
+            android:id="@+id/btnToggleAutoUpdate"
+            android:layout_width="match_parent"
+            android:layout_height="38dp"
+            android:layout_marginBottom="10dp"
+            android:background="@drawable/bg_chip_selector"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:nextFocusDown="@+id/etTorrServeUrl"
+            android:nextFocusLeft="@+id/btnToggleAutoUpdate"
+            android:nextFocusRight="@+id/btnToggleAutoUpdate"
+            android:nextFocusUp="@+id/btnTogglePublicJacRed"
+            android:text="@string/auto_update_on"
+            android:textColor="@color/text_primary"
+            android:textSize="12sp"
+            android:textStyle="bold" />
 
         <TextView
             android:layout_width="wrap_content"
@@ -182,7 +200,7 @@
             android:hint="http://127.0.0.1:8090"
             android:inputType="textUri"
             android:nextFocusDown="@+id/etCustomParserUrl"
-            android:nextFocusUp="@+id/btnTogglePublicJacRed"
+            android:nextFocusUp="@+id/btnToggleAutoUpdate"
             android:paddingStart="12dp"
             android:paddingEnd="12dp"
             android:singleLine="true"

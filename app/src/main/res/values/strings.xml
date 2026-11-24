@@ -25,6 +25,8 @@
     <string name="source_jacred_off">✕ Публичный JacRed: выкл</string>
     <string name="source_rutor_on">✓ Резервный Rutor: вкл</string>
     <string name="source_rutor_off">✕ Резервный Rutor: выкл</string>
+    <string name="auto_update_on">✓ Автопроверка обновлений при запуске: ВКЛ</string>
+    <string name="auto_update_off">✕ Автопроверка обновлений при запуске: ВЫКЛ</string>
     <string name="btn_check_mirrors">Проверить зеркала</string>
     <string name="checking_mirrors">Проверяем доступность зеркал…</string>
     <string name="settings_torrserve_label">Адрес TorrServe MatriX</string>
@@ -48,4 +50,18 @@
     <string name="player_sub_btn">Субтитры</string>
     <string name="player_rewind_btn">◀ -15с</string>
     <string name="player_forward_btn">+30с ▶</string>
+    <string name="update_dialog_title">Обновление TorPlay</string>
+    <string name="update_badge_new">Доступна новая версия</string>
+    <string name="update_badge_latest">Установлена последняя версия</string>
+    <string name="update_btn_download">Скачать и установить</string>
+    <string name="update_btn_reinstall">Переустановить</string>
+    <string name="update_btn_install">Установить APK</string>
+    <string name="update_btn_grant_permission">Открыть настройки</string>
+    <string name="update_btn_later">Позже</string>
+    <string name="update_btn_close">Закрыть</string>
+    <string name="update_btn_cancel_download">Отменить</string>
+    <string name="update_permission_hint">Разрешите установку неизвестных приложений для TorPlay в настройках Android, затем вернитесь и нажмите «Установить APK».</string>
+    <string name="update_downloading">Загрузка обновления…</string>
+    <string name="update_ready">APK загружен и готов к установке</string>
+    <string name="update_cancelled">Загрузка отменена</string>
 </resources>

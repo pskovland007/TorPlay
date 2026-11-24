@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_dialog"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/tvUpdateTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/update_dialog_title"
+            android:textColor="@color/text_primary"
+            android:textSize="19sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvUpdateBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_badge_1080"
+            android:paddingStart="10dp"
+            android:paddingTop="3dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="3dp"
+            android:text="@string/update_badge_new"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvUpdateVersions"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:textColor="@color/text_primary"
+        android:textSize="14sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/tvUpdateSize"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:textColor="@color/text_secondary"
+        android:textSize="12sp" />
+
+    <ScrollView
+        android:id="@+id/scrollUpdateNotes"
+        android:layout_width="match_parent"
+        android:layout_height="130dp"
+        android:layout_marginTop="12dp"
+        android:background="@drawable/bg_input_selector"
+        android:fadeScrollbars="false"
+        android:padding="12dp">
+
+        <TextView
+            android:id="@+id/tvUpdateNotes"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:lineSpacingMultiplier="1.25"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+    </ScrollView>
+
+    <LinearLayout
+        android:id="@+id/layoutUpdateProgress"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tvUpdateProgressText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/update_downloading"
+            android:textColor="@color/accent_emerald"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <ProgressBar
+            android:id="@+id/progressUpdateBar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="8dp"
+            android:layout_marginTop="8dp"
+            android:max="100"
+            android:progress="0"
+            android:progressTint="@color/accent_emerald" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvUpdatePermissionHint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:lineSpacingMultiplier="1.2"
+        android:text="@string/update_permission_hint"
+        android:textColor="@color/status_warn"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="18dp"
+        android:gravity="end"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/btnUpdateSecondary"
+            android:layout_width="wrap_content"
+            android:layout_height="42dp"
+            android:layout_marginEnd="10dp"
+            android:background="@drawable/bg_button_selector"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:nextFocusDown="@+id/btnUpdateSecondary"
+            android:nextFocusLeft="@+id/btnUpdateSecondary"
+            android:nextFocusRight="@+id/btnUpdatePrimary"
+            android:nextFocusUp="@+id/btnUpdateSecondary"
+            android:paddingStart="18dp"
+            android:paddingEnd="18dp"
+            android:text="@string/update_btn_later"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btnUpdatePrimary"
+            android:layout_width="wrap_content"
+            android:layout_height="42dp"
+            android:background="@drawable/bg_button_selector"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:nextFocusDown="@+id/btnUpdatePrimary"
+            android:nextFocusLeft="@+id/btnUpdateSecondary"
+            android:nextFocusRight="@+id/btnUpdatePrimary"
+            android:nextFocusUp="@+id/btnUpdatePrimary"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:text="@string/update_btn_download"
+            android:textColor="@color/text_button_accent_selector"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+</LinearLayout>

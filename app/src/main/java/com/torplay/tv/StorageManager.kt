@@ -27,6 +27,12 @@ class StorageManager(context: Context) {
             prefs.edit().putBoolean(KEY_USE_RUTOR_FALLBACK, value).apply()
         }
 
+    var autoCheckUpdates: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_CHECK_UPDATES, true)
+        set(value) {
+            prefs.edit().putBoolean(KEY_AUTO_CHECK_UPDATES, value).apply()
+        }
+
     var torrServeUrl: String
         get() = prefs.getString(KEY_TORRSERVE_URL, DEFAULT_TORRSERVE_URL)
             ?.trim()
@@ -215,6 +221,7 @@ class StorageManager(context: Context) {
         private const val KEY_USE_BUILTIN_PLAYER = "use_builtin_player"
         private const val KEY_USE_PUBLIC_JACRED = "use_public_jacred"
         private const val KEY_USE_RUTOR_FALLBACK = "use_rutor_fallback"
+        private const val KEY_AUTO_CHECK_UPDATES = "auto_check_updates"
         private const val KEY_TORRSERVE_URL = "torrserve_url"
         private const val KEY_CUSTOM_PARSER_URL = "custom_parser_url"
         private const val KEY_PARSER_API_KEY = "parser_api_key"

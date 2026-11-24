@@ -32,6 +32,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -86,6 +87,7 @@ class MainActivity : AppCompatActivity() {
     private var mirrorCheckJob: Job? = null
     private var lastPlayedHash: String = ""
     private var waitingForPlayerReturn: Boolean = false
+    private var hasCheckedUpdatesOnStart: Boolean = false
 
     private var allResults: List<TorrentItem> = emptyList()
     private var lastSourceName: String = ""
@@ -134,6 +136,7 @@ class MainActivity : AppCompatActivity() {
         refreshHomeShelves()
         etSearch.requestFocus()
         refreshTorrServeStatus(autoStart = false)
+        checkUpdatesOnStartup()
     }
 
     override fun onResume() {
@@ -205,6 +208,23 @@ class MainActivity : AppCompatActivity() {
             return
         }
         super.onBackPressed()
+    }
+
+    private fun checkUpdatesOnStartup() {
+        if (hasCheckedUpdatesOnStart || !storage.autoCheckUpdates) return
+        hasCheckedUpdatesOnStart = true
+        uiScope.launch {
+            delay(1_800L)
+            val release = updateManager.checkLatestRelease() ?: return@launch
+            if (isFinishing || isDestroyed) return@launch
+            if (layoutLoadingOverlay.visibility == View.VISIBLE) return@launch
+            updateManager.showUpdateDialog(
+                activityContext = this@MainActivity,
+                release = release,
+                currentVersionName = BuildConfig.VERSION_NAME,
+                manualCheck = false
+            )
+        }
     }
 
     private fun bindViews() {
@@ -811,6 +831,7 @@ class MainActivity : AppCompatActivity() {
         val btnPlayerExternal = dialog.findViewById<TextView>(R.id.btnPlayerExternal)
         val btnTogglePublicJacRed = dialog.findViewById<TextView>(R.id.btnTogglePublicJacRed)
         val btnToggleRutorFallback = dialog.findViewById<TextView>(R.id.btnToggleRutorFallback)
+        val btnToggleAutoUpdate = dialog.findViewById<TextView>(R.id.btnToggleAutoUpdate)
         val etTorrServe = dialog.findViewById<EditText>(R.id.etTorrServeUrl)
         val etCustomParser = dialog.findViewById<EditText>(R.id.etCustomParserUrl)
         val etApiKey = dialog.findViewById<EditText>(R.id.etApiKey)
@@ -828,6 +849,7 @@ class MainActivity : AppCompatActivity() {
         var selectedBuiltIn = storage.useBuiltInPlayer
         var publicJacRedEnabled = storage.usePublicJacRed
         var rutorFallbackEnabled = storage.useRutorFallback
+        var autoCheckUpdatesEnabled = storage.autoCheckUpdates
 
         fun refreshPlayerChips() {
             btnPlayerBuiltin.isSelected = selectedBuiltIn
@@ -842,6 +864,10 @@ class MainActivity : AppCompatActivity() {
             btnToggleRutorFallback.isSelected = rutorFallbackEnabled
             btnToggleRutorFallback.text = getString(
                 if (rutorFallbackEnabled) R.string.source_rutor_on else R.string.source_rutor_off
+            )
+            btnToggleAutoUpdate.isSelected = autoCheckUpdatesEnabled
+            btnToggleAutoUpdate.text = getString(
+                if (autoCheckUpdatesEnabled) R.string.auto_update_on else R.string.auto_update_off
             )
         }
 
@@ -864,16 +890,21 @@ class MainActivity : AppCompatActivity() {
             rutorFallbackEnabled = !rutorFallbackEnabled
             refreshSourceChips()
         }
+        btnToggleAutoUpdate.setOnClickListener {
+            autoCheckUpdatesEnabled = !autoCheckUpdatesEnabled
+            refreshSourceChips()
+        }
 
         btnCheckUpdates.setOnClickListener {
             Toast.makeText(this, "Проверяем релизы на GitHub…", Toast.LENGTH_SHORT).show()
             uiScope.launch {
                 val release = updateManager.checkLatestRelease()
                 if (release != null) {
-                    updateManager.promptAndInstall(
+                    updateManager.showUpdateDialog(
                         activityContext = this@MainActivity,
                         release = release,
-                        currentVersionName = BuildConfig.VERSION_NAME
+                        currentVersionName = BuildConfig.VERSION_NAME,
+                        manualCheck = true
                     )
                 } else {
                     Toast.makeText(
@@ -964,6 +995,7 @@ class MainActivity : AppCompatActivity() {
             storage.useBuiltInPlayer = selectedBuiltIn
             storage.usePublicJacRed = publicJacRedEnabled
             storage.useRutorFallback = rutorFallbackEnabled
+            storage.autoCheckUpdates = autoCheckUpdatesEnabled
             storage.torrServeUrl = etTorrServe.text.toString()
             storage.customParserUrl = etCustomParser.text.toString()
             storage.parserApiKey = etApiKey.text.toString()
