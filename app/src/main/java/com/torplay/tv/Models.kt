@@ -43,6 +43,14 @@ data class SearchResponse(
     val error: String? = null
 )
 
+data class MirrorCheckResult(
+    val name: String,
+    val url: String,
+    val ok: Boolean,
+    val latencyMs: Long,
+    val detail: String
+)
+
 data class TorrServeFile(
     val id: Int,
     val path: String,

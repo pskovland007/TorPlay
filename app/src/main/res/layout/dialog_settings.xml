@@ -2,7 +2,8 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="@drawable/bg_dialog">
+    android:background="@drawable/bg_dialog"
+    android:fadeScrollbars="false">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -71,20 +72,20 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:layout_marginBottom="12dp"
+            android:layout_marginBottom="10dp"
             android:orientation="horizontal">
 
             <TextView
                 android:id="@+id/btnPlayerBuiltin"
                 android:layout_width="0dp"
-                android:layout_height="40dp"
+                android:layout_height="38dp"
                 android:layout_marginEnd="8dp"
                 android:layout_weight="1"
                 android:background="@drawable/bg_chip_selector"
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
-                android:nextFocusDown="@+id/etTorrServeUrl"
+                android:nextFocusDown="@+id/btnTogglePublicJacRed"
                 android:nextFocusLeft="@+id/btnPlayerBuiltin"
                 android:nextFocusRight="@+id/btnPlayerExternal"
                 android:nextFocusUp="@+id/btnCheckUpdates"
@@ -96,19 +97,71 @@
             <TextView
                 android:id="@+id/btnPlayerExternal"
                 android:layout_width="0dp"
-                android:layout_height="40dp"
+                android:layout_height="38dp"
                 android:layout_weight="1"
                 android:background="@drawable/bg_chip_selector"
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
-                android:nextFocusDown="@+id/etTorrServeUrl"
+                android:nextFocusDown="@+id/btnToggleRutorFallback"
                 android:nextFocusLeft="@+id/btnPlayerBuiltin"
                 android:nextFocusRight="@+id/btnPlayerExternal"
                 android:nextFocusUp="@+id/btnCheckUpdates"
                 android:text="Внешний (MX Player)"
                 android:textColor="@color/text_primary"
                 android:textSize="13sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_sources_label"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="10dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/btnTogglePublicJacRed"
+                android:layout_width="0dp"
+                android:layout_height="38dp"
+                android:layout_marginEnd="8dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_chip_selector"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:nextFocusDown="@+id/etTorrServeUrl"
+                android:nextFocusLeft="@+id/btnTogglePublicJacRed"
+                android:nextFocusRight="@+id/btnToggleRutorFallback"
+                android:nextFocusUp="@+id/btnPlayerBuiltin"
+                android:text="@string/source_jacred_on"
+                android:textColor="@color/text_primary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/btnToggleRutorFallback"
+                android:layout_width="0dp"
+                android:layout_height="38dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_chip_selector"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:nextFocusDown="@+id/etTorrServeUrl"
+                android:nextFocusLeft="@+id/btnTogglePublicJacRed"
+                android:nextFocusRight="@+id/btnToggleRutorFallback"
+                android:nextFocusUp="@+id/btnPlayerExternal"
+                android:text="@string/source_rutor_on"
+                android:textColor="@color/text_primary"
+                android:textSize="12sp"
                 android:textStyle="bold" />
         </LinearLayout>
 
@@ -122,14 +175,14 @@
         <EditText
             android:id="@+id/etTorrServeUrl"
             android:layout_width="match_parent"
-            android:layout_height="42dp"
+            android:layout_height="40dp"
             android:layout_marginTop="4dp"
-            android:layout_marginBottom="10dp"
+            android:layout_marginBottom="8dp"
             android:background="@drawable/bg_input_selector"
             android:hint="http://127.0.0.1:8090"
             android:inputType="textUri"
             android:nextFocusDown="@+id/etCustomParserUrl"
-            android:nextFocusUp="@+id/btnPlayerBuiltin"
+            android:nextFocusUp="@+id/btnTogglePublicJacRed"
             android:paddingStart="12dp"
             android:paddingEnd="12dp"
             android:singleLine="true"
@@ -147,9 +200,9 @@
         <EditText
             android:id="@+id/etCustomParserUrl"
             android:layout_width="match_parent"
-            android:layout_height="42dp"
+            android:layout_height="40dp"
             android:layout_marginTop="4dp"
-            android:layout_marginBottom="10dp"
+            android:layout_marginBottom="8dp"
             android:background="@drawable/bg_input_selector"
             android:hint="Оставьте пустым для автоподбора"
             android:inputType="textUri"
@@ -172,9 +225,9 @@
         <EditText
             android:id="@+id/etApiKey"
             android:layout_width="match_parent"
-            android:layout_height="42dp"
+            android:layout_height="40dp"
             android:layout_marginTop="4dp"
-            android:layout_marginBottom="10dp"
+            android:layout_marginBottom="8dp"
             android:background="@drawable/bg_input_selector"
             android:hint="API Key (если требуется)"
             android:inputType="text"
@@ -197,13 +250,13 @@
         <EditText
             android:id="@+id/etRutorMirror"
             android:layout_width="match_parent"
-            android:layout_height="42dp"
+            android:layout_height="40dp"
             android:layout_marginTop="4dp"
-            android:layout_marginBottom="16dp"
+            android:layout_marginBottom="12dp"
             android:background="@drawable/bg_input_selector"
             android:hint="https://rutor.info"
             android:inputType="textUri"
-            android:nextFocusDown="@+id/btnSaveSettings"
+            android:nextFocusDown="@+id/btnCheckMirrors"
             android:nextFocusUp="@+id/etApiKey"
             android:paddingStart="12dp"
             android:paddingEnd="12dp"
@@ -212,23 +265,95 @@
             android:textColorHint="@color/text_muted"
             android:textSize="14sp" />
 
+        <!-- Mirror Check Results Panel -->
+        <LinearLayout
+            android:id="@+id/layoutMirrorResults"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:background="@drawable/bg_input_selector"
+            android:orientation="vertical"
+            android:paddingStart="12dp"
+            android:paddingTop="10dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="10dp"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ProgressBar
+                    android:id="@+id/progressMirrorCheck"
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:layout_marginEnd="8dp"
+                    android:indeterminateTint="@color/accent_emerald"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/tvMirrorCheckStatus"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/checking_mirrors"
+                    android:textColor="@color/text_primary"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/layoutMirrorList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="vertical" />
+        </LinearLayout>
+
+        <!-- Action Buttons Row -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="end"
+            android:gravity="center_vertical"
             android:orientation="horizontal">
 
             <TextView
+                android:id="@+id/btnCheckMirrors"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:background="@drawable/bg_button_selector"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:nextFocusDown="@+id/btnCheckMirrors"
+                android:nextFocusLeft="@+id/btnCheckMirrors"
+                android:nextFocusRight="@+id/btnCancelSettings"
+                android:nextFocusUp="@+id/etRutorMirror"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:text="@string/btn_check_mirrors"
+                android:textColor="@color/text_button_accent_selector"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <TextView
                 android:id="@+id/btnCancelSettings"
-                android:layout_width="110dp"
-                android:layout_height="42dp"
+                android:layout_width="106dp"
+                android:layout_height="40dp"
                 android:layout_marginEnd="10dp"
                 android:background="@drawable/bg_button_selector"
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
                 android:nextFocusDown="@+id/btnCancelSettings"
-                android:nextFocusLeft="@+id/btnCancelSettings"
+                android:nextFocusLeft="@+id/btnCheckMirrors"
                 android:nextFocusRight="@+id/btnSaveSettings"
                 android:nextFocusUp="@+id/etRutorMirror"
                 android:text="@string/btn_cancel"
@@ -238,8 +363,8 @@
 
             <TextView
                 android:id="@+id/btnSaveSettings"
-                android:layout_width="130dp"
-                android:layout_height="42dp"
+                android:layout_width="124dp"
+                android:layout_height="40dp"
                 android:background="@drawable/bg_button_selector"
                 android:clickable="true"
                 android:focusable="true"

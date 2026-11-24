@@ -11,8 +11,8 @@ android {
         applicationId = "com.torplay.tv"
         minSdk = 23
         targetSdk = 34
-        versionCode = 5
-        versionName = "0.4.1-stage4.2a"
+        versionCode = 6
+        versionName = "0.4.2-stage4.2b"
     }
 
     signingConfigs {

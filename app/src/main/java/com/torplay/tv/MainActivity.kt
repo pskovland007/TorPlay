@@ -5,8 +5,11 @@ import android.app.Dialog
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.graphics.Typeface
 import android.os.Bundle
 import android.speech.RecognizerIntent
+import android.text.TextUtils
+import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.Window
@@ -80,6 +83,7 @@ class MainActivity : AppCompatActivity() {
 
     private var searchJob: Job? = null
     private var launchJob: Job? = null
+    private var mirrorCheckJob: Job? = null
     private var lastPlayedHash: String = ""
     private var waitingForPlayerReturn: Boolean = false
 
@@ -797,7 +801,7 @@ class MainActivity : AppCompatActivity() {
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
         dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
         dialog.window?.setLayout(
-            (resources.displayMetrics.widthPixels * 0.66).toInt(),
+            (resources.displayMetrics.widthPixels * 0.72).toInt(),
             WindowManager.LayoutParams.WRAP_CONTENT
         )
 
@@ -805,21 +809,44 @@ class MainActivity : AppCompatActivity() {
         val btnCheckUpdates = dialog.findViewById<TextView>(R.id.btnCheckUpdates)
         val btnPlayerBuiltin = dialog.findViewById<TextView>(R.id.btnPlayerBuiltin)
         val btnPlayerExternal = dialog.findViewById<TextView>(R.id.btnPlayerExternal)
+        val btnTogglePublicJacRed = dialog.findViewById<TextView>(R.id.btnTogglePublicJacRed)
+        val btnToggleRutorFallback = dialog.findViewById<TextView>(R.id.btnToggleRutorFallback)
         val etTorrServe = dialog.findViewById<EditText>(R.id.etTorrServeUrl)
         val etCustomParser = dialog.findViewById<EditText>(R.id.etCustomParserUrl)
         val etApiKey = dialog.findViewById<EditText>(R.id.etApiKey)
         val etRutorMirror = dialog.findViewById<EditText>(R.id.etRutorMirror)
+        val layoutMirrorResults = dialog.findViewById<LinearLayout>(R.id.layoutMirrorResults)
+        val progressMirrorCheck = dialog.findViewById<ProgressBar>(R.id.progressMirrorCheck)
+        val tvMirrorCheckStatus = dialog.findViewById<TextView>(R.id.tvMirrorCheckStatus)
+        val layoutMirrorList = dialog.findViewById<LinearLayout>(R.id.layoutMirrorList)
+        val btnCheckMirrors = dialog.findViewById<TextView>(R.id.btnCheckMirrors)
         val btnCancel = dialog.findViewById<TextView>(R.id.btnCancelSettings)
         val btnSave = dialog.findViewById<TextView>(R.id.btnSaveSettings)
 
         tvVersion.text = "Версия ${BuildConfig.VERSION_NAME}"
 
         var selectedBuiltIn = storage.useBuiltInPlayer
+        var publicJacRedEnabled = storage.usePublicJacRed
+        var rutorFallbackEnabled = storage.useRutorFallback
+
         fun refreshPlayerChips() {
             btnPlayerBuiltin.isSelected = selectedBuiltIn
             btnPlayerExternal.isSelected = !selectedBuiltIn
         }
+
+        fun refreshSourceChips() {
+            btnTogglePublicJacRed.isSelected = publicJacRedEnabled
+            btnTogglePublicJacRed.text = getString(
+                if (publicJacRedEnabled) R.string.source_jacred_on else R.string.source_jacred_off
+            )
+            btnToggleRutorFallback.isSelected = rutorFallbackEnabled
+            btnToggleRutorFallback.text = getString(
+                if (rutorFallbackEnabled) R.string.source_rutor_on else R.string.source_rutor_off
+            )
+        }
+
         refreshPlayerChips()
+        refreshSourceChips()
 
         btnPlayerBuiltin.setOnClickListener {
             selectedBuiltIn = true
@@ -828,6 +855,14 @@ class MainActivity : AppCompatActivity() {
         btnPlayerExternal.setOnClickListener {
             selectedBuiltIn = false
             refreshPlayerChips()
+        }
+        btnTogglePublicJacRed.setOnClickListener {
+            publicJacRedEnabled = !publicJacRedEnabled
+            refreshSourceChips()
+        }
+        btnToggleRutorFallback.setOnClickListener {
+            rutorFallbackEnabled = !rutorFallbackEnabled
+            refreshSourceChips()
         }
 
         btnCheckUpdates.setOnClickListener {
@@ -850,14 +885,85 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        btnCheckMirrors.setOnClickListener {
+            mirrorCheckJob?.cancel()
+            layoutMirrorResults.visibility = View.VISIBLE
+            progressMirrorCheck.visibility = View.VISIBLE
+            tvMirrorCheckStatus.text = getString(R.string.checking_mirrors)
+            layoutMirrorList.removeAllViews()
+
+            val customUrlInput = etCustomParser.text.toString()
+            val apiKeyInput = etApiKey.text.toString()
+            val rutorInput = etRutorMirror.text.toString()
+
+            mirrorCheckJob = uiScope.launch {
+                val results = searchEngine.checkMirrors(
+                    customUrl = customUrlInput,
+                    apiKey = apiKeyInput,
+                    rutorUrl = rutorInput
+                )
+                if (!dialog.isShowing) return@launch
+
+                progressMirrorCheck.visibility = View.GONE
+                val okCount = results.count { it.ok }
+                tvMirrorCheckStatus.text = "Проверка зеркал: доступно $okCount из ${results.size}"
+
+                layoutMirrorList.removeAllViews()
+                val dp4 = (4 * resources.displayMetrics.density).toInt()
+                for (item in results) {
+                    val row = LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(0, dp4, 0, dp4)
+                    }
+                    val tvName = TextView(this@MainActivity).apply {
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                        text = item.name
+                        textSize = 12f
+                        maxLines = 1
+                        ellipsize = TextUtils.TruncateAt.END
+                        setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_secondary))
+                    }
+                    val tvState = TextView(this@MainActivity).apply {
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
+                        )
+                        text = if (item.ok) {
+                            "✓ OK (${item.latencyMs} мс)"
+                        } else {
+                            "✕ ${item.detail}"
+                        }
+                        textSize = 12f
+                        setTypeface(null, Typeface.BOLD)
+                        setTextColor(
+                            ContextCompat.getColor(
+                                this@MainActivity,
+                                if (item.ok) R.color.status_ok else R.color.status_err
+                            )
+                        )
+                    }
+                    row.addView(tvName)
+                    row.addView(tvState)
+                    layoutMirrorList.addView(row)
+                }
+            }
+        }
+
         etTorrServe.setText(storage.torrServeUrl)
         etCustomParser.setText(storage.customParserUrl)
         etApiKey.setText(storage.parserApiKey)
         etRutorMirror.setText(storage.rutorMirrorUrl)
 
+        dialog.setOnDismissListener {
+            mirrorCheckJob?.cancel()
+        }
+
         btnCancel.setOnClickListener { dialog.dismiss() }
         btnSave.setOnClickListener {
             storage.useBuiltInPlayer = selectedBuiltIn
+            storage.usePublicJacRed = publicJacRedEnabled
+            storage.useRutorFallback = rutorFallbackEnabled
             storage.torrServeUrl = etTorrServe.text.toString()
             storage.customParserUrl = etCustomParser.text.toString()
             storage.parserApiKey = etApiKey.text.toString()

@@ -1,6 +1,10 @@
 package com.torplay.tv
 
+import android.os.SystemClock
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -9,17 +13,27 @@ import org.json.JSONObject
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 import java.io.StringReader
+import java.net.SocketTimeoutException
 import java.net.URLEncoder
+import java.net.UnknownHostException
 import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLException
 
 class SearchEngine(private val storage: StorageManager) {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(7, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .build()
+
+    private val probeClient = OkHttpClient.Builder()
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
         .followRedirects(true)
         .followSslRedirects(true)
         .build()
@@ -41,15 +55,24 @@ class SearchEngine(private val storage: StorageManager) {
             return@withContext SearchResponse(emptyList(), "", "Пустой запрос")
         }
 
+        val customUrl = storage.customParserUrl
+        val allowPublicJacRed = storage.usePublicJacRed
+        val allowRutor = storage.useRutorFallback
+
+        if (customUrl.isBlank() && !allowPublicJacRed && !allowRutor) {
+            return@withContext SearchResponse(
+                items = emptyList(),
+                sourceName = "",
+                error = "Все источники поиска отключены в настройках"
+            )
+        }
+
         val errors = mutableListOf<String>()
 
         // 1. Custom user parser (JacRed or Jackett Torznab)
-        val customUrl = storage.customParserUrl
         if (customUrl.isNotBlank()) {
             val apiKey = storage.parserApiKey
-            val customItems = if (customUrl.contains("torznab", ignoreCase = true) ||
-                customUrl.contains("/api/v2.0/indexers", ignoreCase = true)
-            ) {
+            val customItems = if (isTorznabUrl(customUrl)) {
                 runCatching { queryTorznab(customUrl, apiKey, cleanQuery) }
                     .onFailure { errors.add("Jackett: ${it.message}") }
                     .getOrNull()
@@ -68,33 +91,37 @@ class SearchEngine(private val storage: StorageManager) {
         }
 
         // 2. Built-in public JacRed mirrors
-        for (mirror in publicJacRedMirrors) {
-            val items = runCatching { queryJacRed(mirror, "", cleanQuery) }
-                .onFailure { errors.add("${hostLabel(mirror)}: ${it.message}") }
-                .getOrNull()
+        if (allowPublicJacRed) {
+            for (mirror in publicJacRedMirrors) {
+                val items = runCatching { queryJacRed(mirror, "", cleanQuery) }
+                    .onFailure { errors.add("${hostLabel(mirror)}: ${it.message}") }
+                    .getOrNull()
 
-            if (!items.isNullOrEmpty()) {
-                return@withContext SearchResponse(
-                    items = sortAndDeduplicate(items),
-                    sourceName = "JacRed (${hostLabel(mirror)})"
-                )
+                if (!items.isNullOrEmpty()) {
+                    return@withContext SearchResponse(
+                        items = sortAndDeduplicate(items),
+                        sourceName = "JacRed (${hostLabel(mirror)})"
+                    )
+                }
             }
         }
 
         // 3. Direct fallback parser (Rutor open mirrors)
-        val rutorMirrors = linkedSetOf(storage.rutorMirrorUrl).apply {
-            addAll(fallbackRutorMirrors)
-        }
-        for (mirror in rutorMirrors) {
-            val items = runCatching { queryRutorHtml(mirror, cleanQuery) }
-                .onFailure { errors.add("${hostLabel(mirror)}: ${it.message}") }
-                .getOrNull()
+        if (allowRutor) {
+            val rutorMirrors = linkedSetOf(storage.rutorMirrorUrl).apply {
+                addAll(fallbackRutorMirrors)
+            }
+            for (mirror in rutorMirrors) {
+                val items = runCatching { queryRutorHtml(mirror, cleanQuery) }
+                    .onFailure { errors.add("${hostLabel(mirror)}: ${it.message}") }
+                    .getOrNull()
 
-            if (!items.isNullOrEmpty()) {
-                return@withContext SearchResponse(
-                    items = sortAndDeduplicate(items),
-                    sourceName = "Rutor (${hostLabel(mirror)})"
-                )
+                if (!items.isNullOrEmpty()) {
+                    return@withContext SearchResponse(
+                        items = sortAndDeduplicate(items),
+                        sourceName = "Rutor (${hostLabel(mirror)})"
+                    )
+                }
             }
         }
 
@@ -106,10 +133,123 @@ class SearchEngine(private val storage: StorageManager) {
         SearchResponse(emptyList(), "", summaryError)
     }
 
-    private fun queryJacRed(baseUrl: String, apiKey: String, query: String): List<TorrentItem> {
+    suspend fun checkMirrors(
+        customUrl: String,
+        apiKey: String,
+        rutorUrl: String
+    ): List<MirrorCheckResult> = withContext(Dispatchers.IO) {
+        data class ProbeTarget(val name: String, val displayUrl: String, val probeUrl: String)
+
+        val targets = mutableListOf<ProbeTarget>()
+
+        val cleanCustom = customUrl.trim().trimEnd('/')
+        if (cleanCustom.isNotBlank()) {
+            val probeUrl = if (isTorznabUrl(cleanCustom)) {
+                val sep = if (cleanCustom.contains("?")) "&" else "?"
+                buildString {
+                    append(cleanCustom).append(sep).append("t=caps")
+                    if (apiKey.isNotBlank() && !cleanCustom.contains("apikey=", ignoreCase = true)) {
+                        append("&apikey=").append(URLEncoder.encode(apiKey.trim(), "UTF-8"))
+                    }
+                }
+            } else {
+                buildJacRedSearchUrl(cleanCustom, apiKey.trim(), "test")
+            }
+            targets.add(
+                ProbeTarget(
+                    name = "Свой: ${hostLabel(cleanCustom)}",
+                    displayUrl = cleanCustom,
+                    probeUrl = probeUrl
+                )
+            )
+        }
+
+        for (mirror in publicJacRedMirrors) {
+            targets.add(
+                ProbeTarget(
+                    name = "JacRed (${hostLabel(mirror)})",
+                    displayUrl = mirror,
+                    probeUrl = buildJacRedSearchUrl(mirror, "", "test")
+                )
+            )
+        }
+
+        val cleanRutor = rutorUrl.trim().trimEnd('/').ifBlank { StorageManager.DEFAULT_RUTOR_MIRROR }
+        targets.add(
+            ProbeTarget(
+                name = "Rutor (${hostLabel(cleanRutor)})",
+                displayUrl = cleanRutor,
+                probeUrl = "$cleanRutor/"
+            )
+        )
+
+        coroutineScope {
+            targets.map { target ->
+                async {
+                    probeEndpoint(target.name, target.displayUrl, target.probeUrl)
+                }
+            }.awaitAll()
+        }
+    }
+
+    private fun probeEndpoint(name: String, displayUrl: String, probeUrl: String): MirrorCheckResult {
+        val started = SystemClock.elapsedRealtime()
+        val request = try {
+            Request.Builder()
+                .url(probeUrl)
+                .header("User-Agent", USER_AGENT)
+                .header("Accept", "*/*")
+                .build()
+        } catch (_: IllegalArgumentException) {
+            return MirrorCheckResult(
+                name = name,
+                url = displayUrl,
+                ok = false,
+                latencyMs = 0L,
+                detail = "Неверный URL"
+            )
+        }
+
+        return try {
+            probeClient.newCall(request).execute().use { response ->
+                val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(1L)
+                val code = response.code
+                val ok = code in 200..299
+                MirrorCheckResult(
+                    name = name,
+                    url = displayUrl,
+                    ok = ok,
+                    latencyMs = elapsed,
+                    detail = if (ok) "OK" else "HTTP $code"
+                )
+            }
+        } catch (err: Exception) {
+            val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(1L)
+            val reason = when (err) {
+                is SocketTimeoutException -> "Таймаут"
+                is UnknownHostException -> "Нет DNS / сети"
+                is SSLException -> "Ошибка SSL"
+                else -> err.message?.take(28)?.ifBlank { "Нет ответа" } ?: "Нет ответа"
+            }
+            MirrorCheckResult(
+                name = name,
+                url = displayUrl,
+                ok = false,
+                latencyMs = elapsed,
+                detail = reason
+            )
+        }
+    }
+
+    private fun isTorznabUrl(url: String): Boolean {
+        return url.contains("torznab", ignoreCase = true) ||
+            url.contains("/api/v2.0/indexers", ignoreCase = true)
+    }
+
+    private fun buildJacRedSearchUrl(baseUrl: String, apiKey: String, query: String): String {
         val encoded = URLEncoder.encode(query, "UTF-8")
         val normalized = baseUrl.trimEnd('/')
-        val url = buildString {
+        return buildString {
             append(normalized)
             if (!normalized.endsWith("/api/v1.0/torrents")) {
                 append("/api/v1.0/torrents")
@@ -119,6 +259,10 @@ class SearchEngine(private val storage: StorageManager) {
                 append("&apikey=").append(URLEncoder.encode(apiKey, "UTF-8"))
             }
         }
+    }
+
+    private fun queryJacRed(baseUrl: String, apiKey: String, query: String): List<TorrentItem> {
+        val url = buildJacRedSearchUrl(baseUrl, apiKey, query)
 
         val request = Request.Builder()
             .url(url)
@@ -430,13 +574,11 @@ class SearchEngine(private val storage: StorageManager) {
             .trim()
         if (text.isBlank()) return 0L
 
-        // 1. Numeric epoch timestamp (seconds or milliseconds)
         if (EPOCH_REGEX.matches(text)) {
             val num = text.toLongOrNull() ?: return 0L
             return normalizeEpoch(num)
         }
 
-        // 2. ISO-8601 (e.g. 2024-05-12T18:30:00Z, 2024-05-12T18:30:00+03:00, 2024-05-12)
         ISO_DATE_REGEX.find(text)?.let { m ->
             val year = m.groupValues[1].toIntOrNull() ?: return 0L
             val month = m.groupValues[2].toIntOrNull() ?: return 0L
@@ -449,7 +591,6 @@ class SearchEngine(private val storage: StorageManager) {
             return buildUtcMillis(year, month, day, hour, minute, second, if (hasTime) tz else "")
         }
 
-        // 3. RFC-1123 / RFC-822 (e.g. Sun, 12 May 2024 18:30:00 +0300)
         RFC_DATE_REGEX.find(text)?.let { m ->
             val day = m.groupValues[1].toIntOrNull() ?: return 0L
             val month = parseMonthName(m.groupValues[2]) ?: return 0L
@@ -463,7 +604,6 @@ class SearchEngine(private val storage: StorageManager) {
             return buildUtcMillis(year, month, day, hour, minute, second, if (hasTime) tz else "")
         }
 
-        // 4. Rutor / human localized date (e.g. 12 Май 24, 05 Фев 2024)
         HUMAN_DATE_REGEX.find(text)?.let { m ->
             val day = m.groupValues[1].toIntOrNull() ?: return 0L
             val month = parseMonthName(m.groupValues[2]) ?: return 0L
@@ -472,7 +612,6 @@ class SearchEngine(private val storage: StorageManager) {
             return buildUtcMillis(year, month, day, 12, 0, 0, "")
         }
 
-        // 5. Numeric DMY (e.g. 12.05.2024 or 12/05/24)
         DMY_DATE_REGEX.find(text)?.let { m ->
             val day = m.groupValues[1].toIntOrNull() ?: return 0L
             val month = m.groupValues[2].toIntOrNull() ?: return 0L

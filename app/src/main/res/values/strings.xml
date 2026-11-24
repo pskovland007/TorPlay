@@ -14,13 +14,19 @@
     <string name="status_checking">TorrServe: проверка…</string>
     <string name="status_starting">TorrServe: запуск…</string>
     <string name="status_offline">TorrServe: выкл (OK — запустить)</string>
-    <string name="empty_prompt">Введите запрос или нажмите «Голос».
-Навигация: стрелки пульта и OK.</string>
+    <string name="empty_prompt">Введите запрос или нажмите «Голос».\nНавигация: стрелки пульта и OK.</string>
     <string name="searching">Ищем раздачи…</string>
     <string name="no_results">Ничего не найдено. Попробуйте изменить запрос.</string>
     <string name="no_filtered_results">Нет раздач под выбранный фильтр качества.</string>
     <string name="settings_title">Настройки TorPlay</string>
     <string name="settings_player_label">Плеер по умолчанию</string>
+    <string name="settings_sources_label">Источники поиска</string>
+    <string name="source_jacred_on">✓ Публичный JacRed: вкл</string>
+    <string name="source_jacred_off">✕ Публичный JacRed: выкл</string>
+    <string name="source_rutor_on">✓ Резервный Rutor: вкл</string>
+    <string name="source_rutor_off">✕ Резервный Rutor: выкл</string>
+    <string name="btn_check_mirrors">Проверить зеркала</string>
+    <string name="checking_mirrors">Проверяем доступность зеркал…</string>
     <string name="settings_torrserve_label">Адрес TorrServe MatriX</string>
     <string name="settings_jacred_label">Свой JacRed / Jackett URL (необязательно)</string>
     <string name="settings_apikey_label">API-ключ (только для своего сервера)</string>
