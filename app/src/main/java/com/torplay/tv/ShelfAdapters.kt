@@ -36,6 +36,7 @@ class HistoryAdapter(
         private val tvHdr: TextView = itemView.findViewById(R.id.tvHdr)
         private val tvSize: TextView = itemView.findViewById(R.id.tvSize)
         private val tvSeeds: TextView = itemView.findViewById(R.id.tvSeeds)
+        private val tvDate: TextView = itemView.findViewById(R.id.tvDate)
         private val tvSource: TextView = itemView.findViewById(R.id.tvSource)
 
         fun bind(entry: WatchHistoryEntry) {
@@ -44,7 +45,9 @@ class HistoryAdapter(
             tvQuality.setBackgroundResource(R.drawable.bg_badge_1080)
             tvHdr.visibility = View.GONE
             tvSize.text = entry.progressText()
-            tvSeeds.text = ""
+            tvSize.visibility = View.VISIBLE
+            tvSeeds.visibility = View.GONE
+            tvDate.visibility = View.GONE
             tvSource.text = "Нажмите OK для продолжения"
             itemView.setOnClickListener { onItemClick(entry) }
         }
@@ -81,6 +84,7 @@ class FavoriteAdapter(
         private val tvHdr: TextView = itemView.findViewById(R.id.tvHdr)
         private val tvSize: TextView = itemView.findViewById(R.id.tvSize)
         private val tvSeeds: TextView = itemView.findViewById(R.id.tvSeeds)
+        private val tvDate: TextView = itemView.findViewById(R.id.tvDate)
         private val tvSource: TextView = itemView.findViewById(R.id.tvSource)
 
         fun bind(fav: FavoriteQuery) {
@@ -88,8 +92,9 @@ class FavoriteAdapter(
             tvQuality.text = "★"
             tvQuality.setBackgroundResource(R.drawable.bg_badge_hdr)
             tvHdr.visibility = View.GONE
-            tvSize.text = ""
-            tvSeeds.text = ""
+            tvSize.visibility = View.GONE
+            tvSeeds.visibility = View.GONE
+            tvDate.visibility = View.GONE
             tvSource.text = "Быстрый поиск раздач"
             itemView.setOnClickListener { onItemClick(fav) }
         }

@@ -144,7 +144,9 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        refreshHomeShelves()
+        if (layoutFilters.visibility != View.VISIBLE && rvResults.visibility != View.VISIBLE) {
+            refreshHomeShelves()
+        }
         refreshTorrServeStatus(autoStart = false)
     }
 
@@ -188,12 +190,12 @@ class MainActivity : AppCompatActivity() {
             }
             return
         }
-        if (rvResults.visibility == View.VISIBLE) {
+        if (layoutFilters.visibility == View.VISIBLE || rvResults.visibility == View.VISIBLE) {
+            searchJob?.cancel()
             allResults = emptyList()
             adapter.submitList(emptyList())
             layoutFilters.visibility = View.GONE
             rvResults.visibility = View.GONE
-            layoutHomeShelves.visibility = View.VISIBLE
             refreshHomeShelves()
             etSearch.requestFocus()
             return
@@ -270,7 +272,9 @@ class MainActivity : AppCompatActivity() {
             }
             val added = storage.toggleFavorite(q)
             updateFavoriteButtonUi()
-            refreshHomeShelves()
+            if (layoutFilters.visibility != View.VISIBLE && rvResults.visibility != View.VISIBLE) {
+                refreshHomeShelves()
+            }
             Toast.makeText(
                 this,
                 if (added) "Добавлено в избранное" else "Удалено из избранного",
@@ -320,6 +324,37 @@ class MainActivity : AppCompatActivity() {
                 SortMode.DATE -> getString(R.string.sort_date)
             }
             renderFilteredResults(focusFirst = false)
+        }
+    }
+
+    private fun updateDpadFocusRoutes() {
+        val filtersVisible = layoutFilters.visibility == View.VISIBLE
+        val resultsVisible = rvResults.visibility == View.VISIBLE
+        val favsVisible = layoutHomeShelves.visibility == View.VISIBLE && rvFavorites.visibility == View.VISIBLE
+        val historyVisible = layoutHomeShelves.visibility == View.VISIBLE && rvHistory.visibility == View.VISIBLE
+
+        if (filtersVisible) {
+            etSearch.nextFocusDownId = R.id.btnFilterAll
+            btnVoiceSearch.nextFocusDownId = R.id.btnFilterHdr
+            btnSearch.nextFocusDownId = R.id.btnSort
+
+            val filterDown = if (resultsVisible) R.id.rvResults else View.NO_ID
+            btnFilterAll.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnFilterAll
+            btnFilter4k.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnFilter4k
+            btnFilter1080.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnFilter1080
+            btnFilter720.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnFilter720
+            btnFilterHdr.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnFilterHdr
+            btnSort.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnSort
+        } else {
+            val downTarget = when {
+                favsVisible -> R.id.rvFavorites
+                historyVisible -> R.id.rvHistory
+                else -> View.NO_ID
+            }
+            etSearch.nextFocusDownId = if (downTarget != View.NO_ID) downTarget else R.id.etSearch
+            btnVoiceSearch.nextFocusDownId = if (downTarget != View.NO_ID) downTarget else R.id.btnVoiceSearch
+            btnSearch.nextFocusDownId = if (downTarget != View.NO_ID) downTarget else R.id.btnSearch
+            rvHistory.nextFocusUpId = if (favsVisible) R.id.rvFavorites else R.id.etSearch
         }
     }
 
@@ -373,7 +408,14 @@ class MainActivity : AppCompatActivity() {
             rvHistory.visibility = View.GONE
         }
 
-        layoutEmpty.visibility = if (favs.isEmpty() && history.isEmpty()) View.VISIBLE else View.GONE
+        val hasShelves = favs.isNotEmpty() || history.isNotEmpty()
+        layoutHomeShelves.visibility = if (hasShelves) View.VISIBLE else View.GONE
+        layoutEmpty.visibility = if (hasShelves) View.GONE else View.VISIBLE
+        if (!hasShelves) {
+            progressSearch.visibility = View.GONE
+            tvEmptyMessage.text = getString(R.string.empty_prompt)
+        }
+        updateDpadFocusRoutes()
     }
 
     private fun applyFilter(filter: QualityFilter) {
@@ -424,16 +466,20 @@ class MainActivity : AppCompatActivity() {
         if (sorted.isNotEmpty()) {
             rvResults.visibility = View.VISIBLE
             layoutEmpty.visibility = View.GONE
+            updateDpadFocusRoutes()
             if (focusFirst) {
                 rvResults.post {
                     rvResults.scrollToPosition(0)
-                    rvResults.getChildAt(0)?.requestFocus()
+                    rvResults.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus()
+                        ?: rvResults.getChildAt(0)?.requestFocus()
                 }
             }
         } else {
             rvResults.visibility = View.GONE
             layoutEmpty.visibility = View.VISIBLE
+            progressSearch.visibility = View.GONE
             tvEmptyMessage.text = getString(R.string.no_filtered_results)
+            updateDpadFocusRoutes()
         }
     }
 
@@ -491,15 +537,12 @@ class MainActivity : AppCompatActivity() {
             updateFilterChipsUi()
             adapter.submitList(emptyList())
             layoutFilters.visibility = View.GONE
+            layoutHomeShelves.visibility = View.GONE
             rvResults.visibility = View.GONE
-            layoutHomeShelves.visibility = View.VISIBLE
-            tvFavoritesHeader.visibility = View.GONE
-            rvFavorites.visibility = View.GONE
-            tvHistoryHeader.visibility = View.GONE
-            rvHistory.visibility = View.GONE
             layoutEmpty.visibility = View.VISIBLE
             progressSearch.visibility = View.VISIBLE
             tvEmptyMessage.text = getString(R.string.searching)
+            updateDpadFocusRoutes()
 
             val response = searchEngine.search(query)
             progressSearch.visibility = View.GONE
@@ -512,10 +555,11 @@ class MainActivity : AppCompatActivity() {
                 renderFilteredResults(focusFirst = true)
             } else {
                 layoutFilters.visibility = View.GONE
+                layoutHomeShelves.visibility = View.GONE
                 rvResults.visibility = View.GONE
-                layoutHomeShelves.visibility = View.VISIBLE
                 layoutEmpty.visibility = View.VISIBLE
                 tvEmptyMessage.text = response.error ?: getString(R.string.no_results)
+                updateDpadFocusRoutes()
             }
         }
     }
@@ -746,15 +790,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showSettingsDialog() {
+        hideKeyboard()
         val dialog = Dialog(this)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
         dialog.setContentView(R.layout.dialog_settings)
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
         dialog.window?.setLayout(
             (resources.displayMetrics.widthPixels * 0.66).toInt(),
             WindowManager.LayoutParams.WRAP_CONTENT
         )
 
+        val tvVersion = dialog.findViewById<TextView>(R.id.tvSettingsVersion)
         val btnCheckUpdates = dialog.findViewById<TextView>(R.id.btnCheckUpdates)
         val btnPlayerBuiltin = dialog.findViewById<TextView>(R.id.btnPlayerBuiltin)
         val btnPlayerExternal = dialog.findViewById<TextView>(R.id.btnPlayerExternal)
@@ -764,6 +811,8 @@ class MainActivity : AppCompatActivity() {
         val etRutorMirror = dialog.findViewById<EditText>(R.id.etRutorMirror)
         val btnCancel = dialog.findViewById<TextView>(R.id.btnCancelSettings)
         val btnSave = dialog.findViewById<TextView>(R.id.btnSaveSettings)
+
+        tvVersion.text = "Версия ${BuildConfig.VERSION_NAME}"
 
         var selectedBuiltIn = storage.useBuiltInPlayer
         fun refreshPlayerChips() {
@@ -819,7 +868,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         dialog.show()
-        etTorrServe.requestFocus()
+        if (selectedBuiltIn) {
+            btnPlayerBuiltin.requestFocus()
+        } else {
+            btnPlayerExternal.requestFocus()
+        }
     }
 
     private fun hideKeyboard() {

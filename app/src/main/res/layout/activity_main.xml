@@ -51,9 +51,13 @@
                 android:layout_marginEnd="8dp"
                 android:background="@drawable/bg_status_pill"
                 android:clickable="true"
+                android:descendantFocusability="blocksDescendants"
                 android:focusable="true"
                 android:gravity="center_vertical"
                 android:nextFocusDown="@+id/etSearch"
+                android:nextFocusLeft="@+id/btnTorrServeStatus"
+                android:nextFocusRight="@+id/btnFavoriteQuery"
+                android:nextFocusUp="@+id/btnTorrServeStatus"
                 android:orientation="horizontal"
                 android:paddingStart="12dp"
                 android:paddingEnd="12dp">
@@ -84,6 +88,9 @@
                 android:focusable="true"
                 android:gravity="center"
                 android:nextFocusDown="@+id/btnVoiceSearch"
+                android:nextFocusLeft="@+id/btnTorrServeStatus"
+                android:nextFocusRight="@+id/btnSettings"
+                android:nextFocusUp="@+id/btnFavoriteQuery"
                 android:paddingStart="14dp"
                 android:paddingEnd="14dp"
                 android:text="@string/btn_fav_toggle"
@@ -100,6 +107,9 @@
                 android:focusable="true"
                 android:gravity="center"
                 android:nextFocusDown="@+id/btnSearch"
+                android:nextFocusLeft="@+id/btnFavoriteQuery"
+                android:nextFocusRight="@+id/btnSettings"
+                android:nextFocusUp="@+id/btnSettings"
                 android:paddingStart="14dp"
                 android:paddingEnd="14dp"
                 android:text="@string/btn_settings"
@@ -126,6 +136,7 @@
                 android:imeOptions="actionSearch"
                 android:inputType="text"
                 android:maxLines="1"
+                android:nextFocusLeft="@+id/etSearch"
                 android:nextFocusRight="@+id/btnVoiceSearch"
                 android:nextFocusUp="@+id/btnTorrServeStatus"
                 android:paddingStart="16dp"
@@ -179,6 +190,7 @@
                 android:focusable="true"
                 android:gravity="center"
                 android:nextFocusLeft="@+id/btnVoiceSearch"
+                android:nextFocusRight="@+id/btnSearch"
                 android:nextFocusUp="@+id/btnSettings"
                 android:text="@string/btn_search"
                 android:textColor="@color/text_primary"
@@ -199,13 +211,15 @@
             <TextView
                 android:id="@+id/btnFilterAll"
                 android:layout_width="wrap_content"
-                android:layout_height="32dp"
+                android:layout_height="34dp"
                 android:layout_marginEnd="7dp"
                 android:background="@drawable/bg_chip_selector"
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
                 android:nextFocusDown="@+id/rvResults"
+                android:nextFocusLeft="@+id/btnFilterAll"
+                android:nextFocusRight="@+id/btnFilter4k"
                 android:nextFocusUp="@+id/etSearch"
                 android:paddingStart="12dp"
                 android:paddingEnd="12dp"
@@ -217,13 +231,15 @@
             <TextView
                 android:id="@+id/btnFilter4k"
                 android:layout_width="wrap_content"
-                android:layout_height="32dp"
+                android:layout_height="34dp"
                 android:layout_marginEnd="7dp"
                 android:background="@drawable/bg_chip_selector"
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
                 android:nextFocusDown="@+id/rvResults"
+                android:nextFocusLeft="@+id/btnFilterAll"
+                android:nextFocusRight="@+id/btnFilter1080"
                 android:nextFocusUp="@+id/etSearch"
                 android:paddingStart="12dp"
                 android:paddingEnd="12dp"
@@ -235,13 +251,15 @@
             <TextView
                 android:id="@+id/btnFilter1080"
                 android:layout_width="wrap_content"
-                android:layout_height="32dp"
+                android:layout_height="34dp"
                 android:layout_marginEnd="7dp"
                 android:background="@drawable/bg_chip_selector"
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
                 android:nextFocusDown="@+id/rvResults"
+                android:nextFocusLeft="@+id/btnFilter4k"
+                android:nextFocusRight="@+id/btnFilter720"
                 android:nextFocusUp="@+id/etSearch"
                 android:paddingStart="12dp"
                 android:paddingEnd="12dp"
@@ -253,13 +271,15 @@
             <TextView
                 android:id="@+id/btnFilter720"
                 android:layout_width="wrap_content"
-                android:layout_height="32dp"
+                android:layout_height="34dp"
                 android:layout_marginEnd="7dp"
                 android:background="@drawable/bg_chip_selector"
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
                 android:nextFocusDown="@+id/rvResults"
+                android:nextFocusLeft="@+id/btnFilter1080"
+                android:nextFocusRight="@+id/btnFilterHdr"
                 android:nextFocusUp="@+id/etSearch"
                 android:paddingStart="12dp"
                 android:paddingEnd="12dp"
@@ -271,14 +291,16 @@
             <TextView
                 android:id="@+id/btnFilterHdr"
                 android:layout_width="wrap_content"
-                android:layout_height="32dp"
+                android:layout_height="34dp"
                 android:layout_marginEnd="10dp"
                 android:background="@drawable/bg_chip_selector"
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
                 android:nextFocusDown="@+id/rvResults"
-                android:nextFocusUp="@+id/etSearch"
+                android:nextFocusLeft="@+id/btnFilter720"
+                android:nextFocusRight="@+id/btnSort"
+                android:nextFocusUp="@+id/btnVoiceSearch"
                 android:paddingStart="12dp"
                 android:paddingEnd="12dp"
                 android:text="@string/filter_hdr"
@@ -299,13 +321,15 @@
             <TextView
                 android:id="@+id/btnSort"
                 android:layout_width="wrap_content"
-                android:layout_height="32dp"
+                android:layout_height="34dp"
                 android:layout_marginStart="8dp"
                 android:background="@drawable/bg_chip_selector"
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
                 android:nextFocusDown="@+id/rvResults"
+                android:nextFocusLeft="@+id/btnFilterHdr"
+                android:nextFocusRight="@+id/btnSort"
                 android:nextFocusUp="@+id/btnSearch"
                 android:paddingStart="12dp"
                 android:paddingEnd="12dp"
@@ -321,7 +345,8 @@
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:visibility="gone">
 
             <!-- Favorites Shelf -->
             <TextView
@@ -341,6 +366,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:clipToPadding="false"
+                android:nextFocusUp="@+id/etSearch"
                 android:visibility="gone" />
 
             <!-- History Shelf -->
@@ -361,35 +387,36 @@
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
-                android:clipToPadding="false" />
+                android:clipToPadding="false"
+                android:visibility="gone" />
+        </LinearLayout>
 
-            <!-- Prompt / Searching / Empty state -->
-            <LinearLayout
-                android:id="@+id/layoutEmpty"
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
+        <!-- Prompt / Searching / Empty / No-filtered-results state -->
+        <LinearLayout
+            android:id="@+id/layoutEmpty"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <ProgressBar
+                android:id="@+id/progressSearch"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:layout_marginBottom="12dp"
+                android:indeterminateTint="@color/accent_emerald"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/tvEmptyMessage"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:gravity="center"
-                android:orientation="vertical">
-
-                <ProgressBar
-                    android:id="@+id/progressSearch"
-                    android:layout_width="42dp"
-                    android:layout_height="42dp"
-                    android:layout_marginBottom="12dp"
-                    android:indeterminateTint="@color/accent_emerald"
-                    android:visibility="gone" />
-
-                <TextView
-                    android:id="@+id/tvEmptyMessage"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:gravity="center"
-                    android:lineSpacingMultiplier="1.3"
-                    android:text="@string/empty_prompt"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="15sp" />
-            </LinearLayout>
+                android:lineSpacingMultiplier="1.3"
+                android:text="@string/empty_prompt"
+                android:textColor="@color/text_secondary"
+                android:textSize="15sp" />
         </LinearLayout>
 
         <!-- Search Results List -->
@@ -399,6 +426,7 @@
             android:layout_height="0dp"
             android:layout_weight="1"
             android:clipToPadding="false"
+            android:nextFocusUp="@+id/btnFilterAll"
             android:paddingBottom="12dp"
             android:visibility="gone" />
     </LinearLayout>

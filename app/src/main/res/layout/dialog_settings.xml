@@ -17,14 +17,28 @@
             android:orientation="horizontal"
             android:paddingBottom="12dp">
 
-            <TextView
+            <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="@string/settings_title"
-                android:textColor="@color/text_primary"
-                android:textSize="19sp"
-                android:textStyle="bold" />
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/settings_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="19sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvSettingsVersion"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:textColor="@color/text_muted"
+                    android:textSize="12sp" />
+            </LinearLayout>
 
             <TextView
                 android:id="@+id/btnCheckUpdates"
@@ -34,10 +48,14 @@
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
+                android:nextFocusDown="@+id/btnPlayerExternal"
+                android:nextFocusLeft="@+id/btnCheckUpdates"
+                android:nextFocusRight="@+id/btnCheckUpdates"
+                android:nextFocusUp="@+id/btnCheckUpdates"
                 android:paddingStart="14dp"
                 android:paddingEnd="14dp"
                 android:text="@string/btn_check_update"
-                android:textColor="@color/accent_emerald"
+                android:textColor="@color/text_button_accent_selector"
                 android:textSize="13sp"
                 android:textStyle="bold" />
         </LinearLayout>
@@ -66,6 +84,10 @@
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
+                android:nextFocusDown="@+id/etTorrServeUrl"
+                android:nextFocusLeft="@+id/btnPlayerBuiltin"
+                android:nextFocusRight="@+id/btnPlayerExternal"
+                android:nextFocusUp="@+id/btnCheckUpdates"
                 android:text="Встроенный (Media3)"
                 android:textColor="@color/text_primary"
                 android:textSize="13sp"
@@ -80,6 +102,10 @@
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
+                android:nextFocusDown="@+id/etTorrServeUrl"
+                android:nextFocusLeft="@+id/btnPlayerBuiltin"
+                android:nextFocusRight="@+id/btnPlayerExternal"
+                android:nextFocusUp="@+id/btnCheckUpdates"
                 android:text="Внешний (MX Player)"
                 android:textColor="@color/text_primary"
                 android:textSize="13sp"
@@ -102,6 +128,8 @@
             android:background="@drawable/bg_input_selector"
             android:hint="http://127.0.0.1:8090"
             android:inputType="textUri"
+            android:nextFocusDown="@+id/etCustomParserUrl"
+            android:nextFocusUp="@+id/btnPlayerBuiltin"
             android:paddingStart="12dp"
             android:paddingEnd="12dp"
             android:singleLine="true"
@@ -125,6 +153,8 @@
             android:background="@drawable/bg_input_selector"
             android:hint="Оставьте пустым для автоподбора"
             android:inputType="textUri"
+            android:nextFocusDown="@+id/etApiKey"
+            android:nextFocusUp="@+id/etTorrServeUrl"
             android:paddingStart="12dp"
             android:paddingEnd="12dp"
             android:singleLine="true"
@@ -148,6 +178,8 @@
             android:background="@drawable/bg_input_selector"
             android:hint="API Key (если требуется)"
             android:inputType="text"
+            android:nextFocusDown="@+id/etRutorMirror"
+            android:nextFocusUp="@+id/etCustomParserUrl"
             android:paddingStart="12dp"
             android:paddingEnd="12dp"
             android:singleLine="true"
@@ -171,6 +203,8 @@
             android:background="@drawable/bg_input_selector"
             android:hint="https://rutor.info"
             android:inputType="textUri"
+            android:nextFocusDown="@+id/btnSaveSettings"
+            android:nextFocusUp="@+id/etApiKey"
             android:paddingStart="12dp"
             android:paddingEnd="12dp"
             android:singleLine="true"
@@ -193,6 +227,10 @@
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
+                android:nextFocusDown="@+id/btnCancelSettings"
+                android:nextFocusLeft="@+id/btnCancelSettings"
+                android:nextFocusRight="@+id/btnSaveSettings"
+                android:nextFocusUp="@+id/etRutorMirror"
                 android:text="@string/btn_cancel"
                 android:textColor="@color/text_primary"
                 android:textSize="14sp"
@@ -206,6 +244,10 @@
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
+                android:nextFocusDown="@+id/btnSaveSettings"
+                android:nextFocusLeft="@+id/btnCancelSettings"
+                android:nextFocusRight="@+id/btnSaveSettings"
+                android:nextFocusUp="@+id/etRutorMirror"
                 android:text="@string/btn_save"
                 android:textColor="@color/text_primary"
                 android:textSize="14sp"
