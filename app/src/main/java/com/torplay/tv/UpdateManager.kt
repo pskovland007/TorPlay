@@ -95,9 +95,9 @@ class UpdateManager(private val context: Context) {
 
         return runCatching {
             apiClient.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return null
+                if (!resp.isSuccessful) return@use null
                 val raw = resp.body?.string().orEmpty()
-                if (raw.isBlank()) return null
+                if (raw.isBlank()) return@use null
                 JSONObject(raw)
             }
         }.getOrNull()
@@ -434,9 +434,9 @@ class UpdateManager(private val context: Context) {
         private const val ALL_RELEASES_URL =
             "https://api.github.com/repos/pskovland007/TorPlay/releases?per_page=5"
 
-        private val APK_VERSION_REGEX = Regex("v(\d+(?:\.\d+)+(?:-[A-Za-z0-9.]+)?)", RegexOption.IGNORE_CASE)
-        private val SEMVER_REGEX = Regex("(\d+)\.(\d+)(?:\.(\d+))?")
-        private val STAGE_REGEX = Regex("stage(\d+)(?:\.(\d+))?([a-z])?", RegexOption.IGNORE_CASE)
+        private val APK_VERSION_REGEX = Regex("v(\\d+(?:\\.\\d+)+(?:-[A-Za-z0-9.]+)?)", RegexOption.IGNORE_CASE)
+        private val SEMVER_REGEX = Regex("(\\d+)\\.(\\d+)(?:\\.(\\d+))?")
+        private val STAGE_REGEX = Regex("stage(\\d+)(?:\\.(\\d+))?([a-z])?", RegexOption.IGNORE_CASE)
 
         fun extractVersionLabel(apkName: String, tagName: String, releaseTitle: String): String {
             val cleanApk = apkName.removeSuffix(".apk").removeSuffix(".APK")
