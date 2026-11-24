@@ -320,11 +320,26 @@ class SearchEngine(private val storage: StorageManager) {
 
     private fun parseRutorRows(html: String): List<TorrentItem> {
         val results = mutableListOf<TorrentItem>()
-        val rowRegex = Regex("<tr class="(?:gai|tum)">(.*?)</tr>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
-        val magnetRegex = Regex("href="(magnet:\?xt=urn:btih:[^"]+)"", RegexOption.IGNORE_CASE)
-        val titleRegex = Regex("<a href="/torrent/[^"]+">([^<]+)</a>", RegexOption.IGNORE_CASE)
-        val sizeRegex = Regex("<td align="right">([^<]+?(?:GB|MB|ГБ|МБ))</td>", RegexOption.IGNORE_CASE)
-        val seedsRegex = Regex("<span class="green">.*?(\d+)\s*</span>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+        val rowRegex = Regex(
+            "<tr class=\"(?:gai|tum)\">(.*?)</tr>",
+            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+        )
+        val magnetRegex = Regex(
+            "href=\"(magnet:\\?xt=urn:btih:[^\"]+)\"",
+            RegexOption.IGNORE_CASE
+        )
+        val titleRegex = Regex(
+            "<a href=\"/torrent/[^\"]+\">([^<]+)</a>",
+            RegexOption.IGNORE_CASE
+        )
+        val sizeRegex = Regex(
+            "<td align=\"right\">([^<]+?(?:GB|MB|ГБ|МБ))</td>",
+            RegexOption.IGNORE_CASE
+        )
+        val seedsRegex = Regex(
+            "<span class=\"green\">.*?(\\d+)\\s*</span>",
+            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+        )
 
         for (match in rowRegex.findAll(html)) {
             val row = match.groupValues[1]
@@ -393,12 +408,12 @@ class SearchEngine(private val storage: StorageManager) {
 
     private fun detectHdr(title: String): Boolean {
         val t = title.lowercase(Locale.US)
-        return t.contains("hdr") || t.contains("dolby vision") || Regex("\bdv\b").containsMatchIn(t)
+        return t.contains("hdr") || t.contains("dolby vision") || Regex("\\bdv\\b").containsMatchIn(t)
     }
 
     private fun parseHumanSizeToBytes(text: String): Long {
-        val clean = text.replace("&nbsp;", " ").replace(' ', ' ').trim()
-        val match = Regex("([0-9]+(?:[.,][0-9]+)?)\s*(GB|MB|ГБ|МБ)", RegexOption.IGNORE_CASE).find(clean)
+        val clean = text.replace("&nbsp;", " ").replace('\u00A0', ' ').trim()
+        val match = Regex("([0-9]+(?:[.,][0-9]+)?)\\s*(GB|MB|ГБ|МБ)", RegexOption.IGNORE_CASE).find(clean)
             ?: return 0L
         val value = match.groupValues[1].replace(',', '.').toDoubleOrNull() ?: return 0L
         val unit = match.groupValues[2].uppercase(Locale.US)
@@ -413,7 +428,7 @@ class SearchEngine(private val storage: StorageManager) {
         return input
             .replace("&nbsp;", " ")
             .replace("&amp;", "&")
-            .replace("&quot;", """)
+            .replace("&quot;", "\"")
             .replace("&#039;", "'")
             .replace("&lt;", "<")
             .replace("&gt;", ">")
