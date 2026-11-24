@@ -20,13 +20,7 @@ data class TorrentItem(
 
     fun formattedSize(): String {
         if (sizeBytes > 0L) {
-            val gb = sizeBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
-            return if (gb >= 1.0) {
-                String.format(Locale.US, "%.2f ГБ", gb)
-            } else {
-                val mb = sizeBytes.toDouble() / (1024.0 * 1024.0)
-                String.format(Locale.US, "%.0f МБ", mb)
-            }
+            return formatBytes(sizeBytes)
         }
         return sizeText.ifBlank { "—" }
     }
@@ -52,6 +46,8 @@ data class TorrServeFile(
 ) {
     val fileName: String
         get() = path.substringAfterLast('/').substringAfterLast('\\').ifBlank { "video_$id.mkv" }
+
+    fun formattedSize(): String = if (length > 0L) formatBytes(length) else "—"
 }
 
 data class TorrServeInfo(
@@ -59,5 +55,36 @@ data class TorrServeInfo(
     val title: String,
     val stat: Int,
     val statString: String,
-    val files: List<TorrServeFile>
-)
+    val files: List<TorrServeFile>,
+    val activePeers: Int = 0,
+    val totalPeers: Int = 0,
+    val connectedSeeders: Int = 0,
+    val downloadSpeed: Double = 0.0,
+    val preloadedBytes: Long = 0L,
+    val preloadSize: Long = 0L
+) {
+    fun preloadPercent(): Int {
+        if (preloadSize <= 0L) return 0
+        return ((preloadedBytes * 100L) / preloadSize).toInt().coerceIn(0, 100)
+    }
+
+    fun formattedSpeed(): String {
+        val mbps = downloadSpeed / (1024.0 * 1024.0)
+        return if (mbps >= 0.1) {
+            String.format(Locale.US, "%.1f МБ/с", mbps)
+        } else {
+            val kbps = downloadSpeed / 1024.0
+            String.format(Locale.US, "%.0f КБ/с", kbps)
+        }
+    }
+}
+
+fun formatBytes(bytes: Long): String {
+    val gb = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+    return if (gb >= 1.0) {
+        String.format(Locale.US, "%.2f ГБ", gb)
+    } else {
+        val mb = bytes.toDouble() / (1024.0 * 1024.0)
+        String.format(Locale.US, "%.0f МБ", mb)
+    }
+}

@@ -75,7 +75,6 @@ class TorrServeClient(private val storage: StorageManager) {
             runCatching { pm.getPackageInfo(pkg, 0) }.isSuccess
         } ?: return
 
-        // 1. Try starting known TorrServe background service quietly
         val serviceClasses = listOf(
             "ru.yourok.torrserve.server.local.services.GlobalTorrServeService",
             "ru.yourok.torrserve.server.local.ServerFile"
@@ -87,7 +86,6 @@ class TorrServeClient(private val storage: StorageManager) {
             }
         }
 
-        // 2. Fallback: launch TorrServe app (it initializes its HTTP daemon immediately)
         runCatching {
             val launchIntent = pm.getLaunchIntentForPackage(installedPkg)
                 ?: pm.getLeanbackLaunchIntentForPackage(installedPkg)
@@ -119,7 +117,6 @@ class TorrServeClient(private val storage: StorageManager) {
 
     suspend fun waitForVideoFiles(hash: String, timeoutMs: Long = 14_000L): List<TorrServeFile> =
         withContext(Dispatchers.IO) {
-            // Trigger metadata fetch via /stream?link=<hash>&stat
             runCatching {
                 val triggerReq = Request.Builder()
                     .url("$baseUrl/stream?link=${URLEncoder.encode(hash, "UTF-8")}&stat")
@@ -132,22 +129,57 @@ class TorrServeClient(private val storage: StorageManager) {
             while (System.currentTimeMillis() - startTime < timeoutMs) {
                 val info = runCatching { getTorrentInfo(hash) }.getOrNull()
                 if (info != null && info.files.isNotEmpty()) {
-                    val videoFiles = info.files.filter { isVideoFile(it.path) }
+                    val videoFiles = filterAndSortVideos(info.files)
                     if (videoFiles.isNotEmpty()) {
                         return@withContext videoFiles
                     }
-                    return@withContext info.files
+                    return@withContext sortFilesNaturally(info.files)
                 }
-                delay(650)
+                delay(600)
             }
             emptyList()
         }
 
-    fun pickPrimaryVideoFile(files: List<TorrServeFile>): TorrServeFile? {
-        if (files.isEmpty()) return null
+    fun filterAndSortVideos(files: List<TorrServeFile>): List<TorrServeFile> {
         val videos = files.filter { isVideoFile(it.path) }
-        val pool = if (videos.isNotEmpty()) videos else files
-        return pool.maxByOrNull { it.length }
+        return sortFilesNaturally(videos)
+    }
+
+    fun triggerPreload(hash: String, fileId: Int) {
+        runCatching {
+            val encodedLink = URLEncoder.encode(hash, "UTF-8")
+            val req = Request.Builder()
+                .url("$baseUrl/stream?link=$encodedLink&index=$fileId&preload")
+                .get()
+                .build()
+            shortClient.newCall(req).execute().close()
+        }
+    }
+
+    suspend fun preloadWithProgress(
+        hash: String,
+        fileId: Int,
+        maxWaitMs: Long = 12_000L,
+        onProgress: suspend (TorrServeInfo) -> Unit
+    ) = withContext(Dispatchers.IO) {
+        triggerPreload(hash, fileId)
+        val start = System.currentTimeMillis()
+        while (System.currentTimeMillis() - start < maxWaitMs) {
+            val info = runCatching { getTorrentInfo(hash) }.getOrNull()
+            if (info != null) {
+                withContext(Dispatchers.Main) {
+                    onProgress(info)
+                }
+                val percent = info.preloadPercent()
+                if (info.preloadSize > 0L && percent >= 95) {
+                    break
+                }
+                if (info.stat == 3 && info.preloadedBytes > 2L * 1024L * 1024L && (System.currentTimeMillis() - start) >= 2500L) {
+                    break
+                }
+            }
+            delay(500)
+        }
     }
 
     fun buildStreamUrl(hashOrLink: String, fileId: Int, fileName: String): String {
@@ -203,8 +235,14 @@ class TorrServeClient(private val storage: StorageManager) {
             val title = obj.optString("title", payload.optString("title"))
             val stat = obj.optInt("stat", 0)
             val statString = obj.optString("stat_string", "")
-            val files = mutableListOf<TorrServeFile>()
+            val activePeers = obj.optInt("active_peers", 0)
+            val totalPeers = obj.optInt("total_peers", 0)
+            val connectedSeeders = obj.optInt("connected_seeders", 0)
+            val downloadSpeed = obj.optDouble("download_speed", 0.0)
+            val preloadedBytes = obj.optLong("preloaded_bytes", 0L)
+            val preloadSize = obj.optLong("preload_size", 0L)
 
+            val files = mutableListOf<TorrServeFile>()
             val fileStats = obj.optJSONArray("file_stats")
             if (fileStats != null) {
                 for (i in 0 until fileStats.length()) {
@@ -217,13 +255,58 @@ class TorrServeClient(private val storage: StorageManager) {
                     }
                 }
             }
-            return TorrServeInfo(hash, title, stat, statString, files)
+            return TorrServeInfo(
+                hash = hash,
+                title = title,
+                stat = stat,
+                statString = statString,
+                files = files,
+                activePeers = activePeers,
+                totalPeers = totalPeers,
+                connectedSeeders = connectedSeeders,
+                downloadSpeed = downloadSpeed,
+                preloadedBytes = preloadedBytes,
+                preloadSize = preloadSize
+            )
         }
     }
 
     private fun isVideoFile(path: String): Boolean {
         val ext = path.substringAfterLast('.', "").lowercase(Locale.US)
         return ext in VIDEO_EXTENSIONS
+    }
+
+    private fun sortFilesNaturally(files: List<TorrServeFile>): List<TorrServeFile> {
+        return files.sortedWith { a, b -> compareNatural(a.path, b.path) }
+    }
+
+    private fun compareNatural(a: String, b: String): Int {
+        val la = a.lowercase(Locale.US)
+        val lb = b.lowercase(Locale.US)
+        var ia = 0
+        var ib = 0
+        while (ia < la.length && ib < lb.length) {
+            val ca = la[ia]
+            val cb = lb[ib]
+            if (ca.isDigit() && cb.isDigit()) {
+                var numA = 0L
+                while (ia < la.length && la[ia].isDigit()) {
+                    numA = numA * 10 + (la[ia] - '0')
+                    ia++
+                }
+                var numB = 0L
+                while (ib < lb.length && lb[ib].isDigit()) {
+                    numB = numB * 10 + (lb[ib] - '0')
+                    ib++
+                }
+                if (numA != numB) return numA.compareTo(numB)
+            } else {
+                if (ca != cb) return ca.compareTo(cb)
+                ia++
+                ib++
+            }
+        }
+        return la.length.compareTo(lb.length)
     }
 
     companion object {
