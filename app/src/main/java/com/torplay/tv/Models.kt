@@ -75,7 +75,8 @@ data class TorrServeInfo(
     val connectedSeeders: Int = 0,
     val downloadSpeed: Double = 0.0,
     val preloadedBytes: Long = 0L,
-    val preloadSize: Long = 0L
+    val preloadSize: Long = 0L,
+    val torrentSize: Long = 0L
 ) {
     fun preloadPercent(): Int {
         if (preloadSize <= 0L) return 0
@@ -90,6 +91,16 @@ data class TorrServeInfo(
             val kbps = downloadSpeed / 1024.0
             String.format(Locale.US, "%.0f КБ/с", kbps)
         }
+    }
+
+    fun effectiveSizeBytes(): Long {
+        if (torrentSize > 0L) return torrentSize
+        return files.sumOf { it.length.coerceAtLeast(0L) }
+    }
+
+    fun formattedTorrentSize(): String {
+        val sz = effectiveSizeBytes()
+        return if (sz > 0L) formatBytes(sz) else "—"
     }
 }
 

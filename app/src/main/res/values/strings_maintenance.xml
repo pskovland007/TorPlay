@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_buffer_label">Профиль буферизации (плеер и TorrServe)</string>
+    <string name="buffer_fast">Быстрый старт</string>
+    <string name="buffer_standard">Стандарт</string>
+    <string name="buffer_4k">Тяжёлый 4K</string>
+    <string name="settings_maintenance_label">Обслуживание и резервные копии</string>
+    <string name="btn_torrserve_manager">Менеджер TorrServe</string>
+    <string name="btn_backup_export">Экспорт бэкапа</string>
+    <string name="btn_backup_import">Импорт бэкапа</string>
+    <string name="btn_export_logs">Сохранить лог</string>
+    <string name="ts_manager_title">Менеджер торрентов TorrServe</string>
+    <string name="ts_manager_loading">Загрузка списка раздач…</string>
+    <string name="ts_manager_empty">В памяти TorrServe сейчас нет активных раздач.</string>
+    <string name="ts_manager_offline">TorrServe не отвечает. Проверьте, запущен ли сервер.</string>
+    <string name="ts_manager_refresh">Обновить</string>
+    <string name="ts_manager_clear_all">Очистить всё</string>
+    <string name="ts_manager_close">Закрыть</string>
+    <string name="ts_item_hint">OK — остановить и удалить</string>
+</resources>

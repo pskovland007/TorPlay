@@ -18,6 +18,7 @@ import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
@@ -435,9 +436,21 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         val renderersFactory = DefaultRenderersFactory(this)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
 
-        val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(8_000, 20_000, 1_500, 3_000)
-            .build()
+        val loadControlBuilder = DefaultLoadControl.Builder()
+        when (storage.bufferProfile) {
+            StorageManager.BUFFER_PROFILE_FAST -> {
+                loadControlBuilder.setBufferDurationsMs(5_000, 12_000, 1_000, 2_000)
+            }
+            StorageManager.BUFFER_PROFILE_4K -> {
+                loadControlBuilder
+                    .setBufferDurationsMs(15_000, 35_000, 3_500, 6_000)
+                    .setTargetBufferBytes(64 * 1024 * 1024)
+            }
+            else -> {
+                loadControlBuilder.setBufferDurationsMs(8_000, 20_000, 1_500, 3_000)
+            }
+        }
+        val loadControl = loadControlBuilder.build()
 
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setConnectTimeoutMs(10_000)
@@ -459,6 +472,15 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         exo.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 btnPlayPause.text = if (isPlaying) "Пауза" else "Играть"
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                AppLogger.e("Player", "Ошибка воспроизведения ($title): ${error.errorCodeName}", error)
+                Toast.makeText(
+                    this@BuiltInPlayerActivity,
+                    "Ошибка плеера: ${error.errorCodeName}",
+                    Toast.LENGTH_LONG
+                ).show()
             }
 
             override fun onTracksChanged(tracks: Tracks) {

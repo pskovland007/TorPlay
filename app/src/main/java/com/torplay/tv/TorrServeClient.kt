@@ -10,6 +10,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.Locale
@@ -115,6 +116,56 @@ class TorrServeClient(private val storage: StorageManager) {
         postTorrents(payload)
     }
 
+    suspend fun listTorrents(): List<TorrServeInfo> = withContext(Dispatchers.IO) {
+        val payload = JSONObject().apply {
+            put("action", "list")
+        }
+        val body = payload.toString().toRequestBody(jsonMediaType)
+        val req = Request.Builder()
+            .url("$baseUrl/torrents")
+            .post(body)
+            .build()
+
+        apiClient.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) {
+                throw IllegalStateException("TorrServe HTTP ${resp.code}")
+            }
+            val raw = resp.body?.string().orEmpty().trim()
+            if (raw.isBlank()) return@withContext emptyList()
+
+            val arr = when {
+                raw.startsWith("[") -> JSONArray(raw)
+                raw.startsWith("{") -> {
+                    val root = JSONObject(raw)
+                    root.optJSONArray("torrents") ?: JSONArray()
+                }
+                else -> JSONArray()
+            }
+
+            val result = mutableListOf<TorrServeInfo>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.optJSONObject(i) ?: continue
+                val info = parseTorrentObject(obj, "", "")
+                if (info.hash.isNotBlank()) {
+                    result.add(info)
+                }
+            }
+            result
+        }
+    }
+
+    suspend fun clearAllTorrents(): Int = withContext(Dispatchers.IO) {
+        val list = listTorrents()
+        var removed = 0
+        for (item in list) {
+            if (item.hash.isNotBlank()) {
+                stopAndRemoveTorrent(item.hash)
+                removed++
+            }
+        }
+        removed
+    }
+
     suspend fun waitForVideoFiles(hash: String, timeoutMs: Long = 14_000L): List<TorrServeFile> =
         withContext(Dispatchers.IO) {
             runCatching {
@@ -159,22 +210,50 @@ class TorrServeClient(private val storage: StorageManager) {
     suspend fun preloadWithProgress(
         hash: String,
         fileId: Int,
-        maxWaitMs: Long = 12_000L,
+        maxWaitMs: Long = 0L,
         onProgress: suspend (TorrServeInfo) -> Unit
     ) = withContext(Dispatchers.IO) {
+        val profile = storage.bufferProfile
+        val effectiveMaxWait = if (maxWaitMs > 0L) {
+            maxWaitMs
+        } else {
+            when (profile) {
+                StorageManager.BUFFER_PROFILE_FAST -> 6_000L
+                StorageManager.BUFFER_PROFILE_4K -> 20_000L
+                else -> 12_000L
+            }
+        }
+        val targetPercent = when (profile) {
+            StorageManager.BUFFER_PROFILE_FAST -> 45
+            else -> 95
+        }
+        val minBytesThreshold = when (profile) {
+            StorageManager.BUFFER_PROFILE_FAST -> 1_500_000L
+            StorageManager.BUFFER_PROFILE_4K -> 8L * 1024L * 1024L
+            else -> 2L * 1024L * 1024L
+        }
+        val minElapsedForEarlyStart = when (profile) {
+            StorageManager.BUFFER_PROFILE_FAST -> 1_500L
+            StorageManager.BUFFER_PROFILE_4K -> 4_000L
+            else -> 2_500L
+        }
+
         triggerPreload(hash, fileId)
         val start = System.currentTimeMillis()
-        while (System.currentTimeMillis() - start < maxWaitMs) {
+        while (System.currentTimeMillis() - start < effectiveMaxWait) {
             val info = runCatching { getTorrentInfo(hash) }.getOrNull()
             if (info != null) {
                 withContext(Dispatchers.Main) {
                     onProgress(info)
                 }
                 val percent = info.preloadPercent()
-                if (info.preloadSize > 0L && percent >= 95) {
+                if (info.preloadSize > 0L && percent >= targetPercent) {
                     break
                 }
-                if (info.stat == 3 && info.preloadedBytes > 2L * 1024L * 1024L && (System.currentTimeMillis() - start) >= 2500L) {
+                if (info.stat == 3 &&
+                    info.preloadedBytes >= minBytesThreshold &&
+                    (System.currentTimeMillis() - start) >= minElapsedForEarlyStart
+                ) {
                     break
                 }
             }
@@ -231,44 +310,51 @@ class TorrServeClient(private val storage: StorageManager) {
                 )
             }
             val obj = JSONObject(raw)
-            val hash = obj.optString("hash", payload.optString("hash"))
-            val title = obj.optString("title", payload.optString("title"))
-            val stat = obj.optInt("stat", 0)
-            val statString = obj.optString("stat_string", "")
-            val activePeers = obj.optInt("active_peers", 0)
-            val totalPeers = obj.optInt("total_peers", 0)
-            val connectedSeeders = obj.optInt("connected_seeders", 0)
-            val downloadSpeed = obj.optDouble("download_speed", 0.0)
-            val preloadedBytes = obj.optLong("preloaded_bytes", 0L)
-            val preloadSize = obj.optLong("preload_size", 0L)
+            return parseTorrentObject(obj, payload.optString("hash"), payload.optString("title"))
+        }
+    }
 
-            val files = mutableListOf<TorrServeFile>()
-            val fileStats = obj.optJSONArray("file_stats")
-            if (fileStats != null) {
-                for (i in 0 until fileStats.length()) {
-                    val f = fileStats.optJSONObject(i) ?: continue
-                    val id = f.optInt("id", i + 1)
-                    val path = f.optString("path", "")
-                    val len = f.optLong("length", 0L)
-                    if (path.isNotBlank()) {
-                        files.add(TorrServeFile(id = id, path = path, length = len))
-                    }
+    private fun parseTorrentObject(obj: JSONObject, fallbackHash: String, fallbackTitle: String): TorrServeInfo {
+        val hash = obj.optString("hash", fallbackHash)
+        val title = obj.optString("title", fallbackTitle)
+            .ifBlank { obj.optString("name", fallbackTitle) }
+        val stat = obj.optInt("stat", 0)
+        val statString = obj.optString("stat_string", "")
+        val activePeers = obj.optInt("active_peers", 0)
+        val totalPeers = obj.optInt("total_peers", 0)
+        val connectedSeeders = obj.optInt("connected_seeders", 0)
+        val downloadSpeed = obj.optDouble("download_speed", 0.0)
+        val preloadedBytes = obj.optLong("preloaded_bytes", 0L)
+        val preloadSize = obj.optLong("preload_size", 0L)
+        val torrentSize = obj.optLong("torrent_size", 0L)
+
+        val files = mutableListOf<TorrServeFile>()
+        val fileStats = obj.optJSONArray("file_stats")
+        if (fileStats != null) {
+            for (i in 0 until fileStats.length()) {
+                val f = fileStats.optJSONObject(i) ?: continue
+                val id = f.optInt("id", i + 1)
+                val path = f.optString("path", "")
+                val len = f.optLong("length", 0L)
+                if (path.isNotBlank()) {
+                    files.add(TorrServeFile(id = id, path = path, length = len))
                 }
             }
-            return TorrServeInfo(
-                hash = hash,
-                title = title,
-                stat = stat,
-                statString = statString,
-                files = files,
-                activePeers = activePeers,
-                totalPeers = totalPeers,
-                connectedSeeders = connectedSeeders,
-                downloadSpeed = downloadSpeed,
-                preloadedBytes = preloadedBytes,
-                preloadSize = preloadSize
-            )
         }
+        return TorrServeInfo(
+            hash = hash,
+            title = title,
+            stat = stat,
+            statString = statString,
+            files = files,
+            activePeers = activePeers,
+            totalPeers = totalPeers,
+            connectedSeeders = connectedSeeders,
+            downloadSpeed = downloadSpeed,
+            preloadedBytes = preloadedBytes,
+            preloadSize = preloadSize,
+            torrentSize = torrentSize
+        )
     }
 
     private fun isVideoFile(path: String): Boolean {

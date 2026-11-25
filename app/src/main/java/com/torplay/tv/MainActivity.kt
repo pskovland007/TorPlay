@@ -1,5 +1,6 @@
 package com.torplay.tv
 
+import android.Manifest
 import android.app.Activity
 import android.app.Dialog
 import android.content.ActivityNotFoundException
@@ -46,6 +47,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var searchEngine: SearchEngine
     private lateinit var torrServeClient: TorrServeClient
     private lateinit var playerController: PlayerController
+    private lateinit var playerPrefs: PlayerPrefs
+    private lateinit var maintenanceManager: MaintenanceManager
     private lateinit var updateManager: UpdateManager
     private lateinit var adapter: TorrentAdapter
     private lateinit var historyAdapter: HistoryAdapter
@@ -89,6 +92,8 @@ class MainActivity : AppCompatActivity() {
     private var searchJob: Job? = null
     private var launchJob: Job? = null
     private var mirrorCheckJob: Job? = null
+    private var torrServeManagerJob: Job? = null
+    private var pendingStorageAction: (() -> Unit)? = null
     private var lastPlayedHash: String = ""
     private var waitingForPlayerReturn: Boolean = false
     private var hasCheckedUpdatesOnStart: Boolean = false
@@ -120,14 +125,25 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val storagePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        val action = pendingStorageAction
+        pendingStorageAction = null
+        action?.invoke()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        AppLogger.init(this)
         storage = StorageManager(this)
         searchEngine = SearchEngine(storage)
         torrServeClient = TorrServeClient(storage)
         playerController = PlayerController(this)
+        playerPrefs = PlayerPrefs(this)
+        maintenanceManager = MaintenanceManager(this)
         updateManager = UpdateManager(this)
 
         hideCamReleases = storage.hideCamReleases
@@ -374,6 +390,18 @@ class MainActivity : AppCompatActivity() {
     private fun setupListeners() {
         btnTorrServeStatus.setOnClickListener {
             refreshTorrServeStatus(autoStart = true)
+        }
+        btnTorrServeStatus.setOnLongClickListener {
+            showTorrServeManagerDialog()
+            true
+        }
+        btnTorrServeStatus.setOnKeyListener { _, keyCode, event ->
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && keyCode == KeyEvent.KEYCODE_MENU) {
+                showTorrServeManagerDialog()
+                true
+            } else {
+                false
+            }
         }
 
         btnFavoriteQuery.setOnClickListener {
@@ -762,6 +790,9 @@ class MainActivity : AppCompatActivity() {
                 layoutHomeShelves.visibility = View.GONE
                 rvResults.visibility = View.GONE
                 layoutEmpty.visibility = View.VISIBLE
+                if (!response.error.isNullOrBlank()) {
+                    AppLogger.w("Search", "Запрос '$query': ${response.error}")
+                }
                 tvEmptyMessage.text = response.error ?: getString(R.string.no_results)
                 updateDpadFocusRoutes()
             }
@@ -800,6 +831,7 @@ class MainActivity : AppCompatActivity() {
             tvLoadingStep.text = "Добавление раздачи в TorrServe…"
             val added = runCatching { torrServeClient.addTorrent(link, item.title) }
                 .onFailure {
+                    AppLogger.e("TorrServe", "Ошибка добавления раздачи (${item.title})", it)
                     hideLoadingOverlay()
                     Toast.makeText(
                         this@MainActivity,
@@ -931,7 +963,7 @@ class MainActivity : AppCompatActivity() {
         progressBuffer.progress = 0
         tvLoadingStats.text = "Поиск пиров…"
 
-        torrServeClient.preloadWithProgress(hash, file.id, maxWaitMs = 12_000L) { info ->
+        torrServeClient.preloadWithProgress(hash, file.id) { info ->
             val pct = info.preloadPercent()
             progressBuffer.progress = pct
             tvLoadingStep.text = if (info.statString.isNotBlank()) info.statString else "Буферизация…"
@@ -993,6 +1025,133 @@ class MainActivity : AppCompatActivity() {
         layoutLoadingOverlay.visibility = View.GONE
     }
 
+    private fun runWithStoragePermission(action: () -> Unit) {
+        if (maintenanceManager.needsLegacyStoragePermission()) {
+            pendingStorageAction = action
+            storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        } else {
+            action()
+        }
+    }
+
+    private fun showTorrServeManagerDialog() {
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(R.layout.dialog_torrserve_manager)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.80).toInt(),
+            (resources.displayMetrics.heightPixels * 0.82).toInt()
+        )
+
+        val tvSubtitle = dialog.findViewById<TextView>(R.id.tvTsManagerSubtitle)
+        val btnRefresh = dialog.findViewById<TextView>(R.id.btnTsRefresh)
+        val btnClearAll = dialog.findViewById<TextView>(R.id.btnTsClearAll)
+        val btnClose = dialog.findViewById<TextView>(R.id.btnTsClose)
+        val rvTorrents = dialog.findViewById<RecyclerView>(R.id.rvTsTorrents)
+        val layoutEmpty = dialog.findViewById<LinearLayout>(R.id.layoutTsEmpty)
+        val progressLoading = dialog.findViewById<ProgressBar>(R.id.progressTsLoading)
+        val tvEmpty = dialog.findViewById<TextView>(R.id.tvTsEmpty)
+
+        lateinit var tsAdapter: TorrServeAdapter
+
+        fun loadList() {
+            torrServeManagerJob?.cancel()
+            rvTorrents.visibility = View.GONE
+            layoutEmpty.visibility = View.VISIBLE
+            progressLoading.visibility = View.VISIBLE
+            tvEmpty.text = getString(R.string.ts_manager_loading)
+            tvSubtitle.text = getString(R.string.ts_manager_loading)
+
+            torrServeManagerJob = uiScope.launch {
+                val res = runCatching { torrServeClient.listTorrents() }
+                if (!dialog.isShowing) return@launch
+                progressLoading.visibility = View.GONE
+
+                res.onSuccess { list ->
+                    if (list.isNotEmpty()) {
+                        tsAdapter.submitList(list)
+                        tvSubtitle.text = "Активных раздач в памяти: ${list.size}"
+                        layoutEmpty.visibility = View.GONE
+                        rvTorrents.visibility = View.VISIBLE
+                        btnRefresh.nextFocusDownId = R.id.rvTsTorrents
+                        btnClearAll.nextFocusDownId = R.id.rvTsTorrents
+                        btnClose.nextFocusDownId = R.id.rvTsTorrents
+                        rvTorrents.post {
+                            rvTorrents.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus()
+                                ?: rvTorrents.getChildAt(0)?.requestFocus()
+                        }
+                    } else {
+                        tsAdapter.submitList(emptyList())
+                        tvSubtitle.text = "Активных раздач: 0"
+                        rvTorrents.visibility = View.GONE
+                        layoutEmpty.visibility = View.VISIBLE
+                        tvEmpty.text = getString(R.string.ts_manager_empty)
+                        btnRefresh.nextFocusDownId = R.id.btnTsRefresh
+                        btnClearAll.nextFocusDownId = R.id.btnTsClearAll
+                        btnClose.nextFocusDownId = R.id.btnTsClose
+                        btnClose.requestFocus()
+                    }
+                }.onFailure { err ->
+                    AppLogger.e("TorrServe", "Ошибка получения списка раздач", err)
+                    tvSubtitle.text = "Нет связи (${storage.torrServeUrl})"
+                    rvTorrents.visibility = View.GONE
+                    layoutEmpty.visibility = View.VISIBLE
+                    tvEmpty.text = getString(R.string.ts_manager_offline)
+                    btnRefresh.nextFocusDownId = R.id.btnTsRefresh
+                    btnClearAll.nextFocusDownId = R.id.btnTsClearAll
+                    btnClose.nextFocusDownId = R.id.btnTsClose
+                    btnRefresh.requestFocus()
+                }
+            }
+        }
+
+        tsAdapter = TorrServeAdapter { item ->
+            torrServeManagerJob?.cancel()
+            torrServeManagerJob = uiScope.launch {
+                torrServeClient.stopAndRemoveTorrent(item.hash)
+                if (lastPlayedHash == item.hash) {
+                    lastPlayedHash = ""
+                }
+                AppLogger.i("TorrServe", "Удалена раздача: ${item.title.ifBlank { item.hash }}")
+                Toast.makeText(this@MainActivity, "Раздача остановлена и удалена", Toast.LENGTH_SHORT).show()
+                if (dialog.isShowing) loadList()
+            }
+        }
+
+        rvTorrents.layoutManager = LinearLayoutManager(this)
+        rvTorrents.adapter = tsAdapter
+
+        btnRefresh.setOnClickListener { loadList() }
+        btnClearAll.setOnClickListener {
+            torrServeManagerJob?.cancel()
+            torrServeManagerJob = uiScope.launch {
+                progressLoading.visibility = View.VISIBLE
+                tvSubtitle.text = "Очистка TorrServe…"
+                val count = runCatching { torrServeClient.clearAllTorrents() }
+                    .onFailure { AppLogger.e("TorrServe", "Ошибка очистки всех раздач", it) }
+                    .getOrDefault(0)
+                lastPlayedHash = ""
+                AppLogger.i("TorrServe", "Очистка всех раздач: удалено $count")
+                Toast.makeText(
+                    this@MainActivity,
+                    if (count > 0) "Остановлено и удалено раздач: $count" else "Нечего очищать",
+                    Toast.LENGTH_SHORT
+                ).show()
+                if (dialog.isShowing) loadList()
+            }
+        }
+        btnClose.setOnClickListener { dialog.dismiss() }
+
+        dialog.setOnDismissListener {
+            torrServeManagerJob?.cancel()
+        }
+
+        dialog.show()
+        btnRefresh.requestFocus()
+        loadList()
+    }
+
     private fun showSettingsDialog() {
         hideKeyboard()
         val dialog = Dialog(this)
@@ -1001,7 +1160,7 @@ class MainActivity : AppCompatActivity() {
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
         dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
         dialog.window?.setLayout(
-            (resources.displayMetrics.widthPixels * 0.72).toInt(),
+            (resources.displayMetrics.widthPixels * 0.76).toInt(),
             WindowManager.LayoutParams.WRAP_CONTENT
         )
 
@@ -1009,6 +1168,9 @@ class MainActivity : AppCompatActivity() {
         val btnCheckUpdates = dialog.findViewById<TextView>(R.id.btnCheckUpdates)
         val btnPlayerBuiltin = dialog.findViewById<TextView>(R.id.btnPlayerBuiltin)
         val btnPlayerExternal = dialog.findViewById<TextView>(R.id.btnPlayerExternal)
+        val btnBufferFast = dialog.findViewById<TextView>(R.id.btnBufferFast)
+        val btnBufferStandard = dialog.findViewById<TextView>(R.id.btnBufferStandard)
+        val btnBuffer4k = dialog.findViewById<TextView>(R.id.btnBuffer4k)
         val btnTogglePublicJacRed = dialog.findViewById<TextView>(R.id.btnTogglePublicJacRed)
         val btnToggleRutorFallback = dialog.findViewById<TextView>(R.id.btnToggleRutorFallback)
         val btnToggleAutoUpdate = dialog.findViewById<TextView>(R.id.btnToggleAutoUpdate)
@@ -1016,6 +1178,10 @@ class MainActivity : AppCompatActivity() {
         val etCustomParser = dialog.findViewById<EditText>(R.id.etCustomParserUrl)
         val etApiKey = dialog.findViewById<EditText>(R.id.etApiKey)
         val etRutorMirror = dialog.findViewById<EditText>(R.id.etRutorMirror)
+        val btnTorrServeManager = dialog.findViewById<TextView>(R.id.btnTorrServeManager)
+        val btnBackupExport = dialog.findViewById<TextView>(R.id.btnBackupExport)
+        val btnBackupImport = dialog.findViewById<TextView>(R.id.btnBackupImport)
+        val btnExportLogs = dialog.findViewById<TextView>(R.id.btnExportLogs)
         val layoutMirrorResults = dialog.findViewById<LinearLayout>(R.id.layoutMirrorResults)
         val progressMirrorCheck = dialog.findViewById<ProgressBar>(R.id.progressMirrorCheck)
         val tvMirrorCheckStatus = dialog.findViewById<TextView>(R.id.tvMirrorCheckStatus)
@@ -1027,6 +1193,7 @@ class MainActivity : AppCompatActivity() {
         tvVersion.text = "Версия ${BuildConfig.VERSION_NAME}"
 
         var selectedBuiltIn = storage.useBuiltInPlayer
+        var selectedBufferProfile = storage.bufferProfile
         var publicJacRedEnabled = storage.usePublicJacRed
         var rutorFallbackEnabled = storage.useRutorFallback
         var autoCheckUpdatesEnabled = storage.autoCheckUpdates
@@ -1034,6 +1201,12 @@ class MainActivity : AppCompatActivity() {
         fun refreshPlayerChips() {
             btnPlayerBuiltin.isSelected = selectedBuiltIn
             btnPlayerExternal.isSelected = !selectedBuiltIn
+        }
+
+        fun refreshBufferChips() {
+            btnBufferFast.isSelected = selectedBufferProfile == StorageManager.BUFFER_PROFILE_FAST
+            btnBufferStandard.isSelected = selectedBufferProfile == StorageManager.BUFFER_PROFILE_STANDARD
+            btnBuffer4k.isSelected = selectedBufferProfile == StorageManager.BUFFER_PROFILE_4K
         }
 
         fun refreshSourceChips() {
@@ -1051,8 +1224,22 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
-        refreshPlayerChips()
-        refreshSourceChips()
+        fun populateFieldsFromStorage() {
+            selectedBuiltIn = storage.useBuiltInPlayer
+            selectedBufferProfile = storage.bufferProfile
+            publicJacRedEnabled = storage.usePublicJacRed
+            rutorFallbackEnabled = storage.useRutorFallback
+            autoCheckUpdatesEnabled = storage.autoCheckUpdates
+            etTorrServe.setText(storage.torrServeUrl)
+            etCustomParser.setText(storage.customParserUrl)
+            etApiKey.setText(storage.parserApiKey)
+            etRutorMirror.setText(storage.rutorMirrorUrl)
+            refreshPlayerChips()
+            refreshBufferChips()
+            refreshSourceChips()
+        }
+
+        populateFieldsFromStorage()
 
         btnPlayerBuiltin.setOnClickListener {
             selectedBuiltIn = true
@@ -1061,6 +1248,18 @@ class MainActivity : AppCompatActivity() {
         btnPlayerExternal.setOnClickListener {
             selectedBuiltIn = false
             refreshPlayerChips()
+        }
+        btnBufferFast.setOnClickListener {
+            selectedBufferProfile = StorageManager.BUFFER_PROFILE_FAST
+            refreshBufferChips()
+        }
+        btnBufferStandard.setOnClickListener {
+            selectedBufferProfile = StorageManager.BUFFER_PROFILE_STANDARD
+            refreshBufferChips()
+        }
+        btnBuffer4k.setOnClickListener {
+            selectedBufferProfile = StorageManager.BUFFER_PROFILE_4K
+            refreshBufferChips()
         }
         btnTogglePublicJacRed.setOnClickListener {
             publicJacRedEnabled = !publicJacRedEnabled
@@ -1073,6 +1272,54 @@ class MainActivity : AppCompatActivity() {
         btnToggleAutoUpdate.setOnClickListener {
             autoCheckUpdatesEnabled = !autoCheckUpdatesEnabled
             refreshSourceChips()
+        }
+
+        btnTorrServeManager.setOnClickListener {
+            storage.torrServeUrl = etTorrServe.text.toString()
+            showTorrServeManagerDialog()
+        }
+
+        btnBackupExport.setOnClickListener {
+            storage.useBuiltInPlayer = selectedBuiltIn
+            storage.bufferProfile = selectedBufferProfile
+            storage.usePublicJacRed = publicJacRedEnabled
+            storage.useRutorFallback = rutorFallbackEnabled
+            storage.autoCheckUpdates = autoCheckUpdatesEnabled
+            storage.torrServeUrl = etTorrServe.text.toString()
+            storage.customParserUrl = etCustomParser.text.toString()
+            storage.parserApiKey = etApiKey.text.toString()
+            storage.rutorMirrorUrl = etRutorMirror.text.toString()
+            runWithStoragePermission {
+                val res = maintenanceManager.exportBackup(storage, playerPrefs)
+                Toast.makeText(this@MainActivity, res.message, Toast.LENGTH_LONG).show()
+            }
+        }
+
+        btnBackupImport.setOnClickListener {
+            runWithStoragePermission {
+                val res = maintenanceManager.importBackup(storage, playerPrefs)
+                Toast.makeText(this@MainActivity, res.message, Toast.LENGTH_LONG).show()
+                if (res.ok) {
+                    hideCamReleases = storage.hideCamReleases
+                    onlyLiveSeeds = storage.onlyLiveSeeds
+                    updateFilterChipsUi()
+                    updateFavoriteButtonUi()
+                    if (layoutFilters.visibility != View.VISIBLE && rvResults.visibility != View.VISIBLE) {
+                        refreshHomeShelves()
+                    }
+                    if (dialog.isShowing) {
+                        populateFieldsFromStorage()
+                    }
+                    refreshTorrServeStatus(autoStart = false)
+                }
+            }
+        }
+
+        btnExportLogs.setOnClickListener {
+            runWithStoragePermission {
+                val res = maintenanceManager.exportLogs(storage)
+                Toast.makeText(this@MainActivity, res.message, Toast.LENGTH_LONG).show()
+            }
         }
 
         btnCheckUpdates.setOnClickListener {
@@ -1161,11 +1408,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        etTorrServe.setText(storage.torrServeUrl)
-        etCustomParser.setText(storage.customParserUrl)
-        etApiKey.setText(storage.parserApiKey)
-        etRutorMirror.setText(storage.rutorMirrorUrl)
-
         dialog.setOnDismissListener {
             mirrorCheckJob?.cancel()
         }
@@ -1173,6 +1415,7 @@ class MainActivity : AppCompatActivity() {
         btnCancel.setOnClickListener { dialog.dismiss() }
         btnSave.setOnClickListener {
             storage.useBuiltInPlayer = selectedBuiltIn
+            storage.bufferProfile = selectedBufferProfile
             storage.usePublicJacRed = publicJacRedEnabled
             storage.useRutorFallback = rutorFallbackEnabled
             storage.autoCheckUpdates = autoCheckUpdatesEnabled

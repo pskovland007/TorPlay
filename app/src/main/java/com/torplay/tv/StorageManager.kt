@@ -15,6 +15,13 @@ class StorageManager(context: Context) {
             prefs.edit().putBoolean(KEY_USE_BUILTIN_PLAYER, value).apply()
         }
 
+    var bufferProfile: Int
+        get() = prefs.getInt(KEY_BUFFER_PROFILE, BUFFER_PROFILE_STANDARD)
+            .coerceIn(BUFFER_PROFILE_FAST, BUFFER_PROFILE_4K)
+        set(value) {
+            prefs.edit().putInt(KEY_BUFFER_PROFILE, value.coerceIn(BUFFER_PROFILE_FAST, BUFFER_PROFILE_4K)).apply()
+        }
+
     var usePublicJacRed: Boolean
         get() = prefs.getBoolean(KEY_USE_PUBLIC_JACRED, true)
         set(value) {
@@ -299,9 +306,82 @@ class StorageManager(context: Context) {
         prefs.edit().putString(KEY_RECENT_SEARCHES, arr.toString()).apply()
     }
 
+    fun exportStateJson(): JSONObject {
+        val watchedArr = JSONArray()
+        val watchedSet = prefs.getStringSet(KEY_WATCHED_EPISODES, emptySet()) ?: emptySet()
+        for (w in watchedSet) {
+            watchedArr.put(w)
+        }
+        return JSONObject().apply {
+            put(KEY_USE_BUILTIN_PLAYER, useBuiltInPlayer)
+            put(KEY_BUFFER_PROFILE, bufferProfile)
+            put(KEY_USE_PUBLIC_JACRED, usePublicJacRed)
+            put(KEY_USE_RUTOR_FALLBACK, useRutorFallback)
+            put(KEY_AUTO_CHECK_UPDATES, autoCheckUpdates)
+            put(KEY_HIDE_CAM_RELEASES, hideCamReleases)
+            put(KEY_ONLY_LIVE_SEEDS, onlyLiveSeeds)
+            put(KEY_TORRSERVE_URL, torrServeUrl)
+            put(KEY_CUSTOM_PARSER_URL, customParserUrl)
+            put(KEY_PARSER_API_KEY, parserApiKey)
+            put(KEY_RUTOR_MIRROR, rutorMirrorUrl)
+            put(KEY_LAST_QUERY, lastQuery)
+            put(KEY_WATCHED_EPISODES, watchedArr)
+            put(KEY_WATCH_HISTORY, JSONArray(prefs.getString(KEY_WATCH_HISTORY, "[]") ?: "[]"))
+            put(KEY_FAVORITES, JSONArray(prefs.getString(KEY_FAVORITES, "[]") ?: "[]"))
+            put(KEY_RECENT_SEARCHES, JSONArray(prefs.getString(KEY_RECENT_SEARCHES, "[]") ?: "[]"))
+        }
+    }
+
+    fun importStateJson(obj: JSONObject) {
+        val editor = prefs.edit()
+        if (obj.has(KEY_USE_BUILTIN_PLAYER)) editor.putBoolean(KEY_USE_BUILTIN_PLAYER, obj.optBoolean(KEY_USE_BUILTIN_PLAYER, true))
+        if (obj.has(KEY_BUFFER_PROFILE)) editor.putInt(KEY_BUFFER_PROFILE, obj.optInt(KEY_BUFFER_PROFILE, BUFFER_PROFILE_STANDARD).coerceIn(BUFFER_PROFILE_FAST, BUFFER_PROFILE_4K))
+        if (obj.has(KEY_USE_PUBLIC_JACRED)) editor.putBoolean(KEY_USE_PUBLIC_JACRED, obj.optBoolean(KEY_USE_PUBLIC_JACRED, true))
+        if (obj.has(KEY_USE_RUTOR_FALLBACK)) editor.putBoolean(KEY_USE_RUTOR_FALLBACK, obj.optBoolean(KEY_USE_RUTOR_FALLBACK, true))
+        if (obj.has(KEY_AUTO_CHECK_UPDATES)) editor.putBoolean(KEY_AUTO_CHECK_UPDATES, obj.optBoolean(KEY_AUTO_CHECK_UPDATES, true))
+        if (obj.has(KEY_HIDE_CAM_RELEASES)) editor.putBoolean(KEY_HIDE_CAM_RELEASES, obj.optBoolean(KEY_HIDE_CAM_RELEASES, false))
+        if (obj.has(KEY_ONLY_LIVE_SEEDS)) editor.putBoolean(KEY_ONLY_LIVE_SEEDS, obj.optBoolean(KEY_ONLY_LIVE_SEEDS, false))
+        if (obj.has(KEY_TORRSERVE_URL)) {
+            val v = obj.optString(KEY_TORRSERVE_URL, DEFAULT_TORRSERVE_URL).trim().trimEnd('/').ifBlank { DEFAULT_TORRSERVE_URL }
+            editor.putString(KEY_TORRSERVE_URL, v)
+        }
+        if (obj.has(KEY_CUSTOM_PARSER_URL)) {
+            editor.putString(KEY_CUSTOM_PARSER_URL, obj.optString(KEY_CUSTOM_PARSER_URL, "").trim().trimEnd('/'))
+        }
+        if (obj.has(KEY_PARSER_API_KEY)) {
+            editor.putString(KEY_PARSER_API_KEY, obj.optString(KEY_PARSER_API_KEY, "").trim())
+        }
+        if (obj.has(KEY_RUTOR_MIRROR)) {
+            val v = obj.optString(KEY_RUTOR_MIRROR, DEFAULT_RUTOR_MIRROR).trim().trimEnd('/').ifBlank { DEFAULT_RUTOR_MIRROR }
+            editor.putString(KEY_RUTOR_MIRROR, v)
+        }
+        if (obj.has(KEY_LAST_QUERY)) {
+            editor.putString(KEY_LAST_QUERY, obj.optString(KEY_LAST_QUERY, "").trim())
+        }
+        obj.optJSONArray(KEY_WATCHED_EPISODES)?.let { arr ->
+            val set = mutableSetOf<String>()
+            for (i in 0 until arr.length()) {
+                val s = arr.optString(i).trim()
+                if (s.isNotBlank()) set.add(s)
+            }
+            editor.putStringSet(KEY_WATCHED_EPISODES, set)
+        }
+        obj.optJSONArray(KEY_WATCH_HISTORY)?.let { arr ->
+            editor.putString(KEY_WATCH_HISTORY, arr.toString())
+        }
+        obj.optJSONArray(KEY_FAVORITES)?.let { arr ->
+            editor.putString(KEY_FAVORITES, arr.toString())
+        }
+        obj.optJSONArray(KEY_RECENT_SEARCHES)?.let { arr ->
+            editor.putString(KEY_RECENT_SEARCHES, arr.toString())
+        }
+        editor.apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "torplay_prefs"
         private const val KEY_USE_BUILTIN_PLAYER = "use_builtin_player"
+        private const val KEY_BUFFER_PROFILE = "buffer_profile"
         private const val KEY_USE_PUBLIC_JACRED = "use_public_jacred"
         private const val KEY_USE_RUTOR_FALLBACK = "use_rutor_fallback"
         private const val KEY_AUTO_CHECK_UPDATES = "auto_check_updates"
@@ -316,6 +396,10 @@ class StorageManager(context: Context) {
         private const val KEY_WATCH_HISTORY = "watch_history"
         private const val KEY_FAVORITES = "favorites"
         private const val KEY_RECENT_SEARCHES = "recent_searches"
+
+        const val BUFFER_PROFILE_FAST = 0
+        const val BUFFER_PROFILE_STANDARD = 1
+        const val BUFFER_PROFILE_4K = 2
 
         const val DEFAULT_TORRSERVE_URL = "http://127.0.0.1:8090"
         const val DEFAULT_RUTOR_MIRROR = "https://rutor.info"
