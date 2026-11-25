@@ -104,7 +104,7 @@ class TorrentShowcaseClient(private val storage: StorageManager) {
                     )
 
                     val freshSource = curMoviesRaw
-                        .filter { !it.isNonCinemaJunk && !it.isSeries && isGoodMovieCandidate(it.item) && it.seeds >= 5 }
+                        .filter { !it.isNonCinemaJunk && !it.isSeries && isGoodMovieCandidate(it.item) && it.item.seeds >= 5 }
                         .map { it.item }
                         .ifEmpty { combinedMoviesAll }
 
