@@ -4,6 +4,7 @@ import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
@@ -35,16 +36,20 @@ class TorrentAdapter(
     override fun getItemCount(): Int = items.size
 
     inner class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        private val tvTitle: TextView = itemView.findViewById(R.id.tvTorrentTitle)
-        private val tvBadgeQuality: TextView = itemView.findViewById(R.id.tvBadgeQuality)
-        private val tvBadgeHdr: TextView = itemView.findViewById(R.id.tvBadgeHdr)
-        private val tvSource: TextView = itemView.findViewById(R.id.tvTorrentSource)
-        private val tvSize: TextView = itemView.findViewById(R.id.tvTorrentSize)
-        private val tvSeeds: TextView = itemView.findViewById(R.id.tvTorrentSeeds)
-        private val tvDate: TextView = itemView.findViewById(R.id.tvTorrentDate)
+        private val tvTitle: TextView = itemView.findViewById(R.id.tvTitle)
+        private val tvBadgeQuality: TextView = itemView.findViewById(R.id.tvQuality)
+        private val tvBadgeHdr: TextView = itemView.findViewById(R.id.tvHdr)
+        private val tvSource: TextView = itemView.findViewById(R.id.tvSource)
+        private val tvSize: TextView = itemView.findViewById(R.id.tvSize)
+        private val tvSeeds: TextView = itemView.findViewById(R.id.tvSeeds)
+        private val tvDate: TextView = itemView.findViewById(R.id.tvDate)
         private val btnFav: TextView = itemView.findViewById(R.id.btnTorrentFav)
+        private val progressWatch: ProgressBar = itemView.findViewById(R.id.progressWatch)
 
         fun bind(item: TorrentItem) {
+            progressWatch.visibility = View.GONE
+            btnFav.visibility = View.VISIBLE
+
             tvTitle.text = item.title
             tvSize.text = item.formattedSize()
             tvSeeds.text = "▲ ${item.seeds}"

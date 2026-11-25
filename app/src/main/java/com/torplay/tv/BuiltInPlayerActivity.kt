@@ -817,7 +817,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             .setPositiveButton("Внешний плеер") { _, _ ->
                 val res = PlayerController(this).playExternal(streamUrl, fullTitle)
                 if (!res.launched) {
-                    Toast.makeText(this, res.message, Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, res.error ?: "Не удалось открыть внешний плеер", Toast.LENGTH_LONG).show()
                 }
                 finish()
             }
