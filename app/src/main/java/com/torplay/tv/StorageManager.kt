@@ -35,10 +35,36 @@ class StorageManager(context: Context) {
         editor.apply()
     }
 
-    var useBuiltInPlayer: Boolean
-        get() = prefs.getBoolean(KEY_USE_BUILTIN_PLAYER, true)
+    var playerEngine: Int
+        get() {
+            if (prefs.contains(KEY_PLAYER_ENGINE)) {
+                return prefs.getInt(KEY_PLAYER_ENGINE, PLAYER_ENGINE_MEDIA3)
+                    .coerceIn(PLAYER_ENGINE_MEDIA3, PLAYER_ENGINE_EXTERNAL)
+            }
+            return if (prefs.getBoolean(KEY_USE_BUILTIN_PLAYER, true)) {
+                PLAYER_ENGINE_MEDIA3
+            } else {
+                PLAYER_ENGINE_EXTERNAL
+            }
+        }
         set(value) {
-            prefs.edit().putBoolean(KEY_USE_BUILTIN_PLAYER, value).apply()
+            val clamped = value.coerceIn(PLAYER_ENGINE_MEDIA3, PLAYER_ENGINE_EXTERNAL)
+            prefs.edit()
+                .putInt(KEY_PLAYER_ENGINE, clamped)
+                .putBoolean(KEY_USE_BUILTIN_PLAYER, clamped != PLAYER_ENGINE_EXTERNAL)
+                .apply()
+        }
+
+    var useBuiltInPlayer: Boolean
+        get() = playerEngine != PLAYER_ENGINE_EXTERNAL
+        set(value) {
+            if (value) {
+                if (playerEngine == PLAYER_ENGINE_EXTERNAL) {
+                    playerEngine = PLAYER_ENGINE_MEDIA3
+                }
+            } else {
+                playerEngine = PLAYER_ENGINE_EXTERNAL
+            }
         }
 
     var bufferProfile: Int
@@ -714,6 +740,7 @@ class StorageManager(context: Context) {
         }
         return JSONObject().apply {
             put(KEY_USE_BUILTIN_PLAYER, useBuiltInPlayer)
+            put(KEY_PLAYER_ENGINE, playerEngine)
             put(KEY_BUFFER_PROFILE, bufferProfile)
             put(KEY_AUDIO_BOOST_DB, audioBoostDb)
             put(KEY_USE_PUBLIC_JACRED, usePublicJacRed)
@@ -744,7 +771,16 @@ class StorageManager(context: Context) {
 
     fun importStateJson(obj: JSONObject) {
         val editor = prefs.edit()
-        if (obj.has(KEY_USE_BUILTIN_PLAYER)) editor.putBoolean(KEY_USE_BUILTIN_PLAYER, obj.optBoolean(KEY_USE_BUILTIN_PLAYER, true))
+        if (obj.has(KEY_PLAYER_ENGINE)) {
+            val eng = obj.optInt(KEY_PLAYER_ENGINE, PLAYER_ENGINE_MEDIA3)
+                .coerceIn(PLAYER_ENGINE_MEDIA3, PLAYER_ENGINE_EXTERNAL)
+            editor.putInt(KEY_PLAYER_ENGINE, eng)
+            editor.putBoolean(KEY_USE_BUILTIN_PLAYER, eng != PLAYER_ENGINE_EXTERNAL)
+        } else if (obj.has(KEY_USE_BUILTIN_PLAYER)) {
+            val builtIn = obj.optBoolean(KEY_USE_BUILTIN_PLAYER, true)
+            editor.putBoolean(KEY_USE_BUILTIN_PLAYER, builtIn)
+            editor.putInt(KEY_PLAYER_ENGINE, if (builtIn) PLAYER_ENGINE_MEDIA3 else PLAYER_ENGINE_EXTERNAL)
+        }
         if (obj.has(KEY_BUFFER_PROFILE)) editor.putInt(KEY_BUFFER_PROFILE, obj.optInt(KEY_BUFFER_PROFILE, BUFFER_PROFILE_STANDARD).coerceIn(BUFFER_PROFILE_FAST, BUFFER_PROFILE_4K))
         if (obj.has(KEY_AUDIO_BOOST_DB)) editor.putInt(KEY_AUDIO_BOOST_DB, obj.optInt(KEY_AUDIO_BOOST_DB, 0).coerceIn(0, 12))
         if (obj.has(KEY_USE_PUBLIC_JACRED)) editor.putBoolean(KEY_USE_PUBLIC_JACRED, obj.optBoolean(KEY_USE_PUBLIC_JACRED, true))
@@ -821,6 +857,7 @@ class StorageManager(context: Context) {
     companion object {
         private const val PREFS_NAME = "torplay_prefs"
         private const val KEY_USE_BUILTIN_PLAYER = "use_builtin_player"
+        private const val KEY_PLAYER_ENGINE = "player_engine"
         private const val KEY_BUFFER_PROFILE = "buffer_profile"
         private const val KEY_USE_PUBLIC_JACRED = "use_public_jacred"
         private const val KEY_USE_RUTOR_FALLBACK = "use_rutor_fallback"
@@ -847,6 +884,10 @@ class StorageManager(context: Context) {
         private const val KEY_FAVORITES = "favorites"
         private const val KEY_FAVORITE_TORRENTS = "favorite_torrents"
         private const val KEY_RECENT_SEARCHES = "recent_searches"
+
+        const val PLAYER_ENGINE_MEDIA3 = 0
+        const val PLAYER_ENGINE_VLC = 1
+        const val PLAYER_ENGINE_EXTERNAL = 2
 
         const val BUFFER_PROFILE_FAST = 0
         const val BUFFER_PROFILE_STANDARD = 1

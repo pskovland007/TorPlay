@@ -85,7 +85,12 @@ object AppLogger {
             append("Device: ").append(Build.MANUFACTURER).append(' ').append(Build.MODEL).append('\n')
             append("Android: ").append(Build.VERSION.RELEASE)
                 .append(" (API ").append(Build.VERSION.SDK_INT).append(")\n")
-            append("Player: ").append(if (storage.useBuiltInPlayer) "Built-in Media3" else "External MX").append('\n')
+            val engineLabel = when (storage.playerEngine) {
+                StorageManager.PLAYER_ENGINE_VLC -> "Built-in LibVLC"
+                StorageManager.PLAYER_ENGINE_EXTERNAL -> "External MX"
+                else -> "Built-in Media3"
+            }
+            append("Player: ").append(engineLabel).append('\n')
             append("Buffer profile: ").append(profileName).append('\n')
             append("TorrServe URL: ").append(storage.torrServeUrl).append('\n')
             append("Public JacRed: ").append(storage.usePublicJacRed)

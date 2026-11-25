@@ -13,6 +13,12 @@
         app:surface_type="surface_view"
         app:use_controller="false" />
 
+    <org.videolan.libvlc.util.VLCVideoLayout
+        android:id="@+id/vlcVideoLayout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
     <!-- Touch gesture surface when OSD is hidden -->
     <View
         android:id="@+id/viewTouchSurface"

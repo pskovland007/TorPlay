@@ -10,4 +10,7 @@
     <string name="player_auto_next_off">Автосерия: ВЫКЛ</string>
     <string name="player_next_watch_now">Смотреть сейчас</string>
     <string name="player_next_cancel">Отмена</string>
+    <string name="player_engine_media3">Встроенный (Media3)</string>
+    <string name="player_engine_vlc">Встроенный (VLC — все кодеки)</string>
+    <string name="player_engine_external">Внешний плеер</string>
 </resources>

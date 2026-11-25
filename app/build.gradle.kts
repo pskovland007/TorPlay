@@ -11,8 +11,8 @@ android {
         applicationId = "com.torplay.tv"
         minSdk = 23
         targetSdk = 34
-        versionCode = 18
-        versionName = "1.0.6"
+        versionCode = 19
+        versionName = "1.0.7"
     }
 
     signingConfigs {
@@ -52,6 +52,12 @@ android {
     buildFeatures {
         buildConfig = true
     }
+
+    packaging {
+        jniLibs {
+            pickFirsts += listOf("lib/**/libc++_shared.so")
+        }
+    }
 }
 
 dependencies {
@@ -69,4 +75,7 @@ dependencies {
     implementation("androidx.media3:media3-ui:1.3.1")
     implementation("androidx.media3:media3-datasource-okhttp:1.3.1")
     implementation("org.jellyfin.media3:media3-ffmpeg-decoder:1.3.1+2")
+
+    // LibVLC (full codec pack: 4K, HEVC 10-bit, DV fallback, AV1, VP9, VC-1, MPEG-2, AC3/EAC3/DTS/TrueHD/FLAC)
+    implementation("org.videolan.android:libvlc-all:3.6.0")
 }

@@ -2000,18 +2000,24 @@ class MainActivity : AppCompatActivity() {
         val streamUrl = torrServeClient.buildStreamUrl(hash, file.id, file.fileName)
         val savedPos = storage.getSavedPositionMs(link, file.id, hash)
 
-        val launchResult = if (storage.useBuiltInPlayer) {
-            tvLoadingStep.text = "Запуск встроенного плеера…"
+        val selectedEngine = storage.playerEngine
+        val launchResult = if (selectedEngine != StorageManager.PLAYER_ENGINE_EXTERNAL) {
+            tvLoadingStep.text = if (selectedEngine == StorageManager.PLAYER_ENGINE_VLC) {
+                "Запуск встроенного VLC…"
+            } else {
+                "Запуск встроенного плеера…"
+            }
             playerController.playBuiltIn(
                 streamUrl = streamUrl,
                 title = displayTitle,
                 episodeLabel = episodeLabel,
                 link = link,
                 fileId = file.id,
-                startPositionMs = savedPos
+                startPositionMs = savedPos,
+                engine = selectedEngine
             )
         } else {
-            tvLoadingStep.text = "Запуск MX Player…"
+            tvLoadingStep.text = "Запуск внешнего плеера…"
             playerController.playExternal(streamUrl, fullTitle)
         }
 
@@ -2019,7 +2025,7 @@ class MainActivity : AppCompatActivity() {
 
         if (launchResult.launched) {
             storage.setLastEpisodeForTorrent(hash, file.id)
-            if (!storage.useBuiltInPlayer) {
+            if (selectedEngine == StorageManager.PLAYER_ENGINE_EXTERNAL) {
                 storage.markEpisodeWatched(hash, file.id)
                 storage.saveWatchPosition(
                     title = displayTitle,
@@ -2199,6 +2205,7 @@ class MainActivity : AppCompatActivity() {
         val tvVersion = dialog.findViewById<TextView>(R.id.tvSettingsVersion)
         val btnCheckUpdates = dialog.findViewById<TextView>(R.id.btnCheckUpdates)
         val btnPlayerBuiltin = dialog.findViewById<TextView>(R.id.btnPlayerBuiltin)
+        val btnPlayerVlc = dialog.findViewById<TextView>(R.id.btnPlayerVlc)
         val btnPlayerExternal = dialog.findViewById<TextView>(R.id.btnPlayerExternal)
         val btnBufferFast = dialog.findViewById<TextView>(R.id.btnBufferFast)
         val btnBufferStandard = dialog.findViewById<TextView>(R.id.btnBufferStandard)
@@ -2232,7 +2239,7 @@ class MainActivity : AppCompatActivity() {
 
         tvVersion.text = "Версия ${BuildConfig.VERSION_NAME}"
 
-        var selectedBuiltIn = storage.useBuiltInPlayer
+        var selectedPlayerEngine = storage.playerEngine
         var selectedBufferProfile = storage.bufferProfile
         var publicJacRedEnabled = storage.usePublicJacRed
         var rutorFallbackEnabled = storage.useRutorFallback
@@ -2241,8 +2248,9 @@ class MainActivity : AppCompatActivity() {
         var selectedCatalogProvider = storage.catalogProvider
 
         fun refreshPlayerChips() {
-            btnPlayerBuiltin.isSelected = selectedBuiltIn
-            btnPlayerExternal.isSelected = !selectedBuiltIn
+            btnPlayerBuiltin.isSelected = selectedPlayerEngine == StorageManager.PLAYER_ENGINE_MEDIA3
+            btnPlayerVlc.isSelected = selectedPlayerEngine == StorageManager.PLAYER_ENGINE_VLC
+            btnPlayerExternal.isSelected = selectedPlayerEngine == StorageManager.PLAYER_ENGINE_EXTERNAL
         }
 
         fun refreshBufferChips() {
@@ -2274,7 +2282,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         fun populateFieldsFromStorage() {
-            selectedBuiltIn = storage.useBuiltInPlayer
+            selectedPlayerEngine = storage.playerEngine
             selectedBufferProfile = storage.bufferProfile
             publicJacRedEnabled = storage.usePublicJacRed
             rutorFallbackEnabled = storage.useRutorFallback
@@ -2345,12 +2353,17 @@ class MainActivity : AppCompatActivity() {
 
         btnPlayerBuiltin.setOnClickListener {
             hideDialogKeyboard()
-            selectedBuiltIn = true
+            selectedPlayerEngine = StorageManager.PLAYER_ENGINE_MEDIA3
+            refreshPlayerChips()
+        }
+        btnPlayerVlc.setOnClickListener {
+            hideDialogKeyboard()
+            selectedPlayerEngine = StorageManager.PLAYER_ENGINE_VLC
             refreshPlayerChips()
         }
         btnPlayerExternal.setOnClickListener {
             hideDialogKeyboard()
-            selectedBuiltIn = false
+            selectedPlayerEngine = StorageManager.PLAYER_ENGINE_EXTERNAL
             refreshPlayerChips()
         }
         btnBufferFast.setOnClickListener {
@@ -2412,7 +2425,7 @@ class MainActivity : AppCompatActivity() {
 
         btnBackupExport.setOnClickListener {
             hideDialogKeyboard()
-            storage.useBuiltInPlayer = selectedBuiltIn
+            storage.playerEngine = selectedPlayerEngine
             storage.bufferProfile = selectedBufferProfile
             storage.usePublicJacRed = publicJacRedEnabled
             storage.useRutorFallback = rutorFallbackEnabled
@@ -2573,7 +2586,7 @@ class MainActivity : AppCompatActivity() {
 
         btnCancel.setOnClickListener { dialog.dismiss() }
         btnSave.setOnClickListener {
-            storage.useBuiltInPlayer = selectedBuiltIn
+            storage.playerEngine = selectedPlayerEngine
             storage.bufferProfile = selectedBufferProfile
             storage.usePublicJacRed = publicJacRedEnabled
             storage.useRutorFallback = rutorFallbackEnabled
@@ -2613,10 +2626,12 @@ class MainActivity : AppCompatActivity() {
                 StorageManager.CATALOG_PROVIDER_KINOPOISK -> etKinopoiskApiKey.requestFocus()
                 else -> etTmdbApiKey.requestFocus()
             }
-        } else if (selectedBuiltIn) {
-            btnPlayerBuiltin.requestFocus()
         } else {
-            btnPlayerExternal.requestFocus()
+            when (selectedPlayerEngine) {
+                StorageManager.PLAYER_ENGINE_VLC -> btnPlayerVlc.requestFocus()
+                StorageManager.PLAYER_ENGINE_EXTERNAL -> btnPlayerExternal.requestFocus()
+                else -> btnPlayerBuiltin.requestFocus()
+            }
         }
     }
 

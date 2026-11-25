@@ -18,8 +18,14 @@ class PlayerController(private val context: Context) {
         episodeLabel: String,
         link: String,
         fileId: Int,
-        startPositionMs: Long
+        startPositionMs: Long,
+        engine: Int = StorageManager.PLAYER_ENGINE_MEDIA3
     ): LaunchResult {
+        val resolvedEngine = if (engine == StorageManager.PLAYER_ENGINE_VLC) {
+            StorageManager.PLAYER_ENGINE_VLC
+        } else {
+            StorageManager.PLAYER_ENGINE_MEDIA3
+        }
         val intent = Intent(context, BuiltInPlayerActivity::class.java).apply {
             putExtra(BuiltInPlayerActivity.EXTRA_STREAM_URL, streamUrl)
             putExtra(BuiltInPlayerActivity.EXTRA_TITLE, title)
@@ -27,10 +33,16 @@ class PlayerController(private val context: Context) {
             putExtra(BuiltInPlayerActivity.EXTRA_LINK, link)
             putExtra(BuiltInPlayerActivity.EXTRA_FILE_ID, fileId)
             putExtra(BuiltInPlayerActivity.EXTRA_START_POS_MS, startPositionMs)
+            putExtra(BuiltInPlayerActivity.EXTRA_PLAYER_ENGINE, resolvedEngine)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
+        val label = if (resolvedEngine == StorageManager.PLAYER_ENGINE_VLC) {
+            "Встроенный плеер (VLC)"
+        } else {
+            "Встроенный плеер (Media3)"
+        }
         return if (tryLaunch(intent)) {
-            LaunchResult(true, "Встроенный плеер")
+            LaunchResult(true, label)
         } else {
             LaunchResult(false, error = "Не удалось открыть встроенный плеер")
         }
