@@ -552,6 +552,32 @@
             </LinearLayout>
         </ScrollView>
 
+        <!-- Compact TMDB Search Matches Strip (shown above torrent results when TMDB key is configured) -->
+        <LinearLayout
+            android:id="@+id/layoutTmdbSearchResults"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingBottom="6dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/tvTmdbSearchHeader"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingBottom="4dp"
+                android:text="@string/catalog_search_header"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rvTmdbSearchResults"
+                android:layout_width="match_parent"
+                android:layout_height="88dp"
+                android:clipToPadding="false" />
+        </LinearLayout>
+
         <!-- Prompt / Searching / Empty / No-filtered-results state -->
         <LinearLayout
             android:id="@+id/layoutEmpty"

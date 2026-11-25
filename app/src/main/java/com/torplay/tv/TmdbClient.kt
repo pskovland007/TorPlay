@@ -124,6 +124,25 @@ class TmdbClient(private val storage: StorageManager) {
         }
     }
 
+    suspend fun searchMulti(query: String): List<CatalogItem> = withContext(Dispatchers.IO) {
+        val clean = query.trim()
+        val apiKey = storage.tmdbApiKey
+        if (clean.isBlank() || apiKey.isBlank()) return@withContext emptyList()
+
+        val encoded = URLEncoder.encode(clean, "UTF-8")
+        val baseUrl = storage.tmdbApiBaseUrl
+        runCatching {
+            fetchList(
+                baseUrl = baseUrl,
+                apiKey = apiKey,
+                endpoint = "/search/multi",
+                defaultType = "movie",
+                queryParams = "language=ru-RU&include_adult=false&query=$encoded",
+                maxItems = 12
+            )
+        }.getOrDefault(emptyList())
+    }
+
     suspend fun probeConnection(apiKeyInput: String, apiBaseUrlInput: String): MirrorCheckResult =
         withContext(Dispatchers.IO) {
             val key = apiKeyInput.trim()
@@ -162,7 +181,8 @@ class TmdbClient(private val storage: StorageManager) {
         apiKey: String,
         endpoint: String,
         defaultType: String,
-        queryParams: String
+        queryParams: String,
+        maxItems: Int = 18
     ): List<CatalogItem> {
         val req = buildRequest(baseUrl, apiKey, endpoint, queryParams)
         client.newCall(req).execute().use { resp ->
@@ -180,7 +200,9 @@ class TmdbClient(private val storage: StorageManager) {
             for (i in 0 until arr.length()) {
                 val obj = arr.optJSONObject(i) ?: continue
                 val id = obj.optInt("id", 0)
-                val type = obj.optString("media_type").ifBlank { defaultType }
+                val rawType = obj.optString("media_type").trim()
+                if (rawType.equals("person", ignoreCase = true)) continue
+                val type = rawType.ifBlank { defaultType }
                 val isTv = type.equals("tv", ignoreCase = true)
 
                 val title = if (isTv) {
@@ -228,7 +250,7 @@ class TmdbClient(private val storage: StorageManager) {
                     )
                 )
             }
-            return list.take(18)
+            return list.take(maxItems)
         }
     }
 

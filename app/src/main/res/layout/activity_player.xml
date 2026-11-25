@@ -14,7 +14,16 @@
         app:show_buffering="when_playing"
         app:use_controller="false" />
 
-    <!-- Top compact HUD pill for accelerated seek / resize / episode notifications -->
+    <!-- Full-screen touch gesture surface for tablets & phones (ignored by TV D-pad) -->
+    <View
+        android:id="@+id/viewTouchSurface"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="true"
+        android:focusable="false"
+        android:focusableInTouchMode="false" />
+
+    <!-- Top compact HUD pill for seek / brightness / volume / resize notifications -->
     <TextView
         android:id="@+id/tvQuickHud"
         android:layout_width="wrap_content"
@@ -31,7 +40,7 @@
         android:textStyle="bold"
         android:visibility="gone" />
 
-    <!-- TV OSD Controls Overlay (shown on D-pad / OK / Menu) -->
+    <!-- TV & Touch OSD Controls Overlay -->
     <LinearLayout
         android:id="@+id/layoutOsd"
         android:layout_width="match_parent"
@@ -61,18 +70,23 @@
             android:textColor="@color/text_secondary"
             android:textSize="13sp" />
 
+        <!-- Tapping empty middle space hides OSD on touchscreens (ignored by TV D-pad) -->
         <View
+            android:id="@+id/viewOsdDismissArea"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1" />
+            android:layout_weight="1"
+            android:clickable="true"
+            android:focusable="false"
+            android:focusableInTouchMode="false" />
 
-        <!-- Seek bar + time -->
+        <!-- Interactive SeekBar + time -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingBottom="12dp">
+            android:paddingBottom="10dp">
 
             <TextView
                 android:id="@+id/tvCurrentTime"
@@ -83,17 +97,19 @@
                 android:textSize="14sp"
                 android:textStyle="bold" />
 
-            <ProgressBar
+            <SeekBar
                 android:id="@+id/seekBar"
-                style="?android:attr/progressBarStyleHorizontal"
                 android:layout_width="0dp"
-                android:layout_height="10dp"
-                android:layout_marginStart="14dp"
-                android:layout_marginEnd="14dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:layout_marginEnd="10dp"
                 android:layout_weight="1"
+                android:focusable="false"
+                android:focusableInTouchMode="false"
                 android:max="1000"
                 android:progress="0"
-                android:progressTint="@color/accent_emerald" />
+                android:progressTint="@color/accent_emerald"
+                android:thumbTint="@color/accent_emerald" />
 
             <TextView
                 android:id="@+id/tvTotalTime"
@@ -104,7 +120,7 @@
                 android:textSize="14sp" />
         </LinearLayout>
 
-        <!-- Primary action buttons row for remote D-pad -->
+        <!-- Primary action buttons row for remote D-pad and touch -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

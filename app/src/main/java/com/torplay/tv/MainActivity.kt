@@ -61,6 +61,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tmdbTrendingAdapter: CatalogAdapter
     private lateinit var tmdbNowPlayingAdapter: CatalogAdapter
     private lateinit var tmdbSeriesAdapter: CatalogAdapter
+    private lateinit var tmdbSearchAdapter: CatalogAdapter
 
     private lateinit var btnTorrServeStatus: LinearLayout
     private lateinit var viewStatusDot: View
@@ -96,6 +97,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var rvFavorites: RecyclerView
     private lateinit var tvHistoryHeader: TextView
     private lateinit var rvHistory: RecyclerView
+    private lateinit var layoutTmdbSearchResults: LinearLayout
+    private lateinit var rvTmdbSearchResults: RecyclerView
     private lateinit var rvResults: RecyclerView
     private lateinit var layoutEmpty: LinearLayout
     private lateinit var progressSearch: ProgressBar
@@ -111,6 +114,7 @@ class MainActivity : AppCompatActivity() {
     private var mirrorCheckJob: Job? = null
     private var torrServeManagerJob: Job? = null
     private var tmdbLoadJob: Job? = null
+    private var tmdbSearchJob: Job? = null
     private var pendingStorageAction: (() -> Unit)? = null
     private var tmdbLoadedOnce: Boolean = false
     private var tmdbShelves: CatalogShelves? = null
@@ -246,10 +250,16 @@ class MainActivity : AppCompatActivity() {
             }
             return
         }
-        if (layoutFilters.visibility == View.VISIBLE || rvResults.visibility == View.VISIBLE) {
+        if (layoutFilters.visibility == View.VISIBLE ||
+            rvResults.visibility == View.VISIBLE ||
+            layoutTmdbSearchResults.visibility == View.VISIBLE
+        ) {
             searchJob?.cancel()
+            tmdbSearchJob?.cancel()
             allResults = emptyList()
             adapter.submitList(emptyList())
+            tmdbSearchAdapter.submitList(emptyList())
+            layoutTmdbSearchResults.visibility = View.GONE
             layoutFilters.visibility = View.GONE
             rvResults.visibility = View.GONE
             refreshHomeShelves()
@@ -311,6 +321,8 @@ class MainActivity : AppCompatActivity() {
         rvFavorites = findViewById(R.id.rvFavorites)
         tvHistoryHeader = findViewById(R.id.tvHistoryHeader)
         rvHistory = findViewById(R.id.rvHistory)
+        layoutTmdbSearchResults = findViewById(R.id.layoutTmdbSearchResults)
+        rvTmdbSearchResults = findViewById(R.id.rvTmdbSearchResults)
         rvResults = findViewById(R.id.rvResults)
         layoutEmpty = findViewById(R.id.layoutEmpty)
         progressSearch = findViewById(R.id.progressSearch)
@@ -433,6 +445,12 @@ class MainActivity : AppCompatActivity() {
         tmdbSeriesAdapter = CatalogAdapter(uiScope, tmdbClient, posterLoader) { item -> showMovieDetailsDialog(item) }
         rvTmdbSeries.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         rvTmdbSeries.adapter = tmdbSeriesAdapter
+
+        tmdbSearchAdapter = CatalogAdapter(uiScope, tmdbClient, posterLoader, compact = true) { item ->
+            showMovieDetailsDialog(item)
+        }
+        rvTmdbSearchResults.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
+        rvTmdbSearchResults.adapter = tmdbSearchAdapter
     }
 
     private fun setupListeners() {
@@ -584,6 +602,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateDpadFocusRoutes() {
         val filtersVisible = layoutFilters.visibility == View.VISIBLE
         val resultsVisible = rvResults.visibility == View.VISIBLE
+        val tmdbSearchVisible = layoutTmdbSearchResults.visibility == View.VISIBLE
         val recentVisible = rvRecentSearches.visibility == View.VISIBLE
         val homeVisible = scrollHomeShelves.visibility == View.VISIBLE
 
@@ -592,7 +611,11 @@ class MainActivity : AppCompatActivity() {
             btnVoiceSearch.nextFocusDownId = R.id.btnFilterLiveSeeds
             btnSearch.nextFocusDownId = R.id.btnSort
 
-            val filterDown = if (resultsVisible) R.id.rvResults else View.NO_ID
+            val filterDown = when {
+                tmdbSearchVisible -> R.id.rvTmdbSearchResults
+                resultsVisible -> R.id.rvResults
+                else -> View.NO_ID
+            }
             btnFilterAll.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnFilterAll
             btnFilter4k.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnFilter4k
             btnFilter1080.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnFilter1080
@@ -601,9 +624,18 @@ class MainActivity : AppCompatActivity() {
             btnFilterNoCam.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnFilterNoCam
             btnFilterLiveSeeds.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnFilterLiveSeeds
             btnSort.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnSort
+
+            if (tmdbSearchVisible) {
+                rvTmdbSearchResults.nextFocusUpId = R.id.btnFilterAll
+                rvTmdbSearchResults.nextFocusDownId = if (resultsVisible) R.id.rvResults else View.NO_ID
+                rvResults.nextFocusUpId = R.id.rvTmdbSearchResults
+            } else {
+                rvResults.nextFocusUpId = R.id.btnFilterAll
+            }
         } else {
             val sections = mutableListOf<View>()
             if (recentVisible) sections.add(rvRecentSearches)
+            if (tmdbSearchVisible) sections.add(rvTmdbSearchResults)
             if (homeVisible) {
                 if (layoutTmdbNotice.visibility == View.VISIBLE) sections.add(layoutTmdbNotice)
                 if (rvTmdbTrending.visibility == View.VISIBLE) sections.add(rvTmdbTrending)
@@ -1031,6 +1063,22 @@ class MainActivity : AppCompatActivity() {
         updateFavoriteButtonUi()
 
         searchJob?.cancel()
+        tmdbSearchJob?.cancel()
+        tmdbSearchAdapter.submitList(emptyList())
+        layoutTmdbSearchResults.visibility = View.GONE
+
+        if (storage.showTmdbShowcase && storage.tmdbApiKey.isNotBlank()) {
+            tmdbSearchJob = uiScope.launch {
+                val catalogMatches = tmdbClient.searchMulti(query)
+                if (scrollHomeShelves.visibility == View.VISIBLE) return@launch
+                if (catalogMatches.isNotEmpty()) {
+                    tmdbSearchAdapter.submitList(catalogMatches)
+                    layoutTmdbSearchResults.visibility = View.VISIBLE
+                    updateDpadFocusRoutes()
+                }
+            }
+        }
+
         searchJob = uiScope.launch {
             allResults = emptyList()
             currentFilter = QualityFilter.ALL

@@ -12,6 +12,7 @@ class CatalogAdapter(
     private val scope: CoroutineScope,
     private val tmdbClient: TmdbClient,
     private val posterLoader: PosterLoader,
+    private val compact: Boolean = false,
     private val onItemClick: (CatalogItem) -> Unit
 ) : RecyclerView.Adapter<CatalogAdapter.ViewHolder>() {
 
@@ -24,8 +25,9 @@ class CatalogAdapter(
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+        val layoutRes = if (compact) R.layout.item_poster_compact else R.layout.item_poster_card
         val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.item_poster_card, parent, false)
+            .inflate(layoutRes, parent, false)
         return ViewHolder(view)
     }
 
@@ -40,6 +42,7 @@ class CatalogAdapter(
         private val tvRating: TextView = itemView.findViewById(R.id.tvPosterRating)
         private val tvYear: TextView = itemView.findViewById(R.id.tvPosterYear)
         private val tvTitle: TextView = itemView.findViewById(R.id.tvPosterTitle)
+        private val tvType: TextView? = itemView.findViewById(R.id.tvPosterType)
 
         fun bind(item: CatalogItem) {
             tvTitle.text = item.title
@@ -58,6 +61,10 @@ class CatalogAdapter(
             } else {
                 tvYear.visibility = View.GONE
             }
+
+            tvType?.text = itemView.context.getString(
+                if (item.isSeries()) R.string.catalog_type_series else R.string.catalog_type_movie
+            )
 
             val posterUrl = tmdbClient.buildPosterUrl(item.posterPath)
             posterLoader.load(scope, ivPoster, posterUrl)

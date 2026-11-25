@@ -18,4 +18,5 @@
     <string name="settings_tmdb_key_label">TMDB API-ключ (v3 или Bearer-токен)</string>
     <string name="settings_tmdb_api_label">TMDB API URL / прокси (необязательно)</string>
     <string name="settings_tmdb_img_label">TMDB URL постеров / прокси (необязательно)</string>
+    <string name="catalog_search_header">Фильмы и сериалы (TMDB) — выберите карточку для описания и уточнения раздач</string>
 </resources>

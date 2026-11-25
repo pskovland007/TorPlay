@@ -1,17 +1,24 @@
 package com.torplay.tv
 
+import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.app.Dialog
+import android.content.Context
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
+import android.view.GestureDetector
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.Window
 import android.view.WindowManager
 import android.widget.LinearLayout
-import android.widget.ProgressBar
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.annotation.OptIn
@@ -51,14 +58,19 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private lateinit var playerPrefs: PlayerPrefs
     private lateinit var torrServeClient: TorrServeClient
 
+    private enum class TouchGestureMode { NONE, BRIGHTNESS, VOLUME, SEEK }
+
+    private lateinit var audioManager: AudioManager
     private lateinit var playerView: PlayerView
+    private lateinit var viewTouchSurface: View
+    private lateinit var viewOsdDismissArea: View
     private lateinit var tvQuickHud: TextView
     private lateinit var layoutOsd: LinearLayout
     private lateinit var tvPlayerTitle: TextView
     private lateinit var tvStreamInfo: TextView
     private lateinit var tvCurrentTime: TextView
     private lateinit var tvTotalTime: TextView
-    private lateinit var seekBar: ProgressBar
+    private lateinit var seekBar: SeekBar
     private lateinit var btnRewind: TextView
     private lateinit var btnPlayPause: TextView
     private lateinit var btnForward: TextView
@@ -102,6 +114,16 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private var nextCardDismissedForCurrent: Boolean = false
     private var nextCardActive: Boolean = false
 
+    private var isUserSeeking: Boolean = false
+    private var touchGestureMode: TouchGestureMode = TouchGestureMode.NONE
+    private var touchStartX: Float = 0f
+    private var touchStartY: Float = 0f
+    private var gestureStartBrightness: Float = 0.5f
+    private var gestureStartVolume: Int = 0
+    private var gestureMaxVolume: Int = 15
+    private var gestureStartPosMs: Long = 0L
+    private var pendingSwipeSeekMs: Long = -1L
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private val osdHideRunnable = Runnable { hideOsd() }
     private val quickHudHideRunnable = Runnable { tvQuickHud.visibility = View.GONE }
@@ -136,6 +158,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_player)
 
+        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         storage = StorageManager(this)
         playerPrefs = PlayerPrefs(this)
         torrServeClient = TorrServeClient(storage)
@@ -153,6 +176,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
 
         bindViews()
         setupControls()
+        setupTouchGestures()
         applyResizeMode(showFeedback = false)
         updateAutoNextUi()
         updateSeriesControlsUi()
@@ -269,6 +293,8 @@ class BuiltInPlayerActivity : AppCompatActivity() {
 
     private fun bindViews() {
         playerView = findViewById(R.id.playerView)
+        viewTouchSurface = findViewById(R.id.viewTouchSurface)
+        viewOsdDismissArea = findViewById(R.id.viewOsdDismissArea)
         tvQuickHud = findViewById(R.id.tvQuickHud)
         layoutOsd = findViewById(R.id.layoutOsd)
         tvPlayerTitle = findViewById(R.id.tvPlayerTitle)
@@ -359,6 +385,192 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         btnNextCancel.setOnClickListener {
             hideNextEpisodeCard(dismissed = true)
         }
+        viewOsdDismissArea.setOnClickListener {
+            hideOsd()
+        }
+
+        seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                val dur = player?.duration?.takeIf { it > 0L } ?: return
+                val targetMs = (dur * progress.toLong()) / 1000L
+                tvCurrentTime.text = formatDuration(targetMs)
+            }
+
+            override fun onStartTrackingTouch(bar: SeekBar?) {
+                isUserSeeking = true
+                mainHandler.removeCallbacks(osdHideRunnable)
+            }
+
+            override fun onStopTrackingTouch(bar: SeekBar?) {
+                isUserSeeking = false
+                val exo = player
+                val dur = exo?.duration?.takeIf { it > 0L }
+                if (exo != null && dur != null && bar != null) {
+                    val targetMs = ((dur * bar.progress.toLong()) / 1000L).coerceIn(0L, dur)
+                    exo.seekTo(targetMs)
+                }
+                updateOsdProgress()
+                scheduleOsdAutoHide()
+            }
+        })
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupTouchGestures() {
+        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop.toFloat().coerceAtLeast(18f)
+        val edgeGuardPx = 40f * resources.displayMetrics.density
+
+        val gestureDetector = GestureDetector(
+            this,
+            object : GestureDetector.SimpleOnGestureListener() {
+                override fun onDown(e: MotionEvent): Boolean = true
+
+                override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                    if (nextCardActive) return false
+                    if (layoutOsd.visibility == View.VISIBLE) {
+                        hideOsd()
+                    } else {
+                        showOsd()
+                    }
+                    return true
+                }
+
+                override fun onDoubleTap(e: MotionEvent): Boolean {
+                    if (nextCardActive) return false
+                    val width = viewTouchSurface.width.coerceAtLeast(1)
+                    if (e.x < width / 2f) {
+                        seekBy(-15_000L, showQuickHud = true)
+                    } else {
+                        seekBy(30_000L, showQuickHud = true)
+                    }
+                    return true
+                }
+            }
+        )
+
+        viewTouchSurface.setOnTouchListener { view, event ->
+            if (nextCardActive) return@setOnTouchListener false
+
+            val width = view.width.coerceAtLeast(1).toFloat()
+            val height = view.height.coerceAtLeast(1).toFloat()
+
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    touchStartX = event.x
+                    touchStartY = event.y
+                    touchGestureMode = TouchGestureMode.NONE
+                    pendingSwipeSeekMs = -1L
+                    gestureStartBrightness = currentScreenBrightness()
+                    gestureMaxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+                    gestureStartVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                    gestureStartPosMs = player?.currentPosition?.coerceAtLeast(0L) ?: 0L
+                    gestureDetector.onTouchEvent(event)
+                    true
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.x - touchStartX
+                    val dy = event.y - touchStartY
+
+                    if (touchGestureMode == TouchGestureMode.NONE) {
+                        val outsideVerticalEdges = touchStartY > edgeGuardPx && touchStartY < (height - edgeGuardPx)
+                        if (kotlin.math.abs(dx) > touchSlop && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.2f) {
+                            if ((player?.duration ?: 0L) > 0L) {
+                                touchGestureMode = TouchGestureMode.SEEK
+                            }
+                        } else if (outsideVerticalEdges &&
+                            kotlin.math.abs(dy) > touchSlop &&
+                            kotlin.math.abs(dy) > kotlin.math.abs(dx) * 1.2f
+                        ) {
+                            touchGestureMode = if (touchStartX < width / 2f) {
+                                TouchGestureMode.BRIGHTNESS
+                            } else {
+                                TouchGestureMode.VOLUME
+                            }
+                        }
+                    }
+
+                    when (touchGestureMode) {
+                        TouchGestureMode.NONE -> {
+                            gestureDetector.onTouchEvent(event)
+                        }
+                        TouchGestureMode.BRIGHTNESS -> {
+                            val delta = -dy / (height * 0.65f)
+                            val newBright = (gestureStartBrightness + delta).coerceIn(0.02f, 1.0f)
+                            val lp = window.attributes
+                            lp.screenBrightness = newBright
+                            window.attributes = lp
+                            val pct = (newBright * 100f).toInt().coerceIn(1, 100)
+                            showQuickHudPersistent("☀ Яркость: $pct%")
+                        }
+                        TouchGestureMode.VOLUME -> {
+                            val deltaSteps = (-dy / (height * 0.65f)) * gestureMaxVolume
+                            val targetVol = kotlin.math.round(gestureStartVolume + deltaSteps)
+                                .toInt()
+                                .coerceIn(0, gestureMaxVolume)
+                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVol, 0)
+                            val pct = (targetVol * 100) / gestureMaxVolume
+                            showQuickHudPersistent("🔊 Громкость: $pct%")
+                        }
+                        TouchGestureMode.SEEK -> {
+                            val dur = player?.duration?.takeIf { it > 0L } ?: 0L
+                            if (dur > 0L) {
+                                val deltaMs = ((dx / width) * 180_000f).toLong()
+                                val target = (gestureStartPosMs + deltaMs).coerceIn(0L, dur)
+                                pendingSwipeSeekMs = target
+                                val absSec = kotlin.math.abs(deltaMs / 1000L)
+                                val deltaText = if (absSec >= 60L) {
+                                    "${absSec / 60L}м ${absSec % 60L}с"
+                                } else {
+                                    "${absSec}с"
+                                }
+                                val dir = if (deltaMs < 0L) "◀ -$deltaText" else "+$deltaText ▶"
+                                showQuickHudPersistent("$dir   ${formatDuration(target)} / ${formatDuration(dur)}")
+                            }
+                        }
+                    }
+                    true
+                }
+
+                MotionEvent.ACTION_UP,
+                MotionEvent.ACTION_CANCEL -> {
+                    if (touchGestureMode == TouchGestureMode.NONE) {
+                        gestureDetector.onTouchEvent(event)
+                    } else {
+                        if (event.actionMasked == MotionEvent.ACTION_UP &&
+                            touchGestureMode == TouchGestureMode.SEEK &&
+                            pendingSwipeSeekMs >= 0L
+                        ) {
+                            player?.seekTo(pendingSwipeSeekMs)
+                            updateOsdProgress()
+                        }
+                        touchGestureMode = TouchGestureMode.NONE
+                        pendingSwipeSeekMs = -1L
+                        mainHandler.removeCallbacks(quickHudHideRunnable)
+                        mainHandler.postDelayed(quickHudHideRunnable, 1_400L)
+                    }
+                    true
+                }
+
+                else -> gestureDetector.onTouchEvent(event)
+            }
+        }
+    }
+
+    private fun currentScreenBrightness(): Float {
+        val current = window.attributes.screenBrightness
+        if (current >= 0f) return current.coerceIn(0.02f, 1.0f)
+        val sys = runCatching {
+            Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS)
+        }.getOrDefault(128)
+        return (sys / 255f).coerceIn(0.05f, 1.0f)
+    }
+
+    private fun showQuickHudPersistent(message: String) {
+        tvQuickHud.text = message
+        tvQuickHud.visibility = View.VISIBLE
+        mainHandler.removeCallbacks(quickHudHideRunnable)
     }
 
     private fun applyResizeMode(showFeedback: Boolean) {
@@ -855,12 +1067,14 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         val exo = player ?: return
         val cur = exo.currentPosition.coerceAtLeast(0L)
         val dur = exo.duration.coerceAtLeast(0L)
-        tvCurrentTime.text = formatDuration(cur)
         tvTotalTime.text = if (dur > 0L) formatDuration(dur) else "--:--"
-        if (dur > 0L) {
-            seekBar.progress = ((cur * 1000L) / dur).toInt().coerceIn(0, 1000)
-        } else {
-            seekBar.progress = 0
+        if (!isUserSeeking) {
+            tvCurrentTime.text = formatDuration(cur)
+            if (dur > 0L) {
+                seekBar.progress = ((cur * 1000L) / dur).toInt().coerceIn(0, 1000)
+            } else {
+                seekBar.progress = 0
+            }
         }
         btnPlayPause.text = if (exo.isPlaying) "Пауза" else "Играть"
     }
