@@ -143,6 +143,35 @@ data class WatchHistoryEntry(
     }
 }
 
+data class EpisodeProgress(
+    val fileId: Int,
+    val positionMs: Long,
+    val durationMs: Long,
+    val completed: Boolean,
+    val updatedAt: Long
+) {
+    fun isCompletedEffective(): Boolean {
+        if (completed) return true
+        if (durationMs > 15_000L && positionMs >= (durationMs * 90L) / 100L) return true
+        return false
+    }
+
+    fun progressPermille(): Int {
+        if (isCompletedEffective()) return 1000
+        if (durationMs <= 0L || positionMs <= 0L) return 0
+        return ((positionMs * 1000L) / durationMs).toInt().coerceIn(1, 1000)
+    }
+
+    fun formattedPosition(): String {
+        if (positionMs <= 0L) return ""
+        return if (durationMs > 0L) {
+            "${formatDuration(positionMs)} / ${formatDuration(durationMs)}"
+        } else {
+            formatDuration(positionMs)
+        }
+    }
+}
+
 data class FavoriteQuery(
     val query: String,
     val addedAt: Long

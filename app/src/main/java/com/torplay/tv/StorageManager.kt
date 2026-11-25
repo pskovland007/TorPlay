@@ -167,11 +167,194 @@ class StorageManager(context: Context) {
         return set.contains(episodeKey(hash, fileId))
     }
 
+    fun isEpisodeCompleted(hash: String, fileId: Int): Boolean {
+        if (hash.isBlank()) return false
+        val progress = getEpisodeProgress(hash, fileId)
+        if (progress != null) return progress.isCompletedEffective()
+        return isEpisodeWatched(hash, fileId)
+    }
+
     fun markEpisodeWatched(hash: String, fileId: Int) {
         if (hash.isBlank()) return
         val current = prefs.getStringSet(KEY_WATCHED_EPISODES, emptySet())?.toMutableSet() ?: mutableSetOf()
         current.add(episodeKey(hash, fileId))
         prefs.edit().putStringSet(KEY_WATCHED_EPISODES, current).apply()
+    }
+
+    fun unmarkEpisodeWatched(hash: String, fileId: Int) {
+        if (hash.isBlank()) return
+        val key = episodeKey(hash, fileId)
+        val current = prefs.getStringSet(KEY_WATCHED_EPISODES, emptySet())?.toMutableSet() ?: mutableSetOf()
+        current.remove(key)
+        val progObj = readEpisodeProgressJson()
+        progObj.remove(key)
+        prefs.edit()
+            .putStringSet(KEY_WATCHED_EPISODES, current)
+            .putString(KEY_EPISODE_PROGRESS, progObj.toString())
+            .apply()
+    }
+
+    fun toggleEpisodeWatched(hash: String, fileId: Int): Boolean {
+        if (hash.isBlank()) return false
+        val alreadyCompleted = isEpisodeCompleted(hash, fileId)
+        return if (alreadyCompleted) {
+            unmarkEpisodeWatched(hash, fileId)
+            false
+        } else {
+            val prev = getEpisodeProgress(hash, fileId)
+            val dur = prev?.durationMs ?: 0L
+            saveEpisodeProgress(
+                hash = hash,
+                fileId = fileId,
+                positionMs = dur,
+                durationMs = dur,
+                completed = true
+            )
+            true
+        }
+    }
+
+    fun setLastEpisodeForTorrent(hash: String, fileId: Int) {
+        val cleanHash = hash.trim().lowercase(Locale.US)
+        if (cleanHash.isBlank() || fileId <= 0) return
+        val mapObj = readLastEpisodeJson()
+        mapObj.put(cleanHash, fileId)
+        prefs.edit().putString(KEY_LAST_EPISODE_MAP, mapObj.toString()).apply()
+    }
+
+    fun getLastEpisodeForTorrent(hash: String): Int? {
+        val cleanHash = hash.trim().lowercase(Locale.US)
+        if (cleanHash.isBlank()) return null
+        val mapObj = readLastEpisodeJson()
+        if (!mapObj.has(cleanHash)) return null
+        val id = mapObj.optInt(cleanHash, -1)
+        return if (id > 0) id else null
+    }
+
+    fun saveEpisodeProgress(
+        hash: String,
+        fileId: Int,
+        positionMs: Long,
+        durationMs: Long,
+        completed: Boolean
+    ) {
+        val cleanHash = hash.trim().lowercase(Locale.US)
+        if (cleanHash.isBlank() || fileId <= 0) return
+        val safePos = positionMs.coerceAtLeast(0L)
+        val safeDur = durationMs.coerceAtLeast(0L)
+        val isDone = completed || (safeDur > 15_000L && safePos >= (safeDur * 90L) / 100L)
+
+        val key = episodeKey(cleanHash, fileId)
+        val progObj = readEpisodeProgressJson()
+        progObj.put(
+            key,
+            JSONObject().apply {
+                put("fileId", fileId)
+                put("pos", if (isDone && safeDur > 0L) safeDur else safePos)
+                put("dur", safeDur)
+                put("done", isDone)
+                put("ts", System.currentTimeMillis())
+            }
+        )
+        trimEpisodeProgressIfNeeded(progObj, maxEntries = 350)
+
+        val lastMap = readLastEpisodeJson()
+        lastMap.put(cleanHash, fileId)
+
+        val watched = prefs.getStringSet(KEY_WATCHED_EPISODES, emptySet())?.toMutableSet() ?: mutableSetOf()
+        if (isDone) {
+            watched.add(key)
+        } else {
+            watched.remove(key)
+        }
+
+        prefs.edit()
+            .putString(KEY_EPISODE_PROGRESS, progObj.toString())
+            .putString(KEY_LAST_EPISODE_MAP, lastMap.toString())
+            .putStringSet(KEY_WATCHED_EPISODES, watched)
+            .apply()
+    }
+
+    fun getEpisodeProgress(hash: String, fileId: Int): EpisodeProgress? {
+        val cleanHash = hash.trim().lowercase(Locale.US)
+        if (cleanHash.isBlank() || fileId <= 0) return null
+        val obj = readEpisodeProgressJson().optJSONObject(episodeKey(cleanHash, fileId)) ?: return null
+        return EpisodeProgress(
+            fileId = obj.optInt("fileId", fileId),
+            positionMs = obj.optLong("pos", 0L),
+            durationMs = obj.optLong("dur", 0L),
+            completed = obj.optBoolean("done", false),
+            updatedAt = obj.optLong("ts", 0L)
+        )
+    }
+
+    fun resolveResumeEpisodeIndex(hash: String, files: List<TorrServeFile>): Int {
+        if (files.isEmpty()) return 0
+        val cleanHash = hash.trim().lowercase(Locale.US)
+        if (cleanHash.isBlank()) return 0
+
+        // 1. Prefer explicitly recorded last opened episode for this torrent
+        val lastFileId = getLastEpisodeForTorrent(cleanHash)
+        if (lastFileId != null) {
+            val idx = files.indexOfFirst { it.id == lastFileId }
+            if (idx >= 0) {
+                return if (isEpisodeCompleted(cleanHash, lastFileId)) {
+                    (idx + 1).coerceAtMost(files.lastIndex)
+                } else {
+                    idx
+                }
+            }
+        }
+
+        // 2. Otherwise check most recently updated in-progress episode
+        var bestInProgressIdx = -1
+        var bestInProgressTs = -1L
+        var lastCompletedIdx = -1
+        for (i in files.indices) {
+            val f = files[i]
+            val prog = getEpisodeProgress(cleanHash, f.id)
+            if (prog != null) {
+                if (!prog.isCompletedEffective() && prog.positionMs > 0L && prog.updatedAt > bestInProgressTs) {
+                    bestInProgressTs = prog.updatedAt
+                    bestInProgressIdx = i
+                } else if (prog.isCompletedEffective()) {
+                    lastCompletedIdx = i
+                }
+            } else if (isEpisodeWatched(cleanHash, f.id)) {
+                lastCompletedIdx = i
+            }
+        }
+        if (bestInProgressIdx >= 0) return bestInProgressIdx
+        if (lastCompletedIdx >= 0) return (lastCompletedIdx + 1).coerceAtMost(files.lastIndex)
+
+        // 3. Fallback: first unwatched episode
+        return files.indexOfFirst { !isEpisodeCompleted(cleanHash, it.id) }.takeIf { it >= 0 } ?: 0
+    }
+
+    private fun readEpisodeProgressJson(): JSONObject {
+        val raw = prefs.getString(KEY_EPISODE_PROGRESS, "{}").orEmpty()
+        return runCatching { JSONObject(raw) }.getOrDefault(JSONObject())
+    }
+
+    private fun readLastEpisodeJson(): JSONObject {
+        val raw = prefs.getString(KEY_LAST_EPISODE_MAP, "{}").orEmpty()
+        return runCatching { JSONObject(raw) }.getOrDefault(JSONObject())
+    }
+
+    private fun trimEpisodeProgressIfNeeded(obj: JSONObject, maxEntries: Int) {
+        if (obj.length() <= maxEntries) return
+        val entries = mutableListOf<Pair<String, Long>>()
+        val keys = obj.keys()
+        while (keys.hasNext()) {
+            val k = keys.next()
+            val ts = obj.optJSONObject(k)?.optLong("ts", 0L) ?: 0L
+            entries.add(k to ts)
+        }
+        entries.sortBy { it.second }
+        val toDrop = entries.size - maxEntries
+        for (i in 0 until toDrop) {
+            obj.remove(entries[i].first)
+        }
     }
 
     private fun episodeKey(hash: String, fileId: Int): String {
@@ -263,10 +446,19 @@ class StorageManager(context: Context) {
         prefs.edit().putString(KEY_WATCH_HISTORY, arr.toString()).apply()
     }
 
-    fun getSavedPositionMs(link: String, fileId: Int): Long {
-        if (link.isBlank()) return 0L
-        val id = "${link.hashCode()}_$fileId"
-        return getWatchHistory().firstOrNull { it.id == id }?.positionMs ?: 0L
+    fun getSavedPositionMs(link: String, fileId: Int, hash: String = ""): Long {
+        if (link.isNotBlank()) {
+            val id = "${link.hashCode()}_$fileId"
+            val fromHistory = getWatchHistory().firstOrNull { it.id == id }?.positionMs ?: 0L
+            if (fromHistory > 0L) return fromHistory
+        }
+        if (hash.isNotBlank()) {
+            val prog = getEpisodeProgress(hash, fileId)
+            if (prog != null && !prog.isCompletedEffective() && prog.positionMs > 0L) {
+                return prog.positionMs
+            }
+        }
+        return 0L
     }
 
     fun getFavorites(): List<FavoriteQuery> {
@@ -508,6 +700,8 @@ class StorageManager(context: Context) {
             put(KEY_RUTOR_MIRROR, rutorMirrorUrl)
             put(KEY_LAST_QUERY, lastQuery)
             put(KEY_WATCHED_EPISODES, watchedArr)
+            put(KEY_EPISODE_PROGRESS, readEpisodeProgressJson())
+            put(KEY_LAST_EPISODE_MAP, readLastEpisodeJson())
             put(KEY_WATCH_HISTORY, JSONArray(prefs.getString(KEY_WATCH_HISTORY, "[]") ?: "[]"))
             put(KEY_FAVORITES, JSONArray(prefs.getString(KEY_FAVORITES, "[]") ?: "[]"))
             put(KEY_FAVORITE_TORRENTS, JSONArray(prefs.getString(KEY_FAVORITE_TORRENTS, "[]") ?: "[]"))
@@ -569,6 +763,12 @@ class StorageManager(context: Context) {
             }
             editor.putStringSet(KEY_WATCHED_EPISODES, set)
         }
+        obj.optJSONObject(KEY_EPISODE_PROGRESS)?.let { prog ->
+            editor.putString(KEY_EPISODE_PROGRESS, prog.toString())
+        }
+        obj.optJSONObject(KEY_LAST_EPISODE_MAP)?.let { lastMap ->
+            editor.putString(KEY_LAST_EPISODE_MAP, lastMap.toString())
+        }
         obj.optJSONArray(KEY_WATCH_HISTORY)?.let { arr ->
             editor.putString(KEY_WATCH_HISTORY, arr.toString())
         }
@@ -605,6 +805,8 @@ class StorageManager(context: Context) {
         private const val KEY_RUTOR_MIRROR = "rutor_mirror"
         private const val KEY_LAST_QUERY = "last_query"
         private const val KEY_WATCHED_EPISODES = "watched_episodes"
+        private const val KEY_EPISODE_PROGRESS = "episode_progress"
+        private const val KEY_LAST_EPISODE_MAP = "last_episode_map"
         private const val KEY_WATCH_HISTORY = "watch_history"
         private const val KEY_FAVORITES = "favorites"
         private const val KEY_FAVORITE_TORRENTS = "favorite_torrents"

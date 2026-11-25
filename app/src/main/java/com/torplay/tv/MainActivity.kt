@@ -51,6 +51,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var storage: StorageManager
     private lateinit var searchEngine: SearchEngine
     private lateinit var torrServeClient: TorrServeClient
+    private lateinit var torrServeStarter: TorrServeStarter
     private lateinit var playerController: PlayerController
     private lateinit var playerPrefs: PlayerPrefs
     private lateinit var maintenanceManager: MaintenanceManager
@@ -187,6 +188,7 @@ class MainActivity : AppCompatActivity() {
         storage = StorageManager(this)
         searchEngine = SearchEngine(storage)
         torrServeClient = TorrServeClient(storage)
+        torrServeStarter = TorrServeStarter(storage, torrServeClient)
         playerController = PlayerController(this)
         playerPrefs = PlayerPrefs(this)
         maintenanceManager = MaintenanceManager(this)
@@ -208,7 +210,7 @@ class MainActivity : AppCompatActivity() {
         refreshHomeShelves()
         loadTmdbShowcase(force = false)
         etSearch.requestFocus()
-        refreshTorrServeStatus(autoStart = false)
+        refreshTorrServeStatus(autoStart = true, silentOnly = true)
         scheduleAutoUpdateCheck(initialDelayMs = 1_500L)
     }
 
@@ -1440,7 +1442,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun refreshTorrServeStatus(autoStart: Boolean) {
+    private fun refreshTorrServeStatus(autoStart: Boolean, silentOnly: Boolean = false) {
         uiScope.launch {
             if (autoStart) {
                 setStatusIndicator(R.color.status_warn, getString(R.string.status_starting))
@@ -1449,7 +1451,10 @@ class MainActivity : AppCompatActivity() {
             }
 
             val version = if (autoStart) {
-                torrServeClient.ensureRunning(this@MainActivity)
+                torrServeStarter.ensureRunningSmart(
+                    context = this@MainActivity,
+                    allowUiFallback = !silentOnly
+                )
             } else {
                 torrServeClient.checkEcho()
             }
@@ -1459,7 +1464,7 @@ class MainActivity : AppCompatActivity() {
                 setStatusIndicator(R.color.status_ok, "TorrServe: $shortVer")
             } else {
                 setStatusIndicator(R.color.status_err, getString(R.string.status_offline))
-                if (autoStart) {
+                if (autoStart && !silentOnly) {
                     Toast.makeText(
                         this@MainActivity,
                         "TorrServe не отвечает (${storage.torrServeUrl}). Убедитесь, что он установлен.",
@@ -1601,7 +1606,7 @@ class MainActivity : AppCompatActivity() {
         launchJob = uiScope.launch {
             showLoadingOverlay(item.title, "Проверка TorrServe…", showBuffer = false)
 
-            val version = torrServeClient.ensureRunning(this@MainActivity)
+            val version = torrServeStarter.ensureRunningSmart(this@MainActivity, allowUiFallback = true)
             if (version == null) {
                 hideLoadingOverlay()
                 setStatusIndicator(R.color.status_err, getString(R.string.status_offline))
@@ -1700,11 +1705,19 @@ class MainActivity : AppCompatActivity() {
         val rvEpisodes = dialog.findViewById<RecyclerView>(R.id.rvEpisodes)
 
         tvHeader.text = torrentTitle
-        tvCount.text = "Видеофайлов: ${files.size} • Нажмите OK для просмотра"
+        fun refreshEpisodeHeader() {
+            val watchedCount = files.count { storage.isEpisodeCompleted(hash, it.id) }
+            tvCount.text = "Серий: ${files.size} (просмотрено: $watchedCount) • OK — смотреть • Удерж. OK — отметка"
+        }
+        refreshEpisodeHeader()
 
-        val episodeAdapter = EpisodeAdapter(
+        lateinit var episodeAdapter: SmartEpisodeAdapter
+        episodeAdapter = SmartEpisodeAdapter(
             files = files,
-            watchedChecker = { fileId -> storage.isEpisodeWatched(hash, fileId) },
+            currentPlayingFileId = null,
+            lastOpenedFileId = storage.getLastEpisodeForTorrent(hash),
+            progressProvider = { fileId -> storage.getEpisodeProgress(hash, fileId) },
+            completedChecker = { fileId -> storage.isEpisodeCompleted(hash, fileId) },
             onEpisodeClick = { selectedFile ->
                 dialog.dismiss()
                 launchJob?.cancel()
@@ -1717,10 +1730,21 @@ class MainActivity : AppCompatActivity() {
                         file = selectedFile
                     )
                 }
+            },
+            onEpisodeToggleWatched = { selectedFile ->
+                val nowWatched = storage.toggleEpisodeWatched(hash, selectedFile.id)
+                episodeAdapter.notifyDataSetChanged()
+                refreshEpisodeHeader()
+                Toast.makeText(
+                    this,
+                    if (nowWatched) "✓ Отмечено как просмотренное" else "Отметка просмотра снята",
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         )
 
-        rvEpisodes.layoutManager = LinearLayoutManager(this)
+        val lm = LinearLayoutManager(this)
+        rvEpisodes.layoutManager = lm
         rvEpisodes.adapter = episodeAdapter
 
         dialog.setOnCancelListener {
@@ -1733,12 +1757,20 @@ class MainActivity : AppCompatActivity() {
 
         dialog.show()
 
-        val firstUnwatched = files.indexOfFirst { !storage.isEpisodeWatched(hash, it.id) }
-            .takeIf { it >= 0 } ?: 0
+        val targetIdx = storage.resolveResumeEpisodeIndex(hash, files).coerceIn(0, files.lastIndex)
+        val topOffset = (72 * resources.displayMetrics.density).toInt()
+        lm.scrollToPositionWithOffset(targetIdx, topOffset)
         rvEpisodes.post {
-            rvEpisodes.scrollToPosition(firstUnwatched)
-            rvEpisodes.findViewHolderForAdapterPosition(firstUnwatched)?.itemView?.requestFocus()
-                ?: rvEpisodes.getChildAt(0)?.requestFocus()
+            val vh = rvEpisodes.findViewHolderForAdapterPosition(targetIdx)
+            if (vh != null) {
+                vh.itemView.requestFocus()
+            } else {
+                lm.scrollToPositionWithOffset(targetIdx, topOffset)
+                rvEpisodes.post {
+                    rvEpisodes.findViewHolderForAdapterPosition(targetIdx)?.itemView?.requestFocus()
+                        ?: rvEpisodes.getChildAt(0)?.requestFocus()
+                }
+            }
         }
     }
 
@@ -1762,7 +1794,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val streamUrl = torrServeClient.buildStreamUrl(hash, file.id, file.fileName)
-        val savedPos = storage.getSavedPositionMs(link, file.id)
+        val savedPos = storage.getSavedPositionMs(link, file.id, hash)
 
         val launchResult = if (storage.useBuiltInPlayer) {
             tvLoadingStep.text = "Запуск встроенного плеера…"
@@ -1782,8 +1814,9 @@ class MainActivity : AppCompatActivity() {
         hideLoadingOverlay()
 
         if (launchResult.launched) {
-            storage.markEpisodeWatched(hash, file.id)
+            storage.setLastEpisodeForTorrent(hash, file.id)
             if (!storage.useBuiltInPlayer) {
+                storage.markEpisodeWatched(hash, file.id)
                 storage.saveWatchPosition(
                     title = displayTitle,
                     link = link,

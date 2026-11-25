@@ -175,6 +175,9 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         fileId = intent.getIntExtra(EXTRA_FILE_ID, 1)
         startPositionMs = intent.getLongExtra(EXTRA_START_POS_MS, 0L)
         torrentHash = extractHashFromStreamOrLink(streamUrl, link)
+        if (torrentHash.isNotBlank()) {
+            storage.setLastEpisodeForTorrent(torrentHash, fileId)
+        }
 
         resizeModeIndex = playerPrefs.resizeModeIndex
         autoNextEnabled = playerPrefs.autoNextEpisode
@@ -1009,12 +1012,12 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         episodeLabel = nextFile.fileName
 
         if (torrentHash.isNotBlank()) {
-            storage.markEpisodeWatched(torrentHash, nextFile.id)
+            storage.setLastEpisodeForTorrent(torrentHash, nextFile.id)
         }
 
         val hashOrLink = torrentHash.ifBlank { link }
         streamUrl = torrServeClient.buildStreamUrl(hashOrLink, nextFile.id, nextFile.fileName)
-        startPositionMs = storage.getSavedPositionMs(link, nextFile.id)
+        startPositionMs = storage.getSavedPositionMs(link, nextFile.id, torrentHash)
 
         updateSeriesControlsUi()
         hideOsd()
@@ -1051,12 +1054,26 @@ class BuiltInPlayerActivity : AppCompatActivity() {
 
         tvHeader.text = title
         val curPos = if (currentEpisodeIndex >= 0) currentEpisodeIndex + 1 else 1
-        tvCount.text = "Серия $curPos из ${episodes.size} • Нажмите OK для переключения"
+        fun refreshSubtitle() {
+            val watchedCount = if (torrentHash.isNotBlank()) {
+                episodes.count { storage.isEpisodeCompleted(torrentHash, it.id) }
+            } else {
+                0
+            }
+            tvCount.text = "Серия $curPos из ${episodes.size} (просмотрено: $watchedCount) • OK — выбрать • Удерж. OK — отметка"
+        }
+        refreshSubtitle()
 
-        val epAdapter = EpisodeAdapter(
+        lateinit var epAdapter: SmartEpisodeAdapter
+        epAdapter = SmartEpisodeAdapter(
             files = episodes,
-            watchedChecker = { id ->
-                id == fileId || (torrentHash.isNotBlank() && storage.isEpisodeWatched(torrentHash, id))
+            currentPlayingFileId = fileId,
+            lastOpenedFileId = if (torrentHash.isNotBlank()) storage.getLastEpisodeForTorrent(torrentHash) else null,
+            progressProvider = { id ->
+                if (torrentHash.isNotBlank()) storage.getEpisodeProgress(torrentHash, id) else null
+            },
+            completedChecker = { id ->
+                torrentHash.isNotBlank() && storage.isEpisodeCompleted(torrentHash, id)
             },
             onEpisodeClick = { selected ->
                 dialog.dismiss()
@@ -1064,18 +1081,40 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                 if (idx >= 0 && idx != currentEpisodeIndex) {
                     switchToEpisode(idx)
                 }
+            },
+            onEpisodeToggleWatched = { selected ->
+                if (torrentHash.isNotBlank()) {
+                    val nowWatched = storage.toggleEpisodeWatched(torrentHash, selected.id)
+                    epAdapter.notifyDataSetChanged()
+                    refreshSubtitle()
+                    Toast.makeText(
+                        this,
+                        if (nowWatched) "✓ Отмечено как просмотренное" else "Отметка просмотра снята",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
             }
         )
 
-        rvEpisodes.layoutManager = LinearLayoutManager(this)
+        val lm = LinearLayoutManager(this)
+        rvEpisodes.layoutManager = lm
         rvEpisodes.adapter = epAdapter
         dialog.show()
 
         val focusIdx = currentEpisodeIndex.coerceIn(0, episodes.lastIndex)
+        val topOffset = (72 * resources.displayMetrics.density).toInt()
+        lm.scrollToPositionWithOffset(focusIdx, topOffset)
         rvEpisodes.post {
-            rvEpisodes.scrollToPosition(focusIdx)
-            rvEpisodes.findViewHolderForAdapterPosition(focusIdx)?.itemView?.requestFocus()
-                ?: rvEpisodes.getChildAt(0)?.requestFocus()
+            val vh = rvEpisodes.findViewHolderForAdapterPosition(focusIdx)
+            if (vh != null) {
+                vh.itemView.requestFocus()
+            } else {
+                lm.scrollToPositionWithOffset(focusIdx, topOffset)
+                rvEpisodes.post {
+                    rvEpisodes.findViewHolderForAdapterPosition(focusIdx)?.itemView?.requestFocus()
+                        ?: rvEpisodes.getChildAt(0)?.requestFocus()
+                }
+            }
         }
     }
 
@@ -1379,7 +1418,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         val dur = exo.duration.coerceAtLeast(0L)
         val rawPos = exo.currentPosition.coerceAtLeast(0L)
         val pos = if (completed && dur > 0L) dur else rawPos
-        if (link.isNotBlank() && pos > 1_500L) {
+        if (link.isNotBlank() && (completed || pos > 1_500L)) {
             storage.saveWatchPosition(
                 title = title,
                 link = link,
@@ -1387,6 +1426,15 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                 episodeLabel = episodeLabel,
                 positionMs = pos,
                 durationMs = dur
+            )
+        }
+        if (torrentHash.isNotBlank() && (completed || pos > 1_500L)) {
+            storage.saveEpisodeProgress(
+                hash = torrentHash,
+                fileId = fileId,
+                positionMs = pos,
+                durationMs = dur,
+                completed = completed
             )
         }
     }
