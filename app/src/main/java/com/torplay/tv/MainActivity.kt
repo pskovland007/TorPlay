@@ -8,7 +8,11 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Typeface
 import android.os.Bundle
+import android.app.SearchManager
+import android.content.pm.PackageManager
+import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.text.Editable
 import android.text.TextUtils
 import android.text.TextWatcher
@@ -40,6 +44,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
 
@@ -152,23 +157,29 @@ class MainActivity : AppCompatActivity() {
     private var hideCamReleases: Boolean = false
     private var onlyLiveSeeds: Boolean = false
 
+    private var speechRecognizer: SpeechRecognizer? = null
+    private var voiceDialog: Dialog? = null
+
+    private val voicePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            startInAppSpeechRecognizer()
+        } else {
+            Toast.makeText(this, getString(R.string.voice_permission_needed), Toast.LENGTH_LONG).show()
+            launchSystemVoiceActivity()
+        }
+    }
+
     private val voiceSearchLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val spoken = result.data
-                ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-                ?.firstOrNull()
-                ?.trim()
-                .orEmpty()
-            if (spoken.isNotBlank()) {
-                etSearch.setText(spoken)
-                etSearch.setSelection(spoken.length)
-                updateFavoriteButtonUi()
-                performSearch()
-            } else {
-                Toast.makeText(this, getString(R.string.voice_no_match), Toast.LENGTH_SHORT).show()
-            }
+        val data = result.data
+        val spoken = extractSpokenQuery(data)
+        if (spoken.isNotBlank()) {
+            applySpokenQuery(spoken)
+        } else if (result.resultCode == Activity.RESULT_OK) {
+            Toast.makeText(this, getString(R.string.voice_no_match), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -236,6 +247,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        releaseVoiceRecognizer()
         uiScope.cancel()
     }
 
@@ -1207,14 +1219,203 @@ class MainActivity : AppCompatActivity() {
         btnFind.requestFocus()
     }
 
+    private fun extractSpokenQuery(data: Intent?): String {
+        if (data == null) return ""
+        val listResult = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull { !it.isNullOrBlank() }
+            ?.trim()
+        if (!listResult.isNullOrBlank()) return listResult
+
+        val arrResult = data.getStringArrayExtra(RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull { !it.isNullOrBlank() }
+            ?.trim()
+        if (!arrResult.isNullOrBlank()) return arrResult
+
+        val queryExtra = data.getStringExtra(SearchManager.QUERY)
+            ?: data.getStringExtra("query")
+            ?: data.getStringExtra(Intent.EXTRA_TEXT)
+        return queryExtra?.trim().orEmpty()
+    }
+
+    private fun applySpokenQuery(spoken: String) {
+        val clean = spoken.trim()
+        if (clean.isBlank()) return
+        etSearch.setText(clean)
+        etSearch.setSelection(clean.length)
+        updateClearSearchButtonUi()
+        updateFavoriteButtonUi()
+        performSearch()
+    }
+
+    private fun releaseVoiceRecognizer() {
+        runCatching { speechRecognizer?.cancel() }
+        runCatching { speechRecognizer?.destroy() }
+        speechRecognizer = null
+        runCatching { voiceDialog?.dismiss() }
+        voiceDialog = null
+    }
+
     private fun startVoiceSearch() {
         hideKeyboard()
+        if (SpeechRecognizer.isRecognitionAvailable(this)) {
+            val granted = ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+            if (granted) {
+                startInAppSpeechRecognizer()
+            } else {
+                voicePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
+        } else {
+            launchSystemVoiceActivity()
+        }
+    }
+
+    private fun startInAppSpeechRecognizer() {
+        releaseVoiceRecognizer()
+
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(R.layout.dialog_voice_search)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.56).toInt(),
+            WindowManager.LayoutParams.WRAP_CONTENT
+        )
+
+        val tvStatus = dialog.findViewById<TextView>(R.id.tvVoiceStatus)
+        val tvPartial = dialog.findViewById<TextView>(R.id.tvVoicePartial)
+        val btnRetry = dialog.findViewById<TextView>(R.id.btnVoiceRetry)
+        val btnCancel = dialog.findViewById<TextView>(R.id.btnVoiceCancel)
+
+        var lastPartialText = ""
+        var finished = false
+
+        val recognizer = runCatching { SpeechRecognizer.createSpeechRecognizer(this) }.getOrNull()
+        if (recognizer == null) {
+            launchSystemVoiceActivity()
+            return
+        }
+        speechRecognizer = recognizer
+        voiceDialog = dialog
+
+        fun beginListening() {
+            lastPartialText = ""
+            finished = false
+            btnRetry.visibility = View.GONE
+            tvStatus.text = getString(R.string.voice_listening)
+            tvPartial.text = getString(R.string.voice_prompt)
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "ru-RU")
+                putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+            }
+            runCatching { recognizer.startListening(intent) }.onFailure { err ->
+                AppLogger.w("Voice", "Ошибка запуска SpeechRecognizer: ${err.message}")
+                releaseVoiceRecognizer()
+                launchSystemVoiceActivity()
+            }
+        }
+
+        recognizer.setRecognitionListener(object : RecognitionListener {
+            override fun onReadyForSpeech(params: Bundle?) {
+                tvStatus.text = getString(R.string.voice_listening)
+            }
+
+            override fun onBeginningOfSpeech() {
+                tvStatus.text = "Слушаю…"
+            }
+
+            override fun onRmsChanged(rmsdB: Float) = Unit
+            override fun onBufferReceived(buffer: ByteArray?) = Unit
+
+            override fun onEndOfSpeech() {
+                tvStatus.text = "Распознавание…"
+            }
+
+            override fun onPartialResults(partialResults: Bundle?) {
+                val partial = partialResults
+                    ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    ?.firstOrNull { !it.isNullOrBlank() }
+                    ?.trim()
+                    .orEmpty()
+                if (partial.isNotBlank()) {
+                    lastPartialText = partial
+                    tvPartial.text = partial
+                }
+            }
+
+            override fun onResults(results: Bundle?) {
+                if (finished) return
+                finished = true
+                val spoken = results
+                    ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    ?.firstOrNull { !it.isNullOrBlank() }
+                    ?.trim()
+                    .orEmpty()
+                    .ifBlank { lastPartialText }
+
+                releaseVoiceRecognizer()
+                if (spoken.isNotBlank()) {
+                    applySpokenQuery(spoken)
+                } else {
+                    Toast.makeText(this@MainActivity, getString(R.string.voice_no_match), Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            override fun onError(error: Int) {
+                if (finished) return
+                if (lastPartialText.isNotBlank()) {
+                    finished = true
+                    val captured = lastPartialText
+                    releaseVoiceRecognizer()
+                    applySpokenQuery(captured)
+                    return
+                }
+                AppLogger.w("Voice", "SpeechRecognizer error code=$error")
+                if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS ||
+                    error == SpeechRecognizer.ERROR_CLIENT
+                ) {
+                    releaseVoiceRecognizer()
+                    launchSystemVoiceActivity()
+                    return
+                }
+                tvStatus.text = when (error) {
+                    SpeechRecognizer.ERROR_NO_MATCH -> "Речь не распознана"
+                    SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Микрофон не услышал фразу"
+                    SpeechRecognizer.ERROR_NETWORK,
+                    SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Нет связи со службой речи"
+                    SpeechRecognizer.ERROR_AUDIO -> "Ошибка микрофона"
+                    else -> "Не удалось распознать"
+                }
+                btnRetry.visibility = View.VISIBLE
+                btnRetry.requestFocus()
+            }
+
+            override fun onEvent(eventType: Int, params: Bundle?) = Unit
+        })
+
+        btnRetry.setOnClickListener { beginListening() }
+        btnCancel.setOnClickListener { releaseVoiceRecognizer() }
+        dialog.setOnCancelListener { releaseVoiceRecognizer() }
+
+        dialog.show()
+        btnCancel.requestFocus()
+        beginListening()
+    }
+
+    private fun launchSystemVoiceActivity() {
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "ru-RU")
+            putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
             putExtra(RecognizerIntent.EXTRA_PROMPT, getString(R.string.voice_prompt))
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
         }
         val handler = intent.resolveActivity(packageManager)
         if (handler == null) {
@@ -1786,6 +1987,9 @@ class MainActivity : AppCompatActivity() {
         progressBuffer.progress = 0
         tvLoadingStats.text = "Поиск пиров…"
 
+        withContext(Dispatchers.IO) {
+            runCatching { torrServeClient.triggerPreload(hash, file.id) }
+        }
         torrServeClient.preloadWithProgress(hash, file.id) { info ->
             val pct = info.preloadPercent()
             progressBuffer.progress = pct

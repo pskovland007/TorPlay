@@ -93,4 +93,13 @@
     <string name="showcase_action_fav_add">★ Добавить в избранное</string>
     <string name="showcase_action_fav_remove">✕ Убрать из избранного</string>
     <string name="showcase_action_find_all">Найти все раздачи фильма</string>
+    <string name="voice_listening">Говорите…</string>
+    <string name="voice_btn_retry">Повторить</string>
+    <string name="voice_permission_needed">Для голосового поиска разрешите доступ к микрофону</string>
+    <string name="player_audio_short">Звук</string>
+    <string name="player_boost_off">Буст: Выкл</string>
+    <string name="player_next_short">След.</string>
+    <string name="player_next_now">▶ Включить сейчас</string>
+    <string name="player_buffering_title">Буферизация потока…</string>
+    <string name="player_start_from_zero">Начать с начала</string>
 </resources>

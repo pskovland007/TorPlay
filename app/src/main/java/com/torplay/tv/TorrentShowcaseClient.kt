@@ -38,7 +38,9 @@ class TorrentShowcaseClient(private val storage: StorageManager) {
 
     private data class TaggedTorrent(
         val item: TorrentItem,
-        val isSeries: Boolean
+        val isSeries: Boolean,
+        val isExplicitMovie: Boolean,
+        val isNonCinemaJunk: Boolean
     )
 
     suspend fun fetchShelves(): TorrentShowcaseShelves = withContext(Dispatchers.IO) {
@@ -57,35 +59,43 @@ class TorrentShowcaseClient(private val storage: StorageManager) {
         for ((label, baseUrl, apiKey) in endpoints) {
             val attempt = runCatching {
                 coroutineScope {
-                    val curYearDef = async {
-                        runCatching { fetchJacRedQuery(baseUrl, apiKey, currentYear.toString()) }
+                    val moviesCur1080Def = async {
+                        runCatching { fetchJacRedQuery(baseUrl, apiKey, "1080p $currentYear") }
                             .getOrDefault(emptyList())
                     }
-                    val prevYearDef = async {
-                        runCatching { fetchJacRedQuery(baseUrl, apiKey, prevYear.toString()) }
+                    val moviesCur4kDef = async {
+                        runCatching { fetchJacRedQuery(baseUrl, apiKey, "2160p $currentYear") }
+                            .getOrDefault(emptyList())
+                    }
+                    val moviesPrev1080Def = async {
+                        runCatching { fetchJacRedQuery(baseUrl, apiKey, "1080p $prevYear") }
                             .getOrDefault(emptyList())
                     }
                     val seriesDef = async {
                         runCatching {
-                            val ySeries = fetchJacRedQuery(baseUrl, apiKey, "сезон $currentYear")
-                            if (ySeries.size >= 12) {
+                            val ySeries = fetchJacRedQuery(baseUrl, apiKey, "сезон 1080p $currentYear")
+                            if (ySeries.size >= 14) {
                                 ySeries
                             } else {
-                                ySeries + fetchJacRedQuery(baseUrl, apiKey, "сезон $prevYear")
+                                ySeries + fetchJacRedQuery(baseUrl, apiKey, "сезон $currentYear") +
+                                    fetchJacRedQuery(baseUrl, apiKey, "сезон 1080p $prevYear")
                             }
                         }.getOrDefault(emptyList())
                     }
 
-                    val curYearItems = curYearDef.await()
-                    val prevYearItems = prevYearDef.await()
+                    val curMoviesRaw = moviesCur1080Def.await() + moviesCur4kDef.await()
+                    val prevMoviesRaw = moviesPrev1080Def.await()
                     val seriesRaw = seriesDef.await()
 
-                    val combinedMovies = (curYearItems + prevYearItems)
-                        .filter { !it.isSeries && isGoodShowcaseCandidate(it.item) }
+                    val combinedMoviesAll = (curMoviesRaw + prevMoviesRaw)
+                        .filter { !it.isNonCinemaJunk && !it.isSeries && isGoodMovieCandidate(it.item) }
                         .map { it.item }
 
+                    val strongMovies = combinedMoviesAll.filter { it.seeds >= 15 }
+                    val moviePool = if (strongMovies.size >= 8) strongMovies else combinedMoviesAll
+
                     val popularMovies = deduplicatePreferBest(
-                        items = combinedMovies.sortedWith(
+                        items = moviePool.sortedWith(
                             compareByDescending<TorrentItem> { it.seeds }
                                 .thenByDescending { qualityRank(it.quality) }
                                 .thenByDescending { it.createTime }
@@ -93,10 +103,10 @@ class TorrentShowcaseClient(private val storage: StorageManager) {
                         maxCount = 18
                     )
 
-                    val freshSource = curYearItems
-                        .filter { !it.isSeries && isGoodShowcaseCandidate(it.item) }
+                    val freshSource = curMoviesRaw
+                        .filter { !it.isNonCinemaJunk && !it.isSeries && isGoodMovieCandidate(it.item) && it.seeds >= 5 }
                         .map { it.item }
-                        .ifEmpty { combinedMovies }
+                        .ifEmpty { combinedMoviesAll }
 
                     val newestMovies = deduplicatePreferBest(
                         items = freshSource.sortedWith(
@@ -107,12 +117,15 @@ class TorrentShowcaseClient(private val storage: StorageManager) {
                         maxCount = 18
                     )
 
-                    val allSeries = (seriesRaw + curYearItems.filter { it.isSeries } + prevYearItems.filter { it.isSeries })
-                        .filter { isGoodShowcaseCandidate(it.item) }
+                    val allSeries = (seriesRaw + curMoviesRaw.filter { it.isSeries } + prevMoviesRaw.filter { it.isSeries })
+                        .filter { !it.isNonCinemaJunk && isGoodSeriesCandidate(it.item) }
                         .map { it.item }
 
+                    val strongSeries = allSeries.filter { it.seeds >= 10 }
+                    val seriesPool = if (strongSeries.size >= 6) strongSeries else allSeries
+
                     val popularSeries = deduplicatePreferBest(
-                        items = allSeries.sortedWith(
+                        items = seriesPool.sortedWith(
                             compareByDescending<TorrentItem> { it.seeds }
                                 .thenByDescending { it.createTime }
                                 .thenByDescending { qualityRank(it.quality) }
@@ -227,15 +240,30 @@ class TorrentShowcaseClient(private val storage: StorageManager) {
         val createTime = parseCreateTime(obj.opt("createTime"))
 
         var isSeries = false
+        var isExplicitMovie = false
+        var isNonCinemaJunk = false
         val typesArr = obj.optJSONArray("types")
         if (typesArr != null) {
             for (i in 0 until typesArr.length()) {
                 val t = typesArr.optString(i).lowercase(Locale.US)
-                if (t.contains("serial") || t.contains("tv") || t.contains("show")) {
+                if (t.contains("serial") || t == "tv") {
                     isSeries = true
-                    break
+                }
+                if (t.contains("movie") || t.contains("film") || t.contains("multfilm")) {
+                    isExplicitMovie = true
+                }
+                if (t.contains("sport") || t.contains("tvshow") || t.contains("docum") ||
+                    t.contains("music") || t.contains("concert") || t.contains("xxx") ||
+                    t.contains("porno") || t.contains("game") || t.contains("soft") ||
+                    t.contains("book") || t.contains("clip") || t.contains("humor") ||
+                    t.contains("anime")
+                ) {
+                    isNonCinemaJunk = true
                 }
             }
+        }
+        if (JUNK_TITLE_REGEX.containsMatchIn(title)) {
+            isNonCinemaJunk = true
         }
         if (!isSeries && SERIES_TITLE_REGEX.containsMatchIn(title)) {
             isSeries = true
@@ -255,15 +283,27 @@ class TorrentShowcaseClient(private val storage: StorageManager) {
             voices = voices.take(2),
             createTime = createTime
         )
-        return TaggedTorrent(item = item, isSeries = isSeries)
+        return TaggedTorrent(
+            item = item,
+            isSeries = isSeries,
+            isExplicitMovie = isExplicitMovie,
+            isNonCinemaJunk = isNonCinemaJunk
+        )
     }
 
-    private fun isGoodShowcaseCandidate(item: TorrentItem): Boolean {
+    private fun isGoodMovieCandidate(item: TorrentItem): Boolean {
         if (item.playableLink.isBlank()) return false
-        if (item.seeds <= 0) return false
+        if (item.seeds < 3) return false
         if (item.isCamRelease()) return false
-        // Skip tiny samples or audio-only releases under 350 MB
-        if (item.sizeBytes in 1L until 350L * 1024L * 1024L) return false
+        if (item.sizeBytes in 1L until 700L * 1024L * 1024L) return false
+        return true
+    }
+
+    private fun isGoodSeriesCandidate(item: TorrentItem): Boolean {
+        if (item.playableLink.isBlank()) return false
+        if (item.seeds < 3) return false
+        if (item.isCamRelease()) return false
+        if (item.sizeBytes in 1L until 500L * 1024L * 1024L) return false
         return true
     }
 
@@ -334,6 +374,11 @@ class TorrentShowcaseClient(private val storage: StorageManager) {
 
         private val SERIES_TITLE_REGEX = Regex(
             "(?:сезон|серии|серия|s\\d{1,2}e\\d{1,2}|\\bs\\d{1,2}\\b|\\[\\d+\\s*-\\s*\\d+\\s*из)",
+            RegexOption.IGNORE_CASE
+        )
+
+        private val JUNK_TITLE_REGEX = Regex(
+            "(?:\\bufc\\b|\\bwwe\\b|formula\\s*1|формула\\s*1|футбол|хоккей|матч\\s*тв|\\bкхл\\b|\\bнхл\\b|\\bnba\\b|\\bnhl\\b|лига\\s+чемпионов|чемпионат\\s+мира|гран-при|концерт|выпуск\\s*№?|выпуски|ток-шоу|стендап|stand\\s*up|comedy\\s*club|\\bквн\\b|передача|новости|аудиокнига|саундтрек|\\bflac\\b|\\bmp3\\b|repack|portable|ps4|ps5|xbox|nintendo\\s+switch|\\bxxx\\b|порно)",
             RegexOption.IGNORE_CASE
         )
 

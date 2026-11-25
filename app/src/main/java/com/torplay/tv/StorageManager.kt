@@ -9,6 +9,32 @@ class StorageManager(context: Context) {
 
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    init {
+        applyV106BuiltInDefaultsIfNeeded()
+    }
+
+    private fun applyV106BuiltInDefaultsIfNeeded() {
+        if (prefs.getBoolean(KEY_DEFAULTS_V106_APPLIED, false)) return
+        val editor = prefs.edit()
+        if (prefs.getString(KEY_KINOPOISK_API_KEY, "").orEmpty().trim().isBlank()) {
+            editor.putString(KEY_KINOPOISK_API_KEY, DEFAULT_KINOPOISK_API_KEY)
+        }
+        if (prefs.getString(KEY_TMDB_API_KEY, "").orEmpty().trim().isBlank()) {
+            editor.putString(KEY_TMDB_API_KEY, DEFAULT_TMDB_API_KEY)
+        }
+        val curImg = prefs.getString(KEY_TMDB_IMAGE_BASE, "").orEmpty().trim()
+        if (curImg.isBlank() || curImg.equals("https://image.tmdb.org/t/p/w342", ignoreCase = true)) {
+            editor.putString(KEY_TMDB_IMAGE_BASE, DEFAULT_TMDB_IMAGE_URL)
+        }
+        if (!prefs.contains(KEY_CATALOG_PROVIDER) ||
+            prefs.getInt(KEY_CATALOG_PROVIDER, CATALOG_PROVIDER_KINOPOISK) == CATALOG_PROVIDER_TORRENTS
+        ) {
+            editor.putInt(KEY_CATALOG_PROVIDER, CATALOG_PROVIDER_KINOPOISK)
+        }
+        editor.putBoolean(KEY_DEFAULTS_V106_APPLIED, true)
+        editor.apply()
+    }
+
     var useBuiltInPlayer: Boolean
         get() = prefs.getBoolean(KEY_USE_BUILTIN_PLAYER, true)
         set(value) {
@@ -59,7 +85,7 @@ class StorageManager(context: Context) {
         }
 
     var catalogProvider: Int
-        get() = prefs.getInt(KEY_CATALOG_PROVIDER, CATALOG_PROVIDER_TORRENTS)
+        get() = prefs.getInt(KEY_CATALOG_PROVIDER, CATALOG_PROVIDER_KINOPOISK)
             .coerceIn(CATALOG_PROVIDER_KINOPOISK, CATALOG_PROVIDER_TORRENTS)
         set(value) {
             prefs.edit()
@@ -68,9 +94,15 @@ class StorageManager(context: Context) {
         }
 
     var kinopoiskApiKey: String
-        get() = prefs.getString(KEY_KINOPOISK_API_KEY, "")?.trim().orEmpty()
+        get() = prefs.getString(KEY_KINOPOISK_API_KEY, DEFAULT_KINOPOISK_API_KEY)?.trim().orEmpty()
         set(value) {
             prefs.edit().putString(KEY_KINOPOISK_API_KEY, value.trim()).apply()
+        }
+
+    var audioBoostDb: Int
+        get() = prefs.getInt(KEY_AUDIO_BOOST_DB, 0).coerceIn(0, 12)
+        set(value) {
+            prefs.edit().putInt(KEY_AUDIO_BOOST_DB, value.coerceIn(0, 12)).apply()
         }
 
     fun activeCatalogRequiresKey(): Boolean {
@@ -94,7 +126,7 @@ class StorageManager(context: Context) {
     }
 
     var tmdbApiKey: String
-        get() = prefs.getString(KEY_TMDB_API_KEY, "")?.trim().orEmpty()
+        get() = prefs.getString(KEY_TMDB_API_KEY, DEFAULT_TMDB_API_KEY)?.trim().orEmpty()
         set(value) {
             prefs.edit().putString(KEY_TMDB_API_KEY, value.trim()).apply()
         }
@@ -683,6 +715,7 @@ class StorageManager(context: Context) {
         return JSONObject().apply {
             put(KEY_USE_BUILTIN_PLAYER, useBuiltInPlayer)
             put(KEY_BUFFER_PROFILE, bufferProfile)
+            put(KEY_AUDIO_BOOST_DB, audioBoostDb)
             put(KEY_USE_PUBLIC_JACRED, usePublicJacRed)
             put(KEY_USE_RUTOR_FALLBACK, useRutorFallback)
             put(KEY_AUTO_CHECK_UPDATES, autoCheckUpdates)
@@ -713,6 +746,7 @@ class StorageManager(context: Context) {
         val editor = prefs.edit()
         if (obj.has(KEY_USE_BUILTIN_PLAYER)) editor.putBoolean(KEY_USE_BUILTIN_PLAYER, obj.optBoolean(KEY_USE_BUILTIN_PLAYER, true))
         if (obj.has(KEY_BUFFER_PROFILE)) editor.putInt(KEY_BUFFER_PROFILE, obj.optInt(KEY_BUFFER_PROFILE, BUFFER_PROFILE_STANDARD).coerceIn(BUFFER_PROFILE_FAST, BUFFER_PROFILE_4K))
+        if (obj.has(KEY_AUDIO_BOOST_DB)) editor.putInt(KEY_AUDIO_BOOST_DB, obj.optInt(KEY_AUDIO_BOOST_DB, 0).coerceIn(0, 12))
         if (obj.has(KEY_USE_PUBLIC_JACRED)) editor.putBoolean(KEY_USE_PUBLIC_JACRED, obj.optBoolean(KEY_USE_PUBLIC_JACRED, true))
         if (obj.has(KEY_USE_RUTOR_FALLBACK)) editor.putBoolean(KEY_USE_RUTOR_FALLBACK, obj.optBoolean(KEY_USE_RUTOR_FALLBACK, true))
         if (obj.has(KEY_AUTO_CHECK_UPDATES)) editor.putBoolean(KEY_AUTO_CHECK_UPDATES, obj.optBoolean(KEY_AUTO_CHECK_UPDATES, true))
@@ -799,6 +833,8 @@ class StorageManager(context: Context) {
         private const val KEY_TMDB_API_KEY = "tmdb_api_key"
         private const val KEY_TMDB_API_BASE = "tmdb_api_base"
         private const val KEY_TMDB_IMAGE_BASE = "tmdb_image_base"
+        private const val KEY_AUDIO_BOOST_DB = "audio_boost_db"
+        private const val KEY_DEFAULTS_V106_APPLIED = "defaults_v106_applied"
         private const val KEY_TORRSERVE_URL = "torrserve_url"
         private const val KEY_CUSTOM_PARSER_URL = "custom_parser_url"
         private const val KEY_PARSER_API_KEY = "parser_api_key"
@@ -822,7 +858,9 @@ class StorageManager(context: Context) {
 
         const val DEFAULT_TORRSERVE_URL = "http://127.0.0.1:8090"
         const val DEFAULT_RUTOR_MIRROR = "https://rutor.info"
+        const val DEFAULT_KINOPOISK_API_KEY = "46b3c435-7c7a-4267-9bd9-f883cbc14c1d"
+        const val DEFAULT_TMDB_API_KEY = "d2a353381bc2814cbc95694672d7b149"
         const val DEFAULT_TMDB_API_URL = "https://api.themoviedb.org/3"
-        const val DEFAULT_TMDB_IMAGE_URL = "https://image.tmdb.org/t/p/w342"
+        const val DEFAULT_TMDB_IMAGE_URL = "https://imagetmdb.com/t/p/w342"
     }
 }

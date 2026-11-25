@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:id="@+id/playerRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#000000">
@@ -10,314 +9,440 @@
         android:id="@+id/playerView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        app:resize_mode="fit"
-        app:show_buffering="when_playing"
+        app:show_buffering="never"
+        app:surface_type="surface_view"
         app:use_controller="false" />
 
-    <!-- Full-screen touch gesture surface for tablets & phones (ignored by TV D-pad) -->
+    <!-- Touch gesture surface when OSD is hidden -->
     <View
         android:id="@+id/viewTouchSurface"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:clickable="true"
-        android:focusable="false"
-        android:focusableInTouchMode="false" />
+        android:focusable="false" />
 
-    <!-- Top compact HUD pill for seek / brightness / volume / resize notifications -->
+    <!-- Live TorrServe Buffering Overlay inside Player -->
+    <LinearLayout
+        android:id="@+id/layoutPlayerBuffering"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_dialog"
+        android:gravity="center"
+        android:minWidth="280dp"
+        android:orientation="vertical"
+        android:paddingStart="24dp"
+        android:paddingTop="18dp"
+        android:paddingEnd="24dp"
+        android:paddingBottom="18dp"
+        android:visibility="gone">
+
+        <ProgressBar
+            android:id="@+id/progressPlayerBuffering"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
+            android:indeterminateTint="@color/accent_emerald" />
+
+        <TextView
+            android:id="@+id/tvBufferingTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:gravity="center"
+            android:text="@string/player_buffering_title"
+            android:textColor="@color/text_primary"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvBufferingStats"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/btnStartFromBeginning"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/bg_player_pill_selector"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="@string/player_start_from_zero"
+            android:textColor="@color/text_primary"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- Quick HUD toast pill (seek / volume / brightness / boost feedback) -->
     <TextView
         android:id="@+id/tvQuickHud"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|center_horizontal"
-        android:layout_marginTop="24dp"
+        android:layout_marginTop="28dp"
         android:background="@drawable/bg_dialog"
         android:paddingStart="18dp"
-        android:paddingTop="8dp"
+        android:paddingTop="9dp"
         android:paddingEnd="18dp"
-        android:paddingBottom="8dp"
+        android:paddingBottom="9dp"
         android:textColor="@color/text_primary"
         android:textSize="15sp"
         android:textStyle="bold"
         android:visibility="gone" />
 
-    <!-- TV & Touch OSD Controls Overlay -->
-    <LinearLayout
+    <!-- Full OSD Overlay (Variant 1: Center Translucent Circles + Single-Row Bottom Dock) -->
+    <FrameLayout
         android:id="@+id/layoutOsd"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#99000000"
-        android:orientation="vertical"
-        android:padding="28dp"
         android:visibility="gone">
 
-        <TextView
-            android:id="@+id/tvPlayerTitle"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textColor="@color/text_primary"
-            android:textSize="20sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/tvStreamInfo"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <!-- Tapping empty middle space hides OSD on touchscreens (ignored by TV D-pad) -->
+        <!-- Tap outside buttons to dismiss OSD -->
         <View
             android:id="@+id/viewOsdDismissArea"
             android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
+            android:layout_height="match_parent"
             android:clickable="true"
-            android:focusable="false"
-            android:focusableInTouchMode="false" />
+            android:focusable="false" />
 
-        <!-- Interactive SeekBar + time -->
+        <!-- Top Header Bar -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingBottom="10dp">
+            android:layout_gravity="top"
+            android:background="@drawable/bg_player_top_gradient"
+            android:orientation="vertical"
+            android:paddingStart="28dp"
+            android:paddingTop="18dp"
+            android:paddingEnd="28dp"
+            android:paddingBottom="24dp">
 
             <TextView
-                android:id="@+id/tvCurrentTime"
-                android:layout_width="wrap_content"
+                android:id="@+id/tvPlayerTitle"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="00:00"
+                android:ellipsize="end"
+                android:maxLines="1"
                 android:textColor="@color/text_primary"
-                android:textSize="14sp"
+                android:textSize="18sp"
                 android:textStyle="bold" />
 
-            <SeekBar
-                android:id="@+id/seekBar"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="10dp"
-                android:layout_marginEnd="10dp"
-                android:layout_weight="1"
-                android:focusable="false"
-                android:focusableInTouchMode="false"
-                android:max="1000"
-                android:progress="0"
-                android:progressTint="@color/accent_emerald"
-                android:thumbTint="@color/accent_emerald" />
-
             <TextView
-                android:id="@+id/tvTotalTime"
-                android:layout_width="wrap_content"
+                android:id="@+id/tvStreamInfo"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="00:00"
+                android:layout_marginTop="4dp"
+                android:ellipsize="end"
+                android:maxLines="1"
                 android:textColor="@color/text_secondary"
-                android:textSize="14sp" />
+                android:textSize="12sp"
+                android:visibility="gone" />
         </LinearLayout>
 
-        <!-- Primary action buttons row for remote D-pad and touch -->
+        <!-- Center Variant 1 Translucent Touch/D-pad Circles -->
         <LinearLayout
-            android:layout_width="match_parent"
+            android:id="@+id/layoutCenterControls"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_gravity="center"
             android:gravity="center"
             android:orientation="horizontal">
 
             <TextView
                 android:id="@+id/btnRewind"
-                android:layout_width="wrap_content"
-                android:layout_height="42dp"
-                android:layout_marginEnd="8dp"
-                android:background="@drawable/bg_button_selector"
+                android:layout_width="70dp"
+                android:layout_height="70dp"
+                android:layout_marginEnd="26dp"
+                android:background="@drawable/bg_player_circle_selector"
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
+                android:lineSpacingMultiplier="0.95"
+                android:nextFocusDown="@+id/btnAudioTrack"
                 android:nextFocusLeft="@+id/btnRewind"
                 android:nextFocusRight="@+id/btnPlayPause"
                 android:nextFocusUp="@+id/btnRewind"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:text="@string/player_rewind_btn"
-                android:textColor="@color/text_primary"
-                android:textSize="14sp"
+                android:text="«\n-10с"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/btnPlayPause"
-                android:layout_width="118dp"
-                android:layout_height="42dp"
-                android:layout_marginEnd="8dp"
-                android:background="@drawable/bg_button_selector"
+                android:layout_width="88dp"
+                android:layout_height="88dp"
+                android:background="@drawable/bg_player_circle_center_selector"
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
+                android:nextFocusDown="@+id/btnAudioBoost"
                 android:nextFocusLeft="@+id/btnRewind"
                 android:nextFocusRight="@+id/btnForward"
                 android:nextFocusUp="@+id/btnPlayPause"
-                android:text="Пауза"
-                android:textColor="@color/text_primary"
-                android:textSize="14sp"
+                android:text="❚❚"
+                android:textColor="#FFFFFF"
+                android:textSize="28sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/btnForward"
-                android:layout_width="wrap_content"
-                android:layout_height="42dp"
-                android:layout_marginEnd="14dp"
-                android:background="@drawable/bg_button_selector"
+                android:layout_width="70dp"
+                android:layout_height="70dp"
+                android:layout_marginStart="26dp"
+                android:background="@drawable/bg_player_circle_selector"
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
+                android:lineSpacingMultiplier="0.95"
+                android:nextFocusDown="@+id/btnSubtitles"
                 android:nextFocusLeft="@+id/btnPlayPause"
-                android:nextFocusRight="@+id/btnAudioTrack"
+                android:nextFocusRight="@+id/btnForward"
                 android:nextFocusUp="@+id/btnForward"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:text="@string/player_forward_btn"
-                android:textColor="@color/text_primary"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/btnAudioTrack"
-                android:layout_width="wrap_content"
-                android:layout_height="42dp"
-                android:layout_marginEnd="8dp"
-                android:background="@drawable/bg_button_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusLeft="@+id/btnForward"
-                android:nextFocusRight="@+id/btnSubtitles"
-                android:nextFocusUp="@+id/btnAudioTrack"
-                android:paddingStart="15dp"
-                android:paddingEnd="15dp"
-                android:text="@string/player_audio_btn"
-                android:textColor="@color/text_button_accent_selector"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/btnSubtitles"
-                android:layout_width="wrap_content"
-                android:layout_height="42dp"
-                android:layout_marginEnd="8dp"
-                android:background="@drawable/bg_button_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusLeft="@+id/btnAudioTrack"
-                android:nextFocusRight="@+id/btnResizeMode"
-                android:nextFocusUp="@+id/btnSubtitles"
-                android:paddingStart="15dp"
-                android:paddingEnd="15dp"
-                android:text="@string/player_sub_btn"
-                android:textColor="@color/text_primary"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/btnResizeMode"
-                android:layout_width="wrap_content"
-                android:layout_height="42dp"
-                android:background="@drawable/bg_button_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusLeft="@+id/btnSubtitles"
-                android:nextFocusRight="@+id/btnResizeMode"
-                android:nextFocusUp="@+id/btnResizeMode"
-                android:paddingStart="15dp"
-                android:paddingEnd="15dp"
-                android:text="@string/player_resize_fit"
-                android:textColor="@color/text_primary"
+                android:text="»\n+10с"
+                android:textColor="#FFFFFF"
                 android:textSize="13sp"
                 android:textStyle="bold" />
         </LinearLayout>
 
-        <!-- Secondary row for multi-episode torrents (series) -->
+        <!-- Bottom Bar: Progress + ONE Single Row of Pill Buttons (No Rewind/Forward) -->
         <LinearLayout
-            android:id="@+id/layoutSeriesRow"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:gravity="center"
-            android:orientation="horizontal"
-            android:visibility="gone">
+            android:layout_gravity="bottom"
+            android:background="@drawable/bg_player_bottom_gradient"
+            android:orientation="vertical"
+            android:paddingStart="24dp"
+            android:paddingTop="22dp"
+            android:paddingEnd="24dp"
+            android:paddingBottom="16dp">
 
-            <TextView
-                android:id="@+id/btnEpisodes"
-                android:layout_width="wrap_content"
-                android:layout_height="38dp"
-                android:layout_marginEnd="10dp"
-                android:background="@drawable/bg_button_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusDown="@+id/btnEpisodes"
-                android:nextFocusLeft="@+id/btnEpisodes"
-                android:nextFocusRight="@+id/btnNextEpisode"
-                android:nextFocusUp="@+id/btnPlayPause"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:text="@string/player_episodes_btn"
-                android:textColor="@color/text_primary"
-                android:textSize="13sp"
-                android:textStyle="bold" />
+            <!-- Seekbar row -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
-            <TextView
-                android:id="@+id/btnNextEpisode"
-                android:layout_width="wrap_content"
-                android:layout_height="38dp"
-                android:layout_marginEnd="10dp"
-                android:background="@drawable/bg_button_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusDown="@+id/btnNextEpisode"
-                android:nextFocusLeft="@+id/btnEpisodes"
-                android:nextFocusRight="@+id/btnAutoNext"
-                android:nextFocusUp="@+id/btnForward"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:text="@string/player_next_episode_btn"
-                android:textColor="@color/text_button_accent_selector"
-                android:textSize="13sp"
-                android:textStyle="bold" />
+                <TextView
+                    android:id="@+id/tvCurrentTime"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="56dp"
+                    android:text="00:00"
+                    android:textColor="@color/text_primary"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
 
-            <TextView
-                android:id="@+id/btnAutoNext"
-                android:layout_width="wrap_content"
-                android:layout_height="38dp"
-                android:background="@drawable/bg_chip_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusDown="@+id/btnAutoNext"
-                android:nextFocusLeft="@+id/btnNextEpisode"
-                android:nextFocusRight="@+id/btnAutoNext"
-                android:nextFocusUp="@+id/btnAudioTrack"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:text="@string/player_auto_next_on"
-                android:textColor="@color/text_primary"
-                android:textSize="13sp"
-                android:textStyle="bold" />
+                <SeekBar
+                    android:id="@+id/seekBar"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_marginEnd="8dp"
+                    android:layout_weight="1"
+                    android:focusable="false"
+                    android:max="1000"
+                    android:progressTint="@color/accent_emerald"
+                    android:thumbTint="@color/accent_emerald" />
+
+                <TextView
+                    android:id="@+id/tvTotalTime"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="end"
+                    android:minWidth="56dp"
+                    android:text="--:--"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- Single-row controls dock -->
+            <HorizontalScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fillViewport="true"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/layoutBottomButtons"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:orientation="horizontal"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="2dp">
+
+                    <TextView
+                        android:id="@+id/btnAudioTrack"
+                        android:layout_width="wrap_content"
+                        android:layout_height="38dp"
+                        android:layout_marginEnd="8dp"
+                        android:background="@drawable/bg_player_pill_selector"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:nextFocusDown="@+id/btnAudioTrack"
+                        android:nextFocusLeft="@+id/btnAudioTrack"
+                        android:nextFocusRight="@+id/btnAudioBoost"
+                        android:nextFocusUp="@+id/btnPlayPause"
+                        android:paddingStart="15dp"
+                        android:paddingEnd="15dp"
+                        android:singleLine="true"
+                        android:text="@string/player_audio_short"
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/btnAudioBoost"
+                        android:layout_width="wrap_content"
+                        android:layout_height="38dp"
+                        android:layout_marginEnd="8dp"
+                        android:background="@drawable/bg_player_pill_selector"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:nextFocusDown="@+id/btnAudioBoost"
+                        android:nextFocusLeft="@+id/btnAudioTrack"
+                        android:nextFocusRight="@+id/btnSubtitles"
+                        android:nextFocusUp="@+id/btnPlayPause"
+                        android:paddingStart="15dp"
+                        android:paddingEnd="15dp"
+                        android:singleLine="true"
+                        android:text="@string/player_boost_off"
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/btnSubtitles"
+                        android:layout_width="wrap_content"
+                        android:layout_height="38dp"
+                        android:layout_marginEnd="8dp"
+                        android:background="@drawable/bg_player_pill_selector"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:nextFocusDown="@+id/btnSubtitles"
+                        android:nextFocusLeft="@+id/btnAudioBoost"
+                        android:nextFocusRight="@+id/btnResizeMode"
+                        android:nextFocusUp="@+id/btnPlayPause"
+                        android:paddingStart="15dp"
+                        android:paddingEnd="15dp"
+                        android:singleLine="true"
+                        android:text="@string/player_sub_btn"
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/btnResizeMode"
+                        android:layout_width="wrap_content"
+                        android:layout_height="38dp"
+                        android:layout_marginEnd="8dp"
+                        android:background="@drawable/bg_player_pill_selector"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:nextFocusDown="@+id/btnResizeMode"
+                        android:nextFocusLeft="@+id/btnSubtitles"
+                        android:nextFocusRight="@+id/btnEpisodes"
+                        android:nextFocusUp="@+id/btnPlayPause"
+                        android:paddingStart="15dp"
+                        android:paddingEnd="15dp"
+                        android:singleLine="true"
+                        android:text="@string/player_resize_fit"
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/btnEpisodes"
+                        android:layout_width="wrap_content"
+                        android:layout_height="38dp"
+                        android:layout_marginEnd="8dp"
+                        android:background="@drawable/bg_player_pill_selector"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:nextFocusDown="@+id/btnEpisodes"
+                        android:nextFocusLeft="@+id/btnResizeMode"
+                        android:nextFocusRight="@+id/btnNextEpisode"
+                        android:nextFocusUp="@+id/btnPlayPause"
+                        android:paddingStart="15dp"
+                        android:paddingEnd="15dp"
+                        android:singleLine="true"
+                        android:text="@string/player_episodes_btn"
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:visibility="gone" />
+
+                    <TextView
+                        android:id="@+id/btnNextEpisode"
+                        android:layout_width="wrap_content"
+                        android:layout_height="38dp"
+                        android:layout_marginEnd="8dp"
+                        android:background="@drawable/bg_player_pill_selector"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:nextFocusDown="@+id/btnNextEpisode"
+                        android:nextFocusLeft="@+id/btnEpisodes"
+                        android:nextFocusRight="@+id/btnAutoNext"
+                        android:nextFocusUp="@+id/btnPlayPause"
+                        android:paddingStart="15dp"
+                        android:paddingEnd="15dp"
+                        android:singleLine="true"
+                        android:text="@string/player_next_short"
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:visibility="gone" />
+
+                    <TextView
+                        android:id="@+id/btnAutoNext"
+                        android:layout_width="wrap_content"
+                        android:layout_height="38dp"
+                        android:background="@drawable/bg_player_pill_selector"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:nextFocusDown="@+id/btnAutoNext"
+                        android:nextFocusLeft="@+id/btnNextEpisode"
+                        android:nextFocusRight="@+id/btnAutoNext"
+                        android:nextFocusUp="@+id/btnPlayPause"
+                        android:paddingStart="15dp"
+                        android:paddingEnd="15dp"
+                        android:singleLine="true"
+                        android:text="@string/player_auto_next_on"
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:visibility="gone" />
+                </LinearLayout>
+            </HorizontalScrollView>
         </LinearLayout>
-    </LinearLayout>
+    </FrameLayout>
 
-    <!-- Auto-next Episode Countdown Card (bottom-right) -->
+    <!-- Next Episode Countdown Card -->
     <LinearLayout
         android:id="@+id/layoutNextEpisode"
-        android:layout_width="370dp"
+        android:layout_width="340dp"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|end"
-        android:layout_marginEnd="30dp"
-        android:layout_marginBottom="30dp"
+        android:layout_marginEnd="28dp"
+        android:layout_marginBottom="32dp"
         android:background="@drawable/bg_dialog"
         android:orientation="vertical"
         android:padding="18dp"
@@ -336,6 +461,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
+            android:layout_marginBottom="14dp"
             android:ellipsize="end"
             android:maxLines="2"
             android:textColor="@color/text_primary"
@@ -345,45 +471,37 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:gravity="end"
             android:orientation="horizontal">
 
             <TextView
                 android:id="@+id/btnNextCancel"
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="38dp"
-                android:layout_marginEnd="10dp"
+                android:layout_marginEnd="8dp"
+                android:layout_weight="1"
                 android:background="@drawable/bg_button_selector"
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
-                android:nextFocusDown="@+id/btnNextCancel"
                 android:nextFocusLeft="@+id/btnNextCancel"
                 android:nextFocusRight="@+id/btnNextPlayNow"
-                android:nextFocusUp="@+id/btnNextCancel"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:text="@string/player_next_cancel"
+                android:text="@string/btn_cancel"
                 android:textColor="@color/text_secondary"
                 android:textSize="13sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/btnNextPlayNow"
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="38dp"
+                android:layout_weight="1.3"
                 android:background="@drawable/bg_button_selector"
                 android:clickable="true"
                 android:focusable="true"
                 android:gravity="center"
-                android:nextFocusDown="@+id/btnNextPlayNow"
                 android:nextFocusLeft="@+id/btnNextCancel"
                 android:nextFocusRight="@+id/btnNextPlayNow"
-                android:nextFocusUp="@+id/btnNextPlayNow"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:text="@string/player_next_watch_now"
+                android:text="@string/player_next_now"
                 android:textColor="@color/text_button_accent_selector"
                 android:textSize="13sp"
                 android:textStyle="bold" />

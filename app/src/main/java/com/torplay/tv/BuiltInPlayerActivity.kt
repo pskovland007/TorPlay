@@ -5,6 +5,7 @@ import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Context
 import android.media.AudioManager
+import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -17,7 +18,9 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.Window
 import android.view.WindowManager
+import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
@@ -68,7 +71,11 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private lateinit var viewTouchSurface: View
     private lateinit var viewOsdDismissArea: View
     private lateinit var tvQuickHud: TextView
-    private lateinit var layoutOsd: LinearLayout
+    private lateinit var layoutOsd: FrameLayout
+    private lateinit var layoutPlayerBuffering: LinearLayout
+    private lateinit var tvBufferingTitle: TextView
+    private lateinit var tvBufferingStats: TextView
+    private lateinit var btnStartFromBeginning: TextView
     private lateinit var tvPlayerTitle: TextView
     private lateinit var tvStreamInfo: TextView
     private lateinit var tvCurrentTime: TextView
@@ -78,9 +85,9 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private lateinit var btnPlayPause: TextView
     private lateinit var btnForward: TextView
     private lateinit var btnAudioTrack: TextView
+    private lateinit var btnAudioBoost: TextView
     private lateinit var btnSubtitles: TextView
     private lateinit var btnResizeMode: TextView
-    private lateinit var layoutSeriesRow: LinearLayout
     private lateinit var btnEpisodes: TextView
     private lateinit var btnNextEpisode: TextView
     private lateinit var btnAutoNext: TextView
@@ -110,8 +117,14 @@ class BuiltInPlayerActivity : AppCompatActivity() {
 
     private var resizeModeIndex: Int = 0
     private var autoNextEnabled: Boolean = true
+    private var audioBoostDb: Int = 0
+    private var loudnessEnhancer: LoudnessEnhancer? = null
+    private var attachedAudioSessionId: Int = C.AUDIO_SESSION_ID_UNSET
     private var appliedSavedTracksForItem: Boolean = false
+    private var pendingInitialSeekMs: Long = 0L
     private var pendingResumeSanityCheck: Boolean = false
+    private var bufferingStartedAtMs: Long = 0L
+    private var isBufferingNow: Boolean = false
     private var forceHevcFallback: Boolean = false
     private var hasRetriedCodecFallback: Boolean = false
 
@@ -151,9 +164,10 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         override fun run() {
             updateOsdProgress()
             checkAutoNextTrigger()
-            if (layoutOsd.visibility == View.VISIBLE) {
-                maybePollTorrServeStats()
+            if (layoutOsd.visibility == View.VISIBLE || isBufferingNow) {
+                maybePollTorrServeStats(forceFast = isBufferingNow)
             }
+            updateBufferingOverlayState()
             mainHandler.postDelayed(this, 500L)
         }
     }
@@ -181,11 +195,13 @@ class BuiltInPlayerActivity : AppCompatActivity() {
 
         resizeModeIndex = playerPrefs.resizeModeIndex
         autoNextEnabled = playerPrefs.autoNextEpisode
+        audioBoostDb = storage.audioBoostDb
 
         bindViews()
         setupControls()
         setupTouchGestures()
         applyResizeMode(showFeedback = false)
+        updateAudioBoostUi()
         updateAutoNextUi()
         updateSeriesControlsUi()
         initPlayer()
@@ -211,6 +227,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         super.onDestroy()
         savePlaybackProgress()
         uiScope.cancel()
+        releaseLoudnessEnhancer()
         player?.release()
         player = null
     }
@@ -305,6 +322,10 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         viewOsdDismissArea = findViewById(R.id.viewOsdDismissArea)
         tvQuickHud = findViewById(R.id.tvQuickHud)
         layoutOsd = findViewById(R.id.layoutOsd)
+        layoutPlayerBuffering = findViewById(R.id.layoutPlayerBuffering)
+        tvBufferingTitle = findViewById(R.id.tvBufferingTitle)
+        tvBufferingStats = findViewById(R.id.tvBufferingStats)
+        btnStartFromBeginning = findViewById(R.id.btnStartFromBeginning)
         tvPlayerTitle = findViewById(R.id.tvPlayerTitle)
         tvStreamInfo = findViewById(R.id.tvStreamInfo)
         tvCurrentTime = findViewById(R.id.tvCurrentTime)
@@ -314,9 +335,9 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         btnPlayPause = findViewById(R.id.btnPlayPause)
         btnForward = findViewById(R.id.btnForward)
         btnAudioTrack = findViewById(R.id.btnAudioTrack)
+        btnAudioBoost = findViewById(R.id.btnAudioBoost)
         btnSubtitles = findViewById(R.id.btnSubtitles)
         btnResizeMode = findViewById(R.id.btnResizeMode)
-        layoutSeriesRow = findViewById(R.id.layoutSeriesRow)
         btnEpisodes = findViewById(R.id.btnEpisodes)
         btnNextEpisode = findViewById(R.id.btnNextEpisode)
         btnAutoNext = findViewById(R.id.btnAutoNext)
@@ -345,7 +366,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
 
     private fun setupControls() {
         btnRewind.setOnClickListener {
-            seekBy(-15_000L, showQuickHud = false)
+            seekBy(-10_000L, showQuickHud = true)
             scheduleOsdAutoHide()
         }
         btnPlayPause.setOnClickListener {
@@ -353,12 +374,24 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             scheduleOsdAutoHide()
         }
         btnForward.setOnClickListener {
-            seekBy(30_000L, showQuickHud = false)
+            seekBy(10_000L, showQuickHud = true)
             scheduleOsdAutoHide()
         }
         btnAudioTrack.setOnClickListener {
             showAudioTrackDialog()
             scheduleOsdAutoHide()
+        }
+        btnAudioBoost.setOnClickListener {
+            cycleAudioBoost()
+            scheduleOsdAutoHide()
+        }
+        btnStartFromBeginning.setOnClickListener {
+            pendingInitialSeekMs = 0L
+            pendingResumeSanityCheck = false
+            startPositionMs = 0L
+            btnStartFromBeginning.visibility = View.GONE
+            prepareMedia(streamUrl, 0L)
+            showQuickHudMessage("▶ Запуск с начала")
         }
         btnSubtitles.setOnClickListener {
             showSubtitleTrackDialog()
@@ -609,34 +642,85 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         )
     }
 
+    private fun cycleAudioBoost() {
+        val nextIdx = (BOOST_STEPS_DB.indexOf(audioBoostDb) + 1) % BOOST_STEPS_DB.size
+        audioBoostDb = BOOST_STEPS_DB[nextIdx]
+        storage.audioBoostDb = audioBoostDb
+        updateAudioBoostUi()
+        applyAudioBoostToSession(player?.audioSessionId ?: C.AUDIO_SESSION_ID_UNSET)
+        val msg = if (audioBoostDb > 0) "🔊 Усиление звука: +$audioBoostDb дБ" else "🔊 Усиление звука: Выкл"
+        showQuickHudMessage(msg)
+    }
+
+    private fun updateAudioBoostUi() {
+        btnAudioBoost.isSelected = audioBoostDb > 0
+        btnAudioBoost.text = if (audioBoostDb > 0) {
+            "Буст +$audioBoostDb дБ"
+        } else {
+            getString(R.string.player_boost_off)
+        }
+    }
+
+    private fun applyAudioBoostToSession(sessionId: Int) {
+        if (sessionId == C.AUDIO_SESSION_ID_UNSET || sessionId <= 0) return
+        if (audioBoostDb <= 0) {
+            runCatching {
+                loudnessEnhancer?.setTargetGain(0)
+                loudnessEnhancer?.enabled = false
+            }
+            return
+        }
+        runCatching {
+            if (loudnessEnhancer == null || attachedAudioSessionId != sessionId) {
+                releaseLoudnessEnhancer()
+                loudnessEnhancer = LoudnessEnhancer(sessionId)
+                attachedAudioSessionId = sessionId
+            }
+            loudnessEnhancer?.setTargetGain(audioBoostDb * 100)
+            loudnessEnhancer?.enabled = true
+        }.onFailure { err ->
+            AppLogger.w("Player", "LoudnessEnhancer недоступен: ${err.message}")
+        }
+    }
+
+    private fun releaseLoudnessEnhancer() {
+        runCatching { loudnessEnhancer?.enabled = false }
+        runCatching { loudnessEnhancer?.release() }
+        loudnessEnhancer = null
+        attachedAudioSessionId = C.AUDIO_SESSION_ID_UNSET
+    }
+
     private fun updateSeriesControlsUi() {
         val multi = episodes.size > 1
-        layoutSeriesRow.visibility = if (multi) View.VISIBLE else View.GONE
+        val hasNext = multi && hasNextEpisode()
+
+        btnEpisodes.visibility = if (multi) View.VISIBLE else View.GONE
+        btnNextEpisode.visibility = if (hasNext) View.VISIBLE else View.GONE
+        btnAutoNext.visibility = if (multi) View.VISIBLE else View.GONE
 
         if (multi) {
             val posLabel = if (currentEpisodeIndex >= 0) "${currentEpisodeIndex + 1}/${episodes.size}" else "${episodes.size}"
             btnEpisodes.text = "${getString(R.string.player_episodes_btn)} ($posLabel)"
-
-            val hasNext = hasNextEpisode()
-            btnNextEpisode.visibility = if (hasNext) View.VISIBLE else View.GONE
-
-            btnEpisodes.nextFocusRightId = if (hasNext) R.id.btnNextEpisode else R.id.btnAutoNext
-            btnAutoNext.nextFocusLeftId = if (hasNext) R.id.btnNextEpisode else R.id.btnEpisodes
-
-            btnRewind.nextFocusDownId = R.id.btnEpisodes
-            btnPlayPause.nextFocusDownId = R.id.btnEpisodes
-            btnForward.nextFocusDownId = if (hasNext) R.id.btnNextEpisode else R.id.btnEpisodes
-            btnAudioTrack.nextFocusDownId = R.id.btnAutoNext
-            btnSubtitles.nextFocusDownId = R.id.btnAutoNext
-            btnResizeMode.nextFocusDownId = R.id.btnAutoNext
-        } else {
-            btnRewind.nextFocusDownId = R.id.btnRewind
-            btnPlayPause.nextFocusDownId = R.id.btnPlayPause
-            btnForward.nextFocusDownId = R.id.btnForward
-            btnAudioTrack.nextFocusDownId = R.id.btnAudioTrack
-            btnSubtitles.nextFocusDownId = R.id.btnSubtitles
-            btnResizeMode.nextFocusDownId = R.id.btnResizeMode
         }
+
+        // Dynamic single-row left/right focus routing
+        val rowButtons = mutableListOf<TextView>(btnAudioTrack, btnAudioBoost, btnSubtitles, btnResizeMode)
+        if (multi) rowButtons.add(btnEpisodes)
+        if (hasNext) rowButtons.add(btnNextEpisode)
+        if (multi) rowButtons.add(btnAutoNext)
+
+        for (i in rowButtons.indices) {
+            val btn = rowButtons[i]
+            btn.nextFocusLeftId = if (i > 0) rowButtons[i - 1].id else btn.id
+            btn.nextFocusRightId = if (i < rowButtons.lastIndex) rowButtons[i + 1].id else btn.id
+            btn.nextFocusUpId = R.id.btnPlayPause
+            btn.nextFocusDownId = btn.id
+        }
+
+        btnRewind.nextFocusDownId = R.id.btnAudioTrack
+        btnPlayPause.nextFocusDownId = R.id.btnAudioBoost
+        btnForward.nextFocusDownId = R.id.btnSubtitles
+
         updateHeaderTitle()
     }
 
@@ -722,8 +806,8 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         val loadControl = loadControlBuilder.build()
 
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-            .setConnectTimeoutMs(10_000)
-            .setReadTimeoutMs(20_000)
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(45_000)
             .setAllowCrossProtocolRedirects(true)
 
         val mediaSourceFactory = DefaultMediaSourceFactory(httpDataSourceFactory)
@@ -740,7 +824,11 @@ class BuiltInPlayerActivity : AppCompatActivity() {
 
         exo.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                btnPlayPause.text = if (isPlaying) "Пауза" else "Играть"
+                btnPlayPause.text = if (isPlaying) "❚❚" else "▶"
+            }
+
+            override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                applyAudioBoostToSession(audioSessionId)
             }
 
             override fun onPlayerError(error: PlaybackException) {
@@ -758,6 +846,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                         "Переключение на резервный декодер…",
                         Toast.LENGTH_SHORT
                     ).show()
+                    releaseLoudnessEnhancer()
                     playerView.player = null
                     exo.release()
                     player = null
@@ -784,8 +873,30 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_READY) {
-                    if (pendingResumeSanityCheck) {
+                if (playbackState == Player.STATE_BUFFERING) {
+                    if (!isBufferingNow) {
+                        isBufferingNow = true
+                        bufferingStartedAtMs = System.currentTimeMillis()
+                    }
+                    maybePollTorrServeStats(forceFast = true)
+                    updateBufferingOverlayState()
+                } else if (playbackState == Player.STATE_READY) {
+                    isBufferingNow = false
+                    bufferingStartedAtMs = 0L
+                    layoutPlayerBuffering.visibility = View.GONE
+                    btnStartFromBeginning.visibility = View.GONE
+
+                    applyAudioBoostToSession(exo.audioSessionId)
+
+                    if (pendingInitialSeekMs > 2_000L) {
+                        val targetSeek = pendingInitialSeekMs
+                        pendingInitialSeekMs = 0L
+                        val dur = exo.duration
+                        if (dur <= 0L || targetSeek < dur - 8_000L) {
+                            pendingResumeSanityCheck = true
+                            exo.seekTo(targetSeek)
+                        }
+                    } else if (pendingResumeSanityCheck) {
                         pendingResumeSanityCheck = false
                         val dur = exo.duration
                         if (dur > 15_000L && exo.currentPosition >= dur - 8_000L) {
@@ -794,6 +905,8 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                     }
                     updateStreamInfoText()
                 } else if (playbackState == Player.STATE_ENDED) {
+                    isBufferingNow = false
+                    layoutPlayerBuffering.visibility = View.GONE
                     savePlaybackProgress(completed = true)
                     if (autoNextEnabled && hasNextEpisode()) {
                         if (!nextCardActive) {
@@ -848,13 +961,19 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         trackSelector.setParameters(resetBuilder)
 
         val mediaItem = MediaItem.fromUri(url)
-        exo.setMediaItem(mediaItem)
-        if (seekPosMs > 2_000L) {
-            pendingResumeSanityCheck = true
-            exo.seekTo(seekPosMs)
-        } else {
-            pendingResumeSanityCheck = false
+        pendingInitialSeekMs = if (seekPosMs > 2_000L) seekPosMs else 0L
+        pendingResumeSanityCheck = false
+        isBufferingNow = true
+        bufferingStartedAtMs = System.currentTimeMillis()
+        updateBufferingOverlayState()
+
+        if (torrentHash.isNotBlank()) {
+            uiScope.launch(Dispatchers.IO) {
+                runCatching { torrServeClient.triggerPreload(torrentHash, fileId) }
+            }
         }
+
+        exo.setMediaItem(mediaItem)
         exo.prepare()
         exo.playWhenReady = true
         updateStreamInfoText()
@@ -879,16 +998,52 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         }
     }
 
-    private fun maybePollTorrServeStats() {
+    private fun maybePollTorrServeStats(forceFast: Boolean = false) {
         if (torrentHash.isBlank()) return
         val now = System.currentTimeMillis()
-        if (now - lastTorrStatsFetchMs < 2_500L) return
+        val interval = if (forceFast) 1_400L else 2_500L
+        if (now - lastTorrStatsFetchMs < interval) return
         if (statsJob?.isActive == true) return
         lastTorrStatsFetchMs = now
         statsJob = uiScope.launch {
             val info = runCatching { torrServeClient.getTorrentInfo(torrentHash) }.getOrNull() ?: return@launch
             updateTorrentStatsSummary(info)
             updateStreamInfoText()
+            if (isBufferingNow) {
+                val pct = info.preloadPercent()
+                val speed = if (info.downloadSpeed > 0.0) info.formattedSpeed() else "поиск пиров"
+                val detail = "Буфер: $pct% • $speed • Пиры ${info.activePeers}/${info.totalPeers}"
+                tvBufferingStats.text = detail
+            }
+        }
+    }
+
+    private fun updateBufferingOverlayState() {
+        if (!isBufferingNow) {
+            if (layoutPlayerBuffering.visibility == View.VISIBLE) {
+                layoutPlayerBuffering.visibility = View.GONE
+            }
+            return
+        }
+        val elapsed = System.currentTimeMillis() - bufferingStartedAtMs
+        if (elapsed >= 900L && layoutOsd.visibility != View.VISIBLE) {
+            if (layoutPlayerBuffering.visibility != View.VISIBLE) {
+                tvBufferingTitle.text = if (pendingInitialSeekMs > 2_000L) {
+                    "Подготовка потока (${formatDuration(pendingInitialSeekMs)})…"
+                } else {
+                    getString(R.string.player_buffering_title)
+                }
+                if (tvBufferingStats.text.isNullOrBlank()) {
+                    tvBufferingStats.text = torrentStatsSummary.ifBlank { "Загрузка данных из TorrServe…" }
+                }
+                layoutPlayerBuffering.visibility = View.VISIBLE
+            }
+        }
+        if (elapsed >= 5_500L && (pendingInitialSeekMs > 2_000L || startPositionMs > 2_000L)) {
+            if (btnStartFromBeginning.visibility != View.VISIBLE) {
+                btnStartFromBeginning.visibility = View.VISIBLE
+                btnStartFromBeginning.requestFocus()
+            }
         }
     }
 
@@ -1157,6 +1312,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         updateOsdProgress()
         updateStreamInfoText()
         maybePollTorrServeStats()
+        layoutPlayerBuffering.visibility = View.GONE
         layoutOsd.visibility = View.VISIBLE
         btnPlayPause.requestFocus()
         scheduleOsdAutoHide()
@@ -1215,7 +1371,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                 seekBar.progress = 0
             }
         }
-        btnPlayPause.text = if (exo.isPlaying) "Пауза" else "Играть"
+        btnPlayPause.text = if (exo.isPlaying) "❚❚" else "▶"
     }
 
     private fun updateStreamInfoText() {
@@ -1457,6 +1613,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         const val EXTRA_FILE_ID = "extra_file_id"
         const val EXTRA_START_POS_MS = "extra_start_pos_ms"
 
+        private val BOOST_STEPS_DB = intArrayOf(0, 3, 6, 9, 12)
         private val BTIH_REGEX = Regex("btih:([a-zA-Z0-9]+)", RegexOption.IGNORE_CASE)
     }
 }
