@@ -56,7 +56,7 @@
                 android:gravity="center_vertical"
                 android:nextFocusDown="@+id/etSearch"
                 android:nextFocusLeft="@+id/btnTorrServeStatus"
-                android:nextFocusRight="@+id/btnFavoriteQuery"
+                android:nextFocusRight="@+id/btnFavorites"
                 android:nextFocusUp="@+id/btnTorrServeStatus"
                 android:orientation="horizontal"
                 android:paddingStart="12dp"
@@ -79,7 +79,7 @@
             </LinearLayout>
 
             <TextView
-                android:id="@+id/btnFavoriteQuery"
+                android:id="@+id/btnFavorites"
                 android:layout_width="wrap_content"
                 android:layout_height="36dp"
                 android:layout_marginEnd="8dp"
@@ -89,11 +89,31 @@
                 android:gravity="center"
                 android:nextFocusDown="@+id/btnVoiceSearch"
                 android:nextFocusLeft="@+id/btnTorrServeStatus"
+                android:nextFocusRight="@+id/btnHistory"
+                android:nextFocusUp="@+id/btnFavorites"
+                android:paddingStart="13dp"
+                android:paddingEnd="13dp"
+                android:text="@string/btn_favorites_header"
+                android:textColor="@color/text_primary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/btnHistory"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_marginEnd="8dp"
+                android:background="@drawable/bg_button_selector"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:nextFocusDown="@+id/btnVoiceSearch"
+                android:nextFocusLeft="@+id/btnFavorites"
                 android:nextFocusRight="@+id/btnSettings"
-                android:nextFocusUp="@+id/btnFavoriteQuery"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:text="@string/btn_fav_toggle"
+                android:nextFocusUp="@+id/btnHistory"
+                android:paddingStart="13dp"
+                android:paddingEnd="13dp"
+                android:text="@string/btn_history_header"
                 android:textColor="@color/text_primary"
                 android:textSize="12sp"
                 android:textStyle="bold" />
@@ -107,11 +127,11 @@
                 android:focusable="true"
                 android:gravity="center"
                 android:nextFocusDown="@+id/btnSearch"
-                android:nextFocusLeft="@+id/btnFavoriteQuery"
+                android:nextFocusLeft="@+id/btnHistory"
                 android:nextFocusRight="@+id/btnSettings"
                 android:nextFocusUp="@+id/btnSettings"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
+                android:paddingStart="13dp"
+                android:paddingEnd="13dp"
                 android:text="@string/btn_settings"
                 android:textColor="@color/text_primary"
                 android:textSize="12sp"
@@ -146,6 +166,25 @@
                 android:textColorHint="@color/text_muted"
                 android:textSize="16sp" />
 
+            <TextView
+                android:id="@+id/btnClearSearch"
+                android:layout_width="46dp"
+                android:layout_height="46dp"
+                android:layout_marginStart="8dp"
+                android:background="@drawable/bg_button_selector"
+                android:clickable="true"
+                android:contentDescription="@string/btn_clear_search"
+                android:focusable="true"
+                android:gravity="center"
+                android:nextFocusLeft="@+id/etSearch"
+                android:nextFocusRight="@+id/btnVoiceSearch"
+                android:nextFocusUp="@+id/btnTorrServeStatus"
+                android:text="✕"
+                android:textColor="@color/text_secondary"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
             <LinearLayout
                 android:id="@+id/btnVoiceSearch"
                 android:layout_width="wrap_content"
@@ -159,7 +198,7 @@
                 android:gravity="center"
                 android:nextFocusLeft="@+id/etSearch"
                 android:nextFocusRight="@+id/btnSearch"
-                android:nextFocusUp="@+id/btnFavoriteQuery"
+                android:nextFocusUp="@+id/btnFavorites"
                 android:orientation="horizontal"
                 android:paddingStart="14dp"
                 android:paddingEnd="16dp">
@@ -502,6 +541,69 @@
                     android:id="@+id/rvTmdbSeries"
                     android:layout_width="match_parent"
                     android:layout_height="236dp"
+                    android:layout_marginBottom="8dp"
+                    android:clipToPadding="false"
+                    android:visibility="gone" />
+
+                <!-- Torrent Showcase Shelf 1: Popular Movies -->
+                <TextView
+                    android:id="@+id/tvTorrentTrendingHeader"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="6dp"
+                    android:text="@string/torrent_showcase_trending_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rvTorrentTrending"
+                    android:layout_width="match_parent"
+                    android:layout_height="136dp"
+                    android:layout_marginBottom="8dp"
+                    android:clipToPadding="false"
+                    android:visibility="gone" />
+
+                <!-- Torrent Showcase Shelf 2: Newest Movies -->
+                <TextView
+                    android:id="@+id/tvTorrentNewHeader"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="6dp"
+                    android:text="@string/torrent_showcase_new_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rvTorrentNew"
+                    android:layout_width="match_parent"
+                    android:layout_height="136dp"
+                    android:layout_marginBottom="8dp"
+                    android:clipToPadding="false"
+                    android:visibility="gone" />
+
+                <!-- Torrent Showcase Shelf 3: Popular Series -->
+                <TextView
+                    android:id="@+id/tvTorrentSeriesHeader"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="6dp"
+                    android:text="@string/torrent_showcase_series_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rvTorrentSeries"
+                    android:layout_width="match_parent"
+                    android:layout_height="136dp"
                     android:layout_marginBottom="8dp"
                     android:clipToPadding="false"
                     android:visibility="gone" />

@@ -37,6 +37,16 @@ data class TorrentItem(
     }
 
     fun isCamRelease(): Boolean = isCamTitle(title)
+
+    fun stableFavoriteId(): String {
+        val hashMatch = BTIH_REGEX.find(magnet)
+        if (hashMatch != null) {
+            return "btih:${hashMatch.groupValues[1].lowercase(Locale.US)}"
+        }
+        val link = playableLink.trim().lowercase(Locale.US)
+        if (link.isNotBlank()) return "link:${link.hashCode()}"
+        return "title:${title.trim().lowercase(Locale.ROOT).hashCode()}"
+    }
 }
 
 data class SearchResponse(
@@ -137,6 +147,51 @@ data class FavoriteQuery(
     val query: String,
     val addedAt: Long
 )
+
+data class FavoriteTorrent(
+    val id: String,
+    val title: String,
+    val magnet: String,
+    val torrentUrl: String = "",
+    val sizeBytes: Long = 0L,
+    val sizeText: String = "",
+    val quality: String = "",
+    val isHdr: Boolean = false,
+    val tracker: String = "",
+    val voices: List<String> = emptyList(),
+    val addedAt: Long = 0L
+) {
+    val playableLink: String
+        get() = magnet.ifBlank { torrentUrl }
+
+    fun formattedSize(): String {
+        if (sizeBytes > 0L) return formatBytes(sizeBytes)
+        return sizeText.ifBlank { "—" }
+    }
+
+    fun formattedSource(): String {
+        val parts = mutableListOf<String>()
+        if (tracker.isNotBlank()) parts.add(tracker)
+        if (voices.isNotEmpty()) parts.add(voices.take(2).joinToString(", "))
+        return parts.joinToString(" • ")
+    }
+
+    fun toTorrentItem(): TorrentItem {
+        return TorrentItem(
+            title = title,
+            magnet = magnet,
+            torrentUrl = torrentUrl,
+            sizeBytes = sizeBytes,
+            sizeText = sizeText,
+            quality = quality,
+            isHdr = isHdr,
+            tracker = tracker,
+            voices = voices
+        )
+    }
+}
+
+private val BTIH_REGEX = Regex("xt=urn:btih:([a-fA-F0-9]{32,40}|[a-zA-Z2-7]{32})", RegexOption.IGNORE_CASE)
 
 private val CAM_TITLE_REGEX = Regex(
     "(?:^|[\\s.\\-\\[\\](_/|])(?:cam|camrip|hdcam|ts|hdts|telesync|telecine|tc|hdtc|screener|dvdscr|bdscr|workprint|wp|экранка)(?:$|[\\s.\\-\\[\\])_/|])",

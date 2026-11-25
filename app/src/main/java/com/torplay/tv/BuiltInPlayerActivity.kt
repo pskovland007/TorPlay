@@ -25,6 +25,7 @@ import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
@@ -34,6 +35,8 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.mediacodec.MediaCodecInfo
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -109,6 +112,8 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private var autoNextEnabled: Boolean = true
     private var appliedSavedTracksForItem: Boolean = false
     private var pendingResumeSanityCheck: Boolean = false
+    private var forceHevcFallback: Boolean = false
+    private var hasRetriedCodecFallback: Boolean = false
 
     private var nextCountdownSec: Int = 0
     private var nextCardDismissedForCurrent: Boolean = false
@@ -632,21 +637,70 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         updateHeaderTitle()
     }
 
-    private fun initPlayer() {
+    private fun buildSmartCodecSelector(preferHevcForDv: Boolean): MediaCodecSelector {
+        return object : MediaCodecSelector {
+            override fun getDecoderInfos(
+                mimeType: String,
+                requiresSecureDecoder: Boolean,
+                requiresTunnelingDecoder: Boolean
+            ): MutableList<MediaCodecInfo> {
+                if (mimeType == MimeTypes.VIDEO_DOLBY_VISION) {
+                    val hevcDecoders = MediaCodecSelector.DEFAULT.getDecoderInfos(
+                        MimeTypes.VIDEO_H265,
+                        requiresSecureDecoder,
+                        requiresTunnelingDecoder
+                    )
+                    if (preferHevcForDv && hevcDecoders.isNotEmpty()) {
+                        return hevcDecoders.toMutableList()
+                    }
+                    val dvDecoders = MediaCodecSelector.DEFAULT.getDecoderInfos(
+                        mimeType,
+                        requiresSecureDecoder,
+                        requiresTunnelingDecoder
+                    )
+                    val combined = ArrayList<MediaCodecInfo>(dvDecoders.size + hevcDecoders.size)
+                    combined.addAll(dvDecoders)
+                    for (hevc in hevcDecoders) {
+                        if (combined.none { it.name == hevc.name }) {
+                            combined.add(hevc)
+                        }
+                    }
+                    return combined
+                }
+                return MediaCodecSelector.DEFAULT.getDecoderInfos(
+                    mimeType,
+                    requiresSecureDecoder,
+                    requiresTunnelingDecoder
+                ).toMutableList()
+            }
+        }
+    }
+
+    private fun initPlayer(resumePositionMs: Long = startPositionMs) {
         val prefAudio = playerPrefs.preferredAudioLang.ifBlank { "rus" }
         val prefSub = playerPrefs.preferredSubLang.ifBlank { "rus" }
         trackSelector = DefaultTrackSelector(this).apply {
             val builder = buildUponParameters()
                 .setPreferredAudioLanguage(prefAudio)
                 .setPreferredTextLanguage(prefSub)
+                .setExceedVideoConstraintsIfNecessary(true)
+                .setExceedRendererCapabilitiesIfNecessary(true)
+                .setAllowVideoMixedMimeTypeAdaptiveness(true)
             if (playerPrefs.subtitlesDisabled) {
                 builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
             }
             setParameters(builder)
         }
 
+        val extensionMode = if (forceHevcFallback) {
+            DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
+        } else {
+            DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
+        }
         val renderersFactory = DefaultRenderersFactory(this)
-            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+            .setExtensionRendererMode(extensionMode)
+            .setEnableDecoderFallback(true)
+            .setMediaCodecSelector(buildSmartCodecSelector(preferHevcForDv = forceHevcFallback))
 
         val loadControlBuilder = DefaultLoadControl.Builder()
         when (storage.bufferProfile) {
@@ -688,11 +742,35 @@ class BuiltInPlayerActivity : AppCompatActivity() {
 
             override fun onPlayerError(error: PlaybackException) {
                 AppLogger.e("Player", "Ошибка воспроизведения ($title): ${error.errorCodeName}", error)
-                Toast.makeText(
-                    this@BuiltInPlayerActivity,
-                    "Ошибка плеера: ${error.errorCodeName}",
-                    Toast.LENGTH_LONG
-                ).show()
+                val isCodecError = error.errorCode in 4000..4999 ||
+                    error.errorCodeName.contains("DECOD", ignoreCase = true)
+
+                if (isCodecError && !hasRetriedCodecFallback) {
+                    hasRetriedCodecFallback = true
+                    forceHevcFallback = true
+                    val resumeAt = exo.currentPosition.coerceAtLeast(resumePositionMs)
+                    AppLogger.w("Player", "Повторный запуск с резервным декодером HEVC (pos=$resumeAt)")
+                    Toast.makeText(
+                        this@BuiltInPlayerActivity,
+                        "Переключение на резервный декодер…",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    playerView.player = null
+                    exo.release()
+                    player = null
+                    initPlayer(resumePositionMs = resumeAt)
+                    return
+                }
+
+                if (isCodecError && !isFinishing && !isDestroyed) {
+                    showCodecFallbackDialog(error.errorCodeName)
+                } else {
+                    Toast.makeText(
+                        this@BuiltInPlayerActivity,
+                        "Ошибка плеера: ${error.errorCodeName}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
             }
 
             override fun onTracksChanged(tracks: Tracks) {
@@ -725,7 +803,28 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             }
         })
 
-        prepareMedia(streamUrl, startPositionMs)
+        prepareMedia(streamUrl, resumePositionMs)
+    }
+
+    private fun showCodecFallbackDialog(errorCodeName: String) {
+        val fullTitle = if (episodeLabel.isNotBlank()) "$title — $episodeLabel" else title
+        AlertDialog.Builder(this)
+            .setTitle("Ошибка кодека ($errorCodeName)")
+            .setMessage(
+                "Устройство не смогло аппаратно декодировать этот видеопоток (часто бывает с 4K Dolby Vision или AV1).\n\n" +
+                    "Открыть этот же поток во внешнем плеере (MX Player / VLC)?"
+            )
+            .setPositiveButton("Внешний плеер") { _, _ ->
+                val res = PlayerController(this).playExternal(streamUrl, fullTitle)
+                if (!res.launched) {
+                    Toast.makeText(this, res.message, Toast.LENGTH_LONG).show()
+                }
+                finish()
+            }
+            .setNegativeButton("Закрыть") { _, _ ->
+                finish()
+            }
+            .show()
     }
 
     private fun prepareMedia(url: String, seekPosMs: Long) {
@@ -903,6 +1002,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         if (targetIndex !in episodes.indices) return
         savePlaybackProgress()
 
+        hasRetriedCodecFallback = false
         val nextFile = episodes[targetIndex]
         currentEpisodeIndex = targetIndex
         fileId = nextFile.id

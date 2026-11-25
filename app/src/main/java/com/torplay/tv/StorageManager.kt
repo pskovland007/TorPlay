@@ -59,11 +59,11 @@ class StorageManager(context: Context) {
         }
 
     var catalogProvider: Int
-        get() = prefs.getInt(KEY_CATALOG_PROVIDER, CATALOG_PROVIDER_KINOPOISK)
-            .coerceIn(CATALOG_PROVIDER_KINOPOISK, CATALOG_PROVIDER_TMDB)
+        get() = prefs.getInt(KEY_CATALOG_PROVIDER, CATALOG_PROVIDER_TORRENTS)
+            .coerceIn(CATALOG_PROVIDER_KINOPOISK, CATALOG_PROVIDER_TORRENTS)
         set(value) {
             prefs.edit()
-                .putInt(KEY_CATALOG_PROVIDER, value.coerceIn(CATALOG_PROVIDER_KINOPOISK, CATALOG_PROVIDER_TMDB))
+                .putInt(KEY_CATALOG_PROVIDER, value.coerceIn(CATALOG_PROVIDER_KINOPOISK, CATALOG_PROVIDER_TORRENTS))
                 .apply()
         }
 
@@ -73,12 +73,24 @@ class StorageManager(context: Context) {
             prefs.edit().putString(KEY_KINOPOISK_API_KEY, value.trim()).apply()
         }
 
+    fun activeCatalogRequiresKey(): Boolean {
+        return catalogProvider != CATALOG_PROVIDER_TORRENTS
+    }
+
     fun activeCatalogKey(): String {
-        return if (catalogProvider == CATALOG_PROVIDER_KINOPOISK) kinopoiskApiKey else tmdbApiKey
+        return when (catalogProvider) {
+            CATALOG_PROVIDER_KINOPOISK -> kinopoiskApiKey
+            CATALOG_PROVIDER_TMDB -> tmdbApiKey
+            else -> ""
+        }
     }
 
     fun activeCatalogName(): String {
-        return if (catalogProvider == CATALOG_PROVIDER_KINOPOISK) "Кинопоиск" else "TMDB"
+        return when (catalogProvider) {
+            CATALOG_PROVIDER_TORRENTS -> "Торренты"
+            CATALOG_PROVIDER_KINOPOISK -> "Кинопоиск"
+            else -> "TMDB"
+        }
     }
 
     var tmdbApiKey: String
@@ -307,6 +319,113 @@ class StorageManager(context: Context) {
         prefs.edit().putString(KEY_FAVORITES, "[]").apply()
     }
 
+    fun getFavoriteTorrents(): List<FavoriteTorrent> {
+        val raw = prefs.getString(KEY_FAVORITE_TORRENTS, "[]").orEmpty()
+        val list = mutableListOf<FavoriteTorrent>()
+        runCatching {
+            val arr = JSONArray(raw)
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val id = o.optString("id").trim()
+                val title = o.optString("title").trim()
+                val magnet = o.optString("magnet").trim()
+                val torrentUrl = o.optString("torrentUrl").trim()
+                if (id.isNotBlank() && title.isNotBlank() && (magnet.isNotBlank() || torrentUrl.isNotBlank())) {
+                    val voices = mutableListOf<String>()
+                    val vArr = o.optJSONArray("voices")
+                    if (vArr != null) {
+                        for (v in 0 until vArr.length()) {
+                            val vs = vArr.optString(v).trim()
+                            if (vs.isNotBlank()) voices.add(vs)
+                        }
+                    }
+                    list.add(
+                        FavoriteTorrent(
+                            id = id,
+                            title = title,
+                            magnet = magnet,
+                            torrentUrl = torrentUrl,
+                            sizeBytes = o.optLong("sizeBytes", 0L),
+                            sizeText = o.optString("sizeText", ""),
+                            quality = o.optString("quality", ""),
+                            isHdr = o.optBoolean("isHdr", false),
+                            tracker = o.optString("tracker", ""),
+                            voices = voices,
+                            addedAt = o.optLong("addedAt", 0L)
+                        )
+                    )
+                }
+            }
+        }
+        return list.sortedByDescending { it.addedAt }.take(40)
+    }
+
+    fun isFavoriteTorrent(item: TorrentItem): Boolean {
+        val id = item.stableFavoriteId()
+        return getFavoriteTorrents().any { it.id == id }
+    }
+
+    fun toggleFavoriteTorrent(item: TorrentItem): Boolean {
+        if (item.title.isBlank() || item.playableLink.isBlank()) return false
+        val id = item.stableFavoriteId()
+        val current = getFavoriteTorrents()
+        val exists = current.any { it.id == id }
+        val updated = if (exists) {
+            current.filterNot { it.id == id }
+        } else {
+            val entry = FavoriteTorrent(
+                id = id,
+                title = item.title,
+                magnet = item.magnet,
+                torrentUrl = item.torrentUrl,
+                sizeBytes = item.sizeBytes,
+                sizeText = item.sizeText,
+                quality = item.quality,
+                isHdr = item.isHdr,
+                tracker = item.tracker,
+                voices = item.voices,
+                addedAt = System.currentTimeMillis()
+            )
+            listOf(entry) + current
+        }
+        persistFavoriteTorrents(updated.take(40))
+        return !exists
+    }
+
+    fun removeFavoriteTorrent(id: String) {
+        if (id.isBlank()) return
+        val updated = getFavoriteTorrents().filterNot { it.id == id }
+        persistFavoriteTorrents(updated)
+    }
+
+    fun clearFavoriteTorrents() {
+        prefs.edit().putString(KEY_FAVORITE_TORRENTS, "[]").apply()
+    }
+
+    private fun persistFavoriteTorrents(items: List<FavoriteTorrent>) {
+        val arr = JSONArray()
+        for (item in items) {
+            val vArr = JSONArray()
+            for (v in item.voices) vArr.put(v)
+            arr.put(
+                JSONObject().apply {
+                    put("id", item.id)
+                    put("title", item.title)
+                    put("magnet", item.magnet)
+                    put("torrentUrl", item.torrentUrl)
+                    put("sizeBytes", item.sizeBytes)
+                    put("sizeText", item.sizeText)
+                    put("quality", item.quality)
+                    put("isHdr", item.isHdr)
+                    put("tracker", item.tracker)
+                    put("voices", vArr)
+                    put("addedAt", item.addedAt)
+                }
+            )
+        }
+        prefs.edit().putString(KEY_FAVORITE_TORRENTS, arr.toString()).apply()
+    }
+
     private fun persistFavorites(items: List<FavoriteQuery>) {
         val arr = JSONArray()
         for (fav in items) {
@@ -391,6 +510,7 @@ class StorageManager(context: Context) {
             put(KEY_WATCHED_EPISODES, watchedArr)
             put(KEY_WATCH_HISTORY, JSONArray(prefs.getString(KEY_WATCH_HISTORY, "[]") ?: "[]"))
             put(KEY_FAVORITES, JSONArray(prefs.getString(KEY_FAVORITES, "[]") ?: "[]"))
+            put(KEY_FAVORITE_TORRENTS, JSONArray(prefs.getString(KEY_FAVORITE_TORRENTS, "[]") ?: "[]"))
             put(KEY_RECENT_SEARCHES, JSONArray(prefs.getString(KEY_RECENT_SEARCHES, "[]") ?: "[]"))
         }
     }
@@ -408,8 +528,8 @@ class StorageManager(context: Context) {
         if (obj.has(KEY_CATALOG_PROVIDER)) {
             editor.putInt(
                 KEY_CATALOG_PROVIDER,
-                obj.optInt(KEY_CATALOG_PROVIDER, CATALOG_PROVIDER_KINOPOISK)
-                    .coerceIn(CATALOG_PROVIDER_KINOPOISK, CATALOG_PROVIDER_TMDB)
+                obj.optInt(KEY_CATALOG_PROVIDER, CATALOG_PROVIDER_TORRENTS)
+                    .coerceIn(CATALOG_PROVIDER_KINOPOISK, CATALOG_PROVIDER_TORRENTS)
             )
         }
         if (obj.has(KEY_KINOPOISK_API_KEY)) {
@@ -455,6 +575,9 @@ class StorageManager(context: Context) {
         obj.optJSONArray(KEY_FAVORITES)?.let { arr ->
             editor.putString(KEY_FAVORITES, arr.toString())
         }
+        obj.optJSONArray(KEY_FAVORITE_TORRENTS)?.let { arr ->
+            editor.putString(KEY_FAVORITE_TORRENTS, arr.toString())
+        }
         obj.optJSONArray(KEY_RECENT_SEARCHES)?.let { arr ->
             editor.putString(KEY_RECENT_SEARCHES, arr.toString())
         }
@@ -484,6 +607,7 @@ class StorageManager(context: Context) {
         private const val KEY_WATCHED_EPISODES = "watched_episodes"
         private const val KEY_WATCH_HISTORY = "watch_history"
         private const val KEY_FAVORITES = "favorites"
+        private const val KEY_FAVORITE_TORRENTS = "favorite_torrents"
         private const val KEY_RECENT_SEARCHES = "recent_searches"
 
         const val BUFFER_PROFILE_FAST = 0
@@ -492,6 +616,7 @@ class StorageManager(context: Context) {
 
         const val CATALOG_PROVIDER_KINOPOISK = 0
         const val CATALOG_PROVIDER_TMDB = 1
+        const val CATALOG_PROVIDER_TORRENTS = 2
 
         const val DEFAULT_TORRSERVE_URL = "http://127.0.0.1:8090"
         const val DEFAULT_RUTOR_MIRROR = "https://rutor.info"

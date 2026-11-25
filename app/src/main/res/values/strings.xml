@@ -79,4 +79,18 @@
     <string name="update_downloading">Загрузка обновления…</string>
     <string name="update_ready">APK загружен и готов к установке</string>
     <string name="update_cancelled">Загрузка отменена</string>
+    <string name="btn_favorites_header">★ Избранное</string>
+    <string name="btn_history_header">История</string>
+    <string name="btn_clear_search">Очистить поиск</string>
+    <string name="saved_favorites_title">Избранные раздачи</string>
+    <string name="saved_favorites_empty">В избранном пока нет раздач.\nНажмите ★ на нужной раздаче или удерживайте OK на пульте.</string>
+    <string name="saved_history_title">Последнее просмотренное</string>
+    <string name="saved_history_empty">История просмотров пока пуста.\nЗапустите любой фильм или сериал, чтобы он появился здесь.</string>
+    <string name="saved_btn_clear">Очистить всё</string>
+    <string name="saved_btn_close">Закрыть</string>
+    <string name="fav_item_hint">OK — смотреть • Удерж. — убрать</string>
+    <string name="showcase_action_watch">▶ Смотреть сейчас</string>
+    <string name="showcase_action_fav_add">★ Добавить в избранное</string>
+    <string name="showcase_action_fav_remove">✕ Убрать из избранного</string>
+    <string name="showcase_action_find_all">Найти все раздачи фильма</string>
 </resources>

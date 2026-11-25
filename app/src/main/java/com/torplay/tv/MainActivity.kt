@@ -9,7 +9,9 @@ import android.content.Intent
 import android.graphics.Typeface
 import android.os.Bundle
 import android.speech.RecognizerIntent
+import android.text.Editable
 import android.text.TextUtils
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
@@ -54,22 +56,28 @@ class MainActivity : AppCompatActivity() {
     private lateinit var updateManager: UpdateManager
     private lateinit var tmdbClient: TmdbClient
     private lateinit var kinopoiskClient: KinopoiskClient
+    private lateinit var torrentShowcaseClient: TorrentShowcaseClient
     private lateinit var posterLoader: PosterLoader
     private lateinit var adapter: TorrentAdapter
     private lateinit var historyAdapter: HistoryAdapter
-    private lateinit var favoriteAdapter: FavoriteAdapter
+    private lateinit var favoriteTorrentAdapter: FavoriteTorrentAdapter
     private lateinit var recentSearchAdapter: RecentSearchAdapter
     private lateinit var tmdbTrendingAdapter: CatalogAdapter
     private lateinit var tmdbNowPlayingAdapter: CatalogAdapter
     private lateinit var tmdbSeriesAdapter: CatalogAdapter
     private lateinit var tmdbSearchAdapter: CatalogAdapter
+    private lateinit var torrentTrendingAdapter: TorrentShowcaseAdapter
+    private lateinit var torrentNewAdapter: TorrentShowcaseAdapter
+    private lateinit var torrentSeriesAdapter: TorrentShowcaseAdapter
 
     private lateinit var btnTorrServeStatus: LinearLayout
     private lateinit var viewStatusDot: View
     private lateinit var tvTorrServeStatus: TextView
-    private lateinit var btnFavoriteQuery: TextView
+    private lateinit var btnFavorites: TextView
+    private lateinit var btnHistory: TextView
     private lateinit var btnSettings: TextView
     private lateinit var etSearch: EditText
+    private lateinit var btnClearSearch: TextView
     private lateinit var btnVoiceSearch: LinearLayout
     private lateinit var btnSearch: TextView
     private lateinit var rvRecentSearches: RecyclerView
@@ -94,6 +102,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var rvTmdbNowPlaying: RecyclerView
     private lateinit var tvTmdbSeriesHeader: TextView
     private lateinit var rvTmdbSeries: RecyclerView
+    private lateinit var tvTorrentTrendingHeader: TextView
+    private lateinit var rvTorrentTrending: RecyclerView
+    private lateinit var tvTorrentNewHeader: TextView
+    private lateinit var rvTorrentNew: RecyclerView
+    private lateinit var tvTorrentSeriesHeader: TextView
+    private lateinit var rvTorrentSeries: RecyclerView
     private lateinit var tvFavoritesHeader: TextView
     private lateinit var rvFavorites: RecyclerView
     private lateinit var tvHistoryHeader: TextView
@@ -119,6 +133,7 @@ class MainActivity : AppCompatActivity() {
     private var pendingStorageAction: (() -> Unit)? = null
     private var tmdbLoadedOnce: Boolean = false
     private var tmdbShelves: CatalogShelves? = null
+    private var torrentShelves: TorrentShowcaseShelves? = null
     private var tmdbIsLoading: Boolean = false
     private var lastPlayedHash: String = ""
     private var waitingForPlayerReturn: Boolean = false
@@ -177,6 +192,7 @@ class MainActivity : AppCompatActivity() {
         updateManager = UpdateManager(this)
         tmdbClient = TmdbClient(storage)
         kinopoiskClient = KinopoiskClient(storage)
+        torrentShowcaseClient = TorrentShowcaseClient(storage)
         posterLoader = PosterLoader(this)
 
         hideCamReleases = storage.hideCamReleases
@@ -187,10 +203,7 @@ class MainActivity : AppCompatActivity() {
         updateFilterChipsUi()
         updateFavoriteButtonUi()
 
-        if (storage.lastQuery.isNotBlank()) {
-            etSearch.setText(storage.lastQuery)
-            etSearch.setSelection(storage.lastQuery.length)
-        }
+        updateClearSearchButtonUi()
         refreshHomeShelves()
         loadTmdbShowcase(force = false)
         etSearch.requestFocus()
@@ -341,9 +354,11 @@ class MainActivity : AppCompatActivity() {
         btnTorrServeStatus = findViewById(R.id.btnTorrServeStatus)
         viewStatusDot = findViewById(R.id.viewStatusDot)
         tvTorrServeStatus = findViewById(R.id.tvTorrServeStatus)
-        btnFavoriteQuery = findViewById(R.id.btnFavoriteQuery)
+        btnFavorites = findViewById(R.id.btnFavorites)
+        btnHistory = findViewById(R.id.btnHistory)
         btnSettings = findViewById(R.id.btnSettings)
         etSearch = findViewById(R.id.etSearch)
+        btnClearSearch = findViewById(R.id.btnClearSearch)
         btnVoiceSearch = findViewById(R.id.btnVoiceSearch)
         btnSearch = findViewById(R.id.btnSearch)
         rvRecentSearches = findViewById(R.id.rvRecentSearches)
@@ -368,6 +383,12 @@ class MainActivity : AppCompatActivity() {
         rvTmdbNowPlaying = findViewById(R.id.rvTmdbNowPlaying)
         tvTmdbSeriesHeader = findViewById(R.id.tvTmdbSeriesHeader)
         rvTmdbSeries = findViewById(R.id.rvTmdbSeries)
+        tvTorrentTrendingHeader = findViewById(R.id.tvTorrentTrendingHeader)
+        rvTorrentTrending = findViewById(R.id.rvTorrentTrending)
+        tvTorrentNewHeader = findViewById(R.id.tvTorrentNewHeader)
+        rvTorrentNew = findViewById(R.id.rvTorrentNew)
+        tvTorrentSeriesHeader = findViewById(R.id.tvTorrentSeriesHeader)
+        rvTorrentSeries = findViewById(R.id.rvTorrentSeries)
         tvFavoritesHeader = findViewById(R.id.tvFavoritesHeader)
         rvFavorites = findViewById(R.id.rvFavorites)
         tvHistoryHeader = findViewById(R.id.tvHistoryHeader)
@@ -384,7 +405,11 @@ class MainActivity : AppCompatActivity() {
         progressBuffer = findViewById(R.id.progressBuffer)
         tvLoadingStats = findViewById(R.id.tvLoadingStats)
 
-        adapter = TorrentAdapter { item -> openTorrent(item) }
+        adapter = TorrentAdapter(
+            isFavorite = { item -> storage.isFavoriteTorrent(item) },
+            onItemClick = { item -> openTorrent(item) },
+            onToggleFavorite = { item -> handleToggleFavoriteTorrent(item) }
+        )
         rvResults.layoutManager = LinearLayoutManager(this)
         rvResults.adapter = adapter
 
@@ -417,36 +442,36 @@ class MainActivity : AppCompatActivity() {
         rvRecentSearches.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         rvRecentSearches.adapter = recentSearchAdapter
 
-        favoriteAdapter = FavoriteAdapter(
+        favoriteTorrentAdapter = FavoriteTorrentAdapter(
             onItemClick = { fav ->
-                etSearch.setText(fav.query)
-                etSearch.setSelection(fav.query.length)
-                updateFavoriteButtonUi()
-                performSearch()
+                openTorrent(fav.toTorrentItem())
+            },
+            onItemRemove = { fav ->
+                storage.removeFavoriteTorrent(fav.id)
+                refreshFavoritesAcrossUi()
+                Toast.makeText(this, "Удалено из избранного", Toast.LENGTH_SHORT).show()
             },
             onItemMenu = { fav ->
                 showShelfActionDialog(
                     title = getString(R.string.action_favorite_title),
-                    subtitle = fav.query,
+                    subtitle = fav.title,
                     deleteOneLabel = getString(R.string.action_favorite_delete_one),
                     clearAllLabel = getString(R.string.action_favorite_clear_all),
                     onDeleteOne = {
-                        storage.removeFavorite(fav.query)
-                        updateFavoriteButtonUi()
-                        refreshHomeShelves()
+                        storage.removeFavoriteTorrent(fav.id)
+                        refreshFavoritesAcrossUi()
                         Toast.makeText(this, "Удалено из избранного", Toast.LENGTH_SHORT).show()
                     },
                     onClearAll = {
-                        storage.clearFavorites()
-                        updateFavoriteButtonUi()
-                        refreshHomeShelves()
+                        storage.clearFavoriteTorrents()
+                        refreshFavoritesAcrossUi()
                         Toast.makeText(this, "Избранное очищено", Toast.LENGTH_SHORT).show()
                     }
                 )
             }
         )
         rvFavorites.layoutManager = LinearLayoutManager(this)
-        rvFavorites.adapter = favoriteAdapter
+        rvFavorites.adapter = favoriteTorrentAdapter
 
         historyAdapter = HistoryAdapter(
             onItemClick = { entry ->
@@ -502,6 +527,30 @@ class MainActivity : AppCompatActivity() {
         }
         rvTmdbSearchResults.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         rvTmdbSearchResults.adapter = tmdbSearchAdapter
+
+        torrentTrendingAdapter = TorrentShowcaseAdapter(
+            isFavorite = { item -> storage.isFavoriteTorrent(item) },
+            onItemClick = { item -> openTorrent(item) },
+            onItemMenu = { item -> showTorrentShowcaseActionDialog(item) }
+        )
+        rvTorrentTrending.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
+        rvTorrentTrending.adapter = torrentTrendingAdapter
+
+        torrentNewAdapter = TorrentShowcaseAdapter(
+            isFavorite = { item -> storage.isFavoriteTorrent(item) },
+            onItemClick = { item -> openTorrent(item) },
+            onItemMenu = { item -> showTorrentShowcaseActionDialog(item) }
+        )
+        rvTorrentNew.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
+        rvTorrentNew.adapter = torrentNewAdapter
+
+        torrentSeriesAdapter = TorrentShowcaseAdapter(
+            isFavorite = { item -> storage.isFavoriteTorrent(item) },
+            onItemClick = { item -> openTorrent(item) },
+            onItemMenu = { item -> showTorrentShowcaseActionDialog(item) }
+        )
+        rvTorrentSeries.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
+        rvTorrentSeries.adapter = torrentSeriesAdapter
     }
 
     private fun setupListeners() {
@@ -521,30 +570,34 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        btnFavoriteQuery.setOnClickListener {
-            val q = etSearch.text.toString().trim()
-            if (q.isBlank()) {
-                Toast.makeText(this, "Введите название, чтобы добавить в избранное", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            val added = storage.toggleFavorite(q)
-            updateFavoriteButtonUi()
-            if (layoutFilters.visibility != View.VISIBLE && rvResults.visibility != View.VISIBLE) {
-                refreshHomeShelves()
-            }
-            Toast.makeText(
-                this,
-                if (added) "Добавлено в избранное" else "Удалено из избранного",
-                Toast.LENGTH_SHORT
-            ).show()
+        btnFavorites.setOnClickListener {
+            showFavoritesDialog()
+        }
+
+        btnHistory.setOnClickListener {
+            showHistoryDialog()
         }
 
         btnSettings.setOnClickListener {
             showSettingsDialog()
         }
 
+        btnClearSearch.setOnClickListener {
+            etSearch.setText("")
+            updateClearSearchButtonUi()
+            etSearch.requestFocus()
+        }
+
+        etSearch.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: Editable?) {
+                updateClearSearchButtonUi()
+            }
+        })
+
         layoutTmdbNotice.setOnClickListener {
-            if (storage.activeCatalogKey().isBlank()) {
+            if (storage.activeCatalogRequiresKey() && storage.activeCatalogKey().isBlank()) {
                 showSettingsDialog(focusCatalogKey = true)
             } else {
                 loadTmdbShowcase(force = true)
@@ -659,6 +712,7 @@ class MainActivity : AppCompatActivity() {
 
         if (filtersVisible) {
             etSearch.nextFocusDownId = R.id.btnFilterAll
+            btnClearSearch.nextFocusDownId = R.id.btnFilterAll
             btnVoiceSearch.nextFocusDownId = R.id.btnFilterLiveSeeds
             btnSearch.nextFocusDownId = R.id.btnSort
 
@@ -692,12 +746,16 @@ class MainActivity : AppCompatActivity() {
                 if (rvTmdbTrending.visibility == View.VISIBLE) sections.add(rvTmdbTrending)
                 if (rvTmdbNowPlaying.visibility == View.VISIBLE) sections.add(rvTmdbNowPlaying)
                 if (rvTmdbSeries.visibility == View.VISIBLE) sections.add(rvTmdbSeries)
+                if (rvTorrentTrending.visibility == View.VISIBLE) sections.add(rvTorrentTrending)
+                if (rvTorrentNew.visibility == View.VISIBLE) sections.add(rvTorrentNew)
+                if (rvTorrentSeries.visibility == View.VISIBLE) sections.add(rvTorrentSeries)
                 if (rvFavorites.visibility == View.VISIBLE) sections.add(rvFavorites)
                 if (rvHistory.visibility == View.VISIBLE) sections.add(rvHistory)
             }
 
             val firstId = sections.firstOrNull()?.id ?: View.NO_ID
             etSearch.nextFocusDownId = if (firstId != View.NO_ID) firstId else R.id.etSearch
+            btnClearSearch.nextFocusDownId = if (firstId != View.NO_ID) firstId else R.id.btnClearSearch
             btnVoiceSearch.nextFocusDownId = if (firstId != View.NO_ID) firstId else R.id.btnVoiceSearch
             btnSearch.nextFocusDownId = if (firstId != View.NO_ID) firstId else R.id.btnSearch
 
@@ -709,11 +767,275 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun updateClearSearchButtonUi() {
+        val hasText = etSearch.text?.isNotEmpty() == true
+        btnClearSearch.visibility = if (hasText) View.VISIBLE else View.GONE
+        if (hasText) {
+            etSearch.nextFocusRightId = R.id.btnClearSearch
+            btnClearSearch.nextFocusLeftId = R.id.etSearch
+            btnClearSearch.nextFocusRightId = R.id.btnVoiceSearch
+            btnVoiceSearch.nextFocusLeftId = R.id.btnClearSearch
+        } else {
+            etSearch.nextFocusRightId = R.id.btnVoiceSearch
+            btnVoiceSearch.nextFocusLeftId = R.id.etSearch
+        }
+    }
+
+    private fun handleToggleFavoriteTorrent(item: TorrentItem) {
+        val added = storage.toggleFavoriteTorrent(item)
+        refreshFavoritesAcrossUi()
+        Toast.makeText(
+            this,
+            if (added) "★ Добавлено в избранное" else "Удалено из избранного",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    private fun refreshFavoritesAcrossUi() {
+        updateFavoriteButtonUi()
+        adapter.notifyDataSetChanged()
+        torrentTrendingAdapter.notifyDataSetChanged()
+        torrentNewAdapter.notifyDataSetChanged()
+        torrentSeriesAdapter.notifyDataSetChanged()
+        if (layoutFilters.visibility != View.VISIBLE && rvResults.visibility != View.VISIBLE) {
+            refreshHomeShelves()
+        }
+    }
+
+    private fun showTorrentShowcaseActionDialog(item: TorrentItem) {
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(R.layout.dialog_showcase_actions)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.50).toInt(),
+            WindowManager.LayoutParams.WRAP_CONTENT
+        )
+
+        val tvTitle = dialog.findViewById<TextView>(R.id.tvShowcaseActionTitle)
+        val tvMeta = dialog.findViewById<TextView>(R.id.tvShowcaseActionMeta)
+        val btnWatch = dialog.findViewById<TextView>(R.id.btnShowcaseWatch)
+        val btnFav = dialog.findViewById<TextView>(R.id.btnShowcaseFavorite)
+        val btnFindAll = dialog.findViewById<TextView>(R.id.btnShowcaseFindAll)
+        val btnCancel = dialog.findViewById<TextView>(R.id.btnShowcaseCancel)
+
+        tvTitle.text = item.title
+        val metaParts = mutableListOf<String>()
+        if (item.quality.isNotBlank()) metaParts.add(item.quality)
+        val sz = item.formattedSize()
+        if (sz != "—") metaParts.add(sz)
+        metaParts.add("сиды: ${item.seeds}")
+        tvMeta.text = metaParts.joinToString(" • ")
+
+        val isFav = storage.isFavoriteTorrent(item)
+        btnFav.text = getString(
+            if (isFav) R.string.showcase_action_fav_remove else R.string.showcase_action_fav_add
+        )
+
+        btnWatch.setOnClickListener {
+            dialog.dismiss()
+            openTorrent(item)
+        }
+        btnFav.setOnClickListener {
+            dialog.dismiss()
+            handleToggleFavoriteTorrent(item)
+        }
+        btnFindAll.setOnClickListener {
+            dialog.dismiss()
+            val cleanQuery = TorrentShowcaseClient.extractCleanSearchQuery(item.title)
+            etSearch.setText(cleanQuery)
+            etSearch.setSelection(cleanQuery.length)
+            performSearch()
+        }
+        btnCancel.setOnClickListener { dialog.dismiss() }
+
+        dialog.show()
+        btnWatch.requestFocus()
+    }
+
+    private fun showFavoritesDialog() {
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(R.layout.dialog_saved_list)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.80).toInt(),
+            (resources.displayMetrics.heightPixels * 0.82).toInt()
+        )
+
+        val tvTitle = dialog.findViewById<TextView>(R.id.tvSavedDialogTitle)
+        val tvSubtitle = dialog.findViewById<TextView>(R.id.tvSavedDialogSubtitle)
+        val btnClearAll = dialog.findViewById<TextView>(R.id.btnSavedClearAll)
+        val btnClose = dialog.findViewById<TextView>(R.id.btnSavedClose)
+        val rvList = dialog.findViewById<RecyclerView>(R.id.rvSavedList)
+        val tvEmpty = dialog.findViewById<TextView>(R.id.tvSavedEmpty)
+
+        tvTitle.text = getString(R.string.saved_favorites_title)
+        tvEmpty.text = getString(R.string.saved_favorites_empty)
+
+        lateinit var modalAdapter: FavoriteTorrentAdapter
+
+        fun renderModal() {
+            val favs = storage.getFavoriteTorrents()
+            modalAdapter.submitList(favs)
+            if (favs.isNotEmpty()) {
+                tvSubtitle.text = "Сохранено раздач: ${favs.size} • OK — смотреть, удержание OK — убрать"
+                rvList.visibility = View.VISIBLE
+                tvEmpty.visibility = View.GONE
+                btnClearAll.visibility = View.VISIBLE
+                btnClearAll.nextFocusDownId = R.id.rvSavedList
+                btnClose.nextFocusDownId = R.id.rvSavedList
+            } else {
+                tvSubtitle.text = "Сохранено раздач: 0"
+                rvList.visibility = View.GONE
+                tvEmpty.visibility = View.VISIBLE
+                btnClearAll.visibility = View.GONE
+                btnClose.nextFocusDownId = R.id.btnSavedClose
+                btnClose.requestFocus()
+            }
+        }
+
+        modalAdapter = FavoriteTorrentAdapter(
+            onItemClick = { fav ->
+                dialog.dismiss()
+                openTorrent(fav.toTorrentItem())
+            },
+            onItemRemove = { fav ->
+                storage.removeFavoriteTorrent(fav.id)
+                refreshFavoritesAcrossUi()
+                Toast.makeText(this, "Удалено из избранного", Toast.LENGTH_SHORT).show()
+                if (dialog.isShowing) renderModal()
+            }
+        )
+        rvList.layoutManager = LinearLayoutManager(this)
+        rvList.adapter = modalAdapter
+
+        btnClearAll.setOnClickListener {
+            storage.clearFavoriteTorrents()
+            refreshFavoritesAcrossUi()
+            Toast.makeText(this, "Избранное очищено", Toast.LENGTH_SHORT).show()
+            if (dialog.isShowing) renderModal()
+        }
+        btnClose.setOnClickListener { dialog.dismiss() }
+
+        renderModal()
+        dialog.show()
+        if (rvList.visibility == View.VISIBLE) {
+            rvList.post {
+                rvList.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus()
+                    ?: rvList.getChildAt(0)?.requestFocus()
+            }
+        } else {
+            btnClose.requestFocus()
+        }
+    }
+
+    private fun showHistoryDialog() {
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(R.layout.dialog_saved_list)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.80).toInt(),
+            (resources.displayMetrics.heightPixels * 0.82).toInt()
+        )
+
+        val tvTitle = dialog.findViewById<TextView>(R.id.tvSavedDialogTitle)
+        val tvSubtitle = dialog.findViewById<TextView>(R.id.tvSavedDialogSubtitle)
+        val btnClearAll = dialog.findViewById<TextView>(R.id.btnSavedClearAll)
+        val btnClose = dialog.findViewById<TextView>(R.id.btnSavedClose)
+        val rvList = dialog.findViewById<RecyclerView>(R.id.rvSavedList)
+        val tvEmpty = dialog.findViewById<TextView>(R.id.tvSavedEmpty)
+
+        tvTitle.text = getString(R.string.saved_history_title)
+        tvEmpty.text = getString(R.string.saved_history_empty)
+
+        lateinit var modalHistoryAdapter: HistoryAdapter
+
+        fun renderModal() {
+            val history = storage.getWatchHistory()
+            modalHistoryAdapter.submitList(history)
+            if (history.isNotEmpty()) {
+                tvSubtitle.text = "Записей: ${history.size} • OK — продолжить просмотр, удержание OK — удалить"
+                rvList.visibility = View.VISIBLE
+                tvEmpty.visibility = View.GONE
+                btnClearAll.visibility = View.VISIBLE
+                btnClearAll.nextFocusDownId = R.id.rvSavedList
+                btnClose.nextFocusDownId = R.id.rvSavedList
+            } else {
+                tvSubtitle.text = "Записей: 0"
+                rvList.visibility = View.GONE
+                tvEmpty.visibility = View.VISIBLE
+                btnClearAll.visibility = View.GONE
+                btnClose.nextFocusDownId = R.id.btnSavedClose
+                btnClose.requestFocus()
+            }
+        }
+
+        modalHistoryAdapter = HistoryAdapter(
+            onItemClick = { entry ->
+                dialog.dismiss()
+                val torrentItem = TorrentItem(
+                    title = entry.title,
+                    magnet = entry.link
+                )
+                openHistoryEntry(torrentItem, entry)
+            },
+            onItemMenu = { entry ->
+                val label = if (entry.episodeLabel.isNotBlank()) {
+                    "${entry.title} — ${entry.episodeLabel}"
+                } else {
+                    entry.title
+                }
+                showShelfActionDialog(
+                    title = getString(R.string.action_history_title),
+                    subtitle = label,
+                    deleteOneLabel = getString(R.string.action_history_delete_one),
+                    clearAllLabel = getString(R.string.action_history_clear_all),
+                    onDeleteOne = {
+                        storage.removeWatchHistoryItem(entry.id)
+                        refreshHomeShelves()
+                        Toast.makeText(this, "Удалено из истории", Toast.LENGTH_SHORT).show()
+                        if (dialog.isShowing) renderModal()
+                    },
+                    onClearAll = {
+                        storage.clearWatchHistory()
+                        refreshHomeShelves()
+                        Toast.makeText(this, "История просмотров очищена", Toast.LENGTH_SHORT).show()
+                        if (dialog.isShowing) renderModal()
+                    }
+                )
+            }
+        )
+        rvList.layoutManager = LinearLayoutManager(this)
+        rvList.adapter = modalHistoryAdapter
+
+        btnClearAll.setOnClickListener {
+            storage.clearWatchHistory()
+            refreshHomeShelves()
+            Toast.makeText(this, "История просмотров очищена", Toast.LENGTH_SHORT).show()
+            if (dialog.isShowing) renderModal()
+        }
+        btnClose.setOnClickListener { dialog.dismiss() }
+
+        renderModal()
+        dialog.show()
+        if (rvList.visibility == View.VISIBLE) {
+            rvList.post {
+                rvList.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus()
+                    ?: rvList.getChildAt(0)?.requestFocus()
+            }
+        } else {
+            btnClose.requestFocus()
+        }
+    }
+
     private fun loadTmdbShowcase(force: Boolean) {
         if (!storage.showTmdbShowcase) {
             tmdbLoadJob?.cancel()
             tmdbIsLoading = false
             tmdbShelves = null
+            torrentShelves = null
             tmdbLoadedOnce = false
             if (layoutFilters.visibility != View.VISIBLE && rvResults.visibility != View.VISIBLE) {
                 refreshHomeShelves()
@@ -721,11 +1043,12 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val apiKey = storage.activeCatalogKey()
-        if (apiKey.isBlank()) {
+        val provider = storage.catalogProvider
+        if (storage.activeCatalogRequiresKey() && storage.activeCatalogKey().isBlank()) {
             tmdbLoadJob?.cancel()
             tmdbIsLoading = false
             tmdbShelves = null
+            torrentShelves = null
             tmdbLoadedOnce = false
             if (layoutFilters.visibility != View.VISIBLE && rvResults.visibility != View.VISIBLE) {
                 refreshHomeShelves()
@@ -733,7 +1056,12 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        if (!force && tmdbLoadedOnce && tmdbShelves?.hasAnyItems() == true) {
+        val alreadyLoaded = if (provider == StorageManager.CATALOG_PROVIDER_TORRENTS) {
+            torrentShelves?.hasAnyItems() == true
+        } else {
+            tmdbShelves?.hasAnyItems() == true
+        }
+        if (!force && tmdbLoadedOnce && alreadyLoaded) {
             return
         }
 
@@ -744,18 +1072,29 @@ class MainActivity : AppCompatActivity() {
         }
 
         val providerName = storage.activeCatalogName()
-        val useKinopoisk = storage.catalogProvider == StorageManager.CATALOG_PROVIDER_KINOPOISK
         tmdbLoadJob = uiScope.launch {
-            val shelves = if (useKinopoisk) {
-                kinopoiskClient.fetchShelves()
+            if (provider == StorageManager.CATALOG_PROVIDER_TORRENTS) {
+                val shelves = torrentShowcaseClient.fetchShelves()
+                tmdbIsLoading = false
+                tmdbLoadedOnce = true
+                tmdbShelves = null
+                torrentShelves = shelves
+                if (!shelves.error.isNullOrBlank()) {
+                    AppLogger.w("Catalog", "Ошибка витрины торрентов: ${shelves.error}")
+                }
             } else {
-                tmdbClient.fetchShelves()
-            }
-            tmdbIsLoading = false
-            tmdbLoadedOnce = true
-            tmdbShelves = shelves
-            if (!shelves.error.isNullOrBlank()) {
-                AppLogger.w("Catalog", "Ошибка загрузки витрины ($providerName): ${shelves.error}")
+                val shelves = if (provider == StorageManager.CATALOG_PROVIDER_KINOPOISK) {
+                    kinopoiskClient.fetchShelves()
+                } else {
+                    tmdbClient.fetchShelves()
+                }
+                tmdbIsLoading = false
+                tmdbLoadedOnce = true
+                torrentShelves = null
+                tmdbShelves = shelves
+                if (!shelves.error.isNullOrBlank()) {
+                    AppLogger.w("Catalog", "Ошибка загрузки витрины ($providerName): ${shelves.error}")
+                }
             }
             if (layoutFilters.visibility != View.VISIBLE && rvResults.visibility != View.VISIBLE) {
                 refreshHomeShelves()
@@ -845,11 +1184,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        fun updateFavBtn() {
-            val isFav = storage.isFavorite(item.title)
-            btnFav.text = getString(if (isFav) R.string.btn_fav_active else R.string.btn_fav_toggle)
-        }
-        updateFavBtn()
+        btnFav.visibility = View.GONE
 
         btnFind.setOnClickListener {
             dialog.dismiss()
@@ -860,19 +1195,7 @@ class MainActivity : AppCompatActivity() {
             performSearch()
         }
 
-        btnFav.setOnClickListener {
-            val added = storage.toggleFavorite(item.title)
-            updateFavBtn()
-            updateFavoriteButtonUi()
-            if (layoutFilters.visibility != View.VISIBLE && rvResults.visibility != View.VISIBLE) {
-                refreshHomeShelves()
-            }
-            Toast.makeText(
-                this,
-                if (added) "Добавлено в избранное" else "Удалено из избранного",
-                Toast.LENGTH_SHORT
-            ).show()
-        }
+
 
         btnClose.setOnClickListener { dialog.dismiss() }
         dialog.setOnDismissListener { detailsJob?.cancel() }
@@ -905,13 +1228,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateFavoriteButtonUi() {
-        val fav = storage.isFavorite(etSearch.text.toString())
-        btnFavoriteQuery.text = getString(if (fav) R.string.btn_fav_active else R.string.btn_fav_toggle)
+        val count = storage.getFavoriteTorrents().size
+        btnFavorites.text = if (count > 0) "★ Избранное ($count)" else getString(R.string.btn_favorites_header)
+    }
+
+    private fun hideAllShowcaseShelves() {
+        tvTmdbTrendingHeader.visibility = View.GONE
+        rvTmdbTrending.visibility = View.GONE
+        tvTmdbNowPlayingHeader.visibility = View.GONE
+        rvTmdbNowPlaying.visibility = View.GONE
+        tvTmdbSeriesHeader.visibility = View.GONE
+        rvTmdbSeries.visibility = View.GONE
+        tvTorrentTrendingHeader.visibility = View.GONE
+        rvTorrentTrending.visibility = View.GONE
+        tvTorrentNewHeader.visibility = View.GONE
+        rvTorrentNew.visibility = View.GONE
+        tvTorrentSeriesHeader.visibility = View.GONE
+        rvTorrentSeries.visibility = View.GONE
     }
 
     private fun refreshHomeShelves() {
         val recents = storage.getRecentSearches()
-        val favs = storage.getFavorites()
+        val favs = storage.getFavoriteTorrents()
         val history = storage.getWatchHistory()
 
         if (recents.isNotEmpty()) {
@@ -921,96 +1259,92 @@ class MainActivity : AppCompatActivity() {
             rvRecentSearches.visibility = View.GONE
         }
 
-        // TMDB Showcase shelves
         val showcaseEnabled = storage.showTmdbShowcase
-        val shelves = tmdbShelves
-        var hasTmdbContent = false
+        val provider = storage.catalogProvider
+        val isTorrentMode = provider == StorageManager.CATALOG_PROVIDER_TORRENTS
+        var hasShowcaseContent = false
+
+        hideAllShowcaseShelves()
 
         if (!showcaseEnabled) {
             layoutTmdbNotice.visibility = View.GONE
-            tvTmdbTrendingHeader.visibility = View.GONE
-            rvTmdbTrending.visibility = View.GONE
-            tvTmdbNowPlayingHeader.visibility = View.GONE
-            rvTmdbNowPlaying.visibility = View.GONE
-            tvTmdbSeriesHeader.visibility = View.GONE
-            rvTmdbSeries.visibility = View.GONE
-        } else if (storage.activeCatalogKey().isBlank()) {
+        } else if (storage.activeCatalogRequiresKey() && storage.activeCatalogKey().isBlank()) {
             layoutTmdbNotice.visibility = View.VISIBLE
             progressTmdb.visibility = View.GONE
-            tvTmdbNotice.text = "Витрина (${storage.activeCatalogName()}): укажите бесплатный API-ключ в Настройках (нажмите OK)"
-            tvTmdbTrendingHeader.visibility = View.GONE
-            rvTmdbTrending.visibility = View.GONE
-            tvTmdbNowPlayingHeader.visibility = View.GONE
-            rvTmdbNowPlaying.visibility = View.GONE
-            tvTmdbSeriesHeader.visibility = View.GONE
-            rvTmdbSeries.visibility = View.GONE
-            hasTmdbContent = true
-        } else if (tmdbIsLoading && shelves?.hasAnyItems() != true) {
+            tvTmdbNotice.text = "Витрина (${storage.activeCatalogName()}): укажите API-ключ в Настройках или переключитесь на «Торренты (без VPN)»"
+            hasShowcaseContent = true
+        } else if (tmdbIsLoading &&
+            ((isTorrentMode && torrentShelves?.hasAnyItems() != true) ||
+                (!isTorrentMode && tmdbShelves?.hasAnyItems() != true))
+        ) {
             layoutTmdbNotice.visibility = View.VISIBLE
             progressTmdb.visibility = View.VISIBLE
             tvTmdbNotice.text = "Загрузка витрины (${storage.activeCatalogName()})…"
-            tvTmdbTrendingHeader.visibility = View.GONE
-            rvTmdbTrending.visibility = View.GONE
-            tvTmdbNowPlayingHeader.visibility = View.GONE
-            rvTmdbNowPlaying.visibility = View.GONE
-            tvTmdbSeriesHeader.visibility = View.GONE
-            rvTmdbSeries.visibility = View.GONE
-            hasTmdbContent = true
-        } else if (shelves != null && shelves.hasAnyItems()) {
-            layoutTmdbNotice.visibility = View.GONE
-            hasTmdbContent = true
+            hasShowcaseContent = true
+        } else if (isTorrentMode) {
+            val tShelves = torrentShelves
+            if (tShelves != null && tShelves.hasAnyItems()) {
+                layoutTmdbNotice.visibility = View.GONE
+                hasShowcaseContent = true
 
-            if (shelves.trending.isNotEmpty()) {
-                tvTmdbTrendingHeader.visibility = View.VISIBLE
-                rvTmdbTrending.visibility = View.VISIBLE
-                tmdbTrendingAdapter.submitList(shelves.trending)
+                if (tShelves.popularMovies.isNotEmpty()) {
+                    tvTorrentTrendingHeader.visibility = View.VISIBLE
+                    rvTorrentTrending.visibility = View.VISIBLE
+                    torrentTrendingAdapter.submitList(tShelves.popularMovies)
+                }
+                if (tShelves.newestMovies.isNotEmpty()) {
+                    tvTorrentNewHeader.visibility = View.VISIBLE
+                    rvTorrentNew.visibility = View.VISIBLE
+                    torrentNewAdapter.submitList(tShelves.newestMovies)
+                }
+                if (tShelves.popularSeries.isNotEmpty()) {
+                    tvTorrentSeriesHeader.visibility = View.VISIBLE
+                    rvTorrentSeries.visibility = View.VISIBLE
+                    torrentSeriesAdapter.submitList(tShelves.popularSeries)
+                }
+            } else if (tShelves != null && !tShelves.error.isNullOrBlank()) {
+                layoutTmdbNotice.visibility = View.VISIBLE
+                progressTmdb.visibility = View.GONE
+                tvTmdbNotice.text = "Витрина торрентов недоступна: ${tShelves.error} • OK — повторить"
+                hasShowcaseContent = true
             } else {
-                tvTmdbTrendingHeader.visibility = View.GONE
-                rvTmdbTrending.visibility = View.GONE
+                layoutTmdbNotice.visibility = View.GONE
             }
-
-            if (shelves.nowPlaying.isNotEmpty()) {
-                tvTmdbNowPlayingHeader.visibility = View.VISIBLE
-                rvTmdbNowPlaying.visibility = View.VISIBLE
-                tmdbNowPlayingAdapter.submitList(shelves.nowPlaying)
-            } else {
-                tvTmdbNowPlayingHeader.visibility = View.GONE
-                rvTmdbNowPlaying.visibility = View.GONE
-            }
-
-            if (shelves.popularSeries.isNotEmpty()) {
-                tvTmdbSeriesHeader.visibility = View.VISIBLE
-                rvTmdbSeries.visibility = View.VISIBLE
-                tmdbSeriesAdapter.submitList(shelves.popularSeries)
-            } else {
-                tvTmdbSeriesHeader.visibility = View.GONE
-                rvTmdbSeries.visibility = View.GONE
-            }
-        } else if (shelves != null && !shelves.error.isNullOrBlank()) {
-            layoutTmdbNotice.visibility = View.VISIBLE
-            progressTmdb.visibility = View.GONE
-            tvTmdbNotice.text = "Витрина (${storage.activeCatalogName()}) недоступна: ${shelves.error} • OK — повторить"
-            tvTmdbTrendingHeader.visibility = View.GONE
-            rvTmdbTrending.visibility = View.GONE
-            tvTmdbNowPlayingHeader.visibility = View.GONE
-            rvTmdbNowPlaying.visibility = View.GONE
-            tvTmdbSeriesHeader.visibility = View.GONE
-            rvTmdbSeries.visibility = View.GONE
-            hasTmdbContent = true
         } else {
-            layoutTmdbNotice.visibility = View.GONE
-            tvTmdbTrendingHeader.visibility = View.GONE
-            rvTmdbTrending.visibility = View.GONE
-            tvTmdbNowPlayingHeader.visibility = View.GONE
-            rvTmdbNowPlaying.visibility = View.GONE
-            tvTmdbSeriesHeader.visibility = View.GONE
-            rvTmdbSeries.visibility = View.GONE
+            val shelves = tmdbShelves
+            if (shelves != null && shelves.hasAnyItems()) {
+                layoutTmdbNotice.visibility = View.GONE
+                hasShowcaseContent = true
+
+                if (shelves.trending.isNotEmpty()) {
+                    tvTmdbTrendingHeader.visibility = View.VISIBLE
+                    rvTmdbTrending.visibility = View.VISIBLE
+                    tmdbTrendingAdapter.submitList(shelves.trending)
+                }
+                if (shelves.nowPlaying.isNotEmpty()) {
+                    tvTmdbNowPlayingHeader.visibility = View.VISIBLE
+                    rvTmdbNowPlaying.visibility = View.VISIBLE
+                    tmdbNowPlayingAdapter.submitList(shelves.nowPlaying)
+                }
+                if (shelves.popularSeries.isNotEmpty()) {
+                    tvTmdbSeriesHeader.visibility = View.VISIBLE
+                    rvTmdbSeries.visibility = View.VISIBLE
+                    tmdbSeriesAdapter.submitList(shelves.popularSeries)
+                }
+            } else if (shelves != null && !shelves.error.isNullOrBlank()) {
+                layoutTmdbNotice.visibility = View.VISIBLE
+                progressTmdb.visibility = View.GONE
+                tvTmdbNotice.text = "Витрина (${storage.activeCatalogName()}) недоступна: ${shelves.error} • OK — повторить"
+                hasShowcaseContent = true
+            } else {
+                layoutTmdbNotice.visibility = View.GONE
+            }
         }
 
         if (favs.isNotEmpty()) {
             tvFavoritesHeader.visibility = View.VISIBLE
             rvFavorites.visibility = View.VISIBLE
-            favoriteAdapter.submitList(favs)
+            favoriteTorrentAdapter.submitList(favs)
         } else {
             tvFavoritesHeader.visibility = View.GONE
             rvFavorites.visibility = View.GONE
@@ -1025,7 +1359,7 @@ class MainActivity : AppCompatActivity() {
             rvHistory.visibility = View.GONE
         }
 
-        val hasShelves = hasTmdbContent || favs.isNotEmpty() || history.isNotEmpty()
+        val hasShelves = hasShowcaseContent || favs.isNotEmpty() || history.isNotEmpty()
         scrollHomeShelves.visibility = if (hasShelves) View.VISIBLE else View.GONE
         layoutEmpty.visibility = if (hasShelves) View.GONE else View.VISIBLE
         if (!hasShelves) {
@@ -1158,7 +1492,7 @@ class MainActivity : AppCompatActivity() {
         tmdbSearchAdapter.submitList(emptyList())
         layoutTmdbSearchResults.visibility = View.GONE
 
-        if (storage.showTmdbShowcase && storage.activeCatalogKey().isNotBlank()) {
+        if (storage.showTmdbShowcase && storage.activeCatalogRequiresKey() && storage.activeCatalogKey().isNotBlank()) {
             val useKinopoisk = storage.catalogProvider == StorageManager.CATALOG_PROVIDER_KINOPOISK
             tmdbSearchJob = uiScope.launch {
                 val catalogMatches = if (useKinopoisk) {
@@ -1592,6 +1926,7 @@ class MainActivity : AppCompatActivity() {
         val etApiKey = dialog.findViewById<EditText>(R.id.etApiKey)
         val etRutorMirror = dialog.findViewById<EditText>(R.id.etRutorMirror)
         val btnToggleTmdbShowcase = dialog.findViewById<TextView>(R.id.btnToggleTmdbShowcase)
+        val btnCatalogTorrents = dialog.findViewById<TextView>(R.id.btnCatalogTorrents)
         val btnCatalogKinopoisk = dialog.findViewById<TextView>(R.id.btnCatalogKinopoisk)
         val btnCatalogTmdb = dialog.findViewById<TextView>(R.id.btnCatalogTmdb)
         val etKinopoiskApiKey = dialog.findViewById<EditText>(R.id.etKinopoiskApiKey)
@@ -1648,6 +1983,7 @@ class MainActivity : AppCompatActivity() {
             btnToggleTmdbShowcase.text = getString(
                 if (tmdbShowcaseEnabled) R.string.tmdb_showcase_on else R.string.tmdb_showcase_off
             )
+            btnCatalogTorrents.isSelected = selectedCatalogProvider == StorageManager.CATALOG_PROVIDER_TORRENTS
             btnCatalogKinopoisk.isSelected = selectedCatalogProvider == StorageManager.CATALOG_PROVIDER_KINOPOISK
             btnCatalogTmdb.isSelected = selectedCatalogProvider == StorageManager.CATALOG_PROVIDER_TMDB
         }
@@ -1709,6 +2045,10 @@ class MainActivity : AppCompatActivity() {
         }
         btnToggleTmdbShowcase.setOnClickListener {
             tmdbShowcaseEnabled = !tmdbShowcaseEnabled
+            refreshSourceChips()
+        }
+        btnCatalogTorrents.setOnClickListener {
+            selectedCatalogProvider = StorageManager.CATALOG_PROVIDER_TORRENTS
             refreshSourceChips()
         }
         btnCatalogKinopoisk.setOnClickListener {
@@ -1908,6 +2248,7 @@ class MainActivity : AppCompatActivity() {
             dialog.dismiss()
             if (catalogChanged) {
                 tmdbShelves = null
+                torrentShelves = null
                 tmdbLoadedOnce = false
                 loadTmdbShowcase(force = true)
             }
@@ -1917,10 +2258,10 @@ class MainActivity : AppCompatActivity() {
 
         dialog.show()
         if (focusCatalogKey) {
-            if (selectedCatalogProvider == StorageManager.CATALOG_PROVIDER_KINOPOISK) {
-                etKinopoiskApiKey.requestFocus()
-            } else {
-                etTmdbApiKey.requestFocus()
+            when (selectedCatalogProvider) {
+                StorageManager.CATALOG_PROVIDER_TORRENTS -> btnCatalogTorrents.requestFocus()
+                StorageManager.CATALOG_PROVIDER_KINOPOISK -> etKinopoiskApiKey.requestFocus()
+                else -> etTmdbApiKey.requestFocus()
             }
         } else if (selectedBuiltIn) {
             btnPlayerBuiltin.requestFocus()

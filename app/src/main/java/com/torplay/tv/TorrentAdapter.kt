@@ -1,15 +1,17 @@
 package com.torplay.tv
 
+import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 
 class TorrentAdapter(
-    private val onItemClick: (TorrentItem) -> Unit
+    private val isFavorite: (TorrentItem) -> Boolean = { false },
+    private val onItemClick: (TorrentItem) -> Unit,
+    private val onToggleFavorite: (TorrentItem) -> Unit = {}
 ) : RecyclerView.Adapter<TorrentAdapter.ViewHolder>() {
 
     private val items = mutableListOf<TorrentItem>()
@@ -33,54 +35,87 @@ class TorrentAdapter(
     override fun getItemCount(): Int = items.size
 
     inner class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        private val tvTitle: TextView = itemView.findViewById(R.id.tvTitle)
-        private val tvQuality: TextView = itemView.findViewById(R.id.tvQuality)
-        private val tvHdr: TextView = itemView.findViewById(R.id.tvHdr)
-        private val tvSize: TextView = itemView.findViewById(R.id.tvSize)
-        private val tvSeeds: TextView = itemView.findViewById(R.id.tvSeeds)
-        private val tvDate: TextView = itemView.findViewById(R.id.tvDate)
-        private val tvSource: TextView = itemView.findViewById(R.id.tvSource)
-        private val progressWatch: ProgressBar = itemView.findViewById(R.id.progressWatch)
+        private val tvTitle: TextView = itemView.findViewById(R.id.tvTorrentTitle)
+        private val tvBadgeQuality: TextView = itemView.findViewById(R.id.tvBadgeQuality)
+        private val tvBadgeHdr: TextView = itemView.findViewById(R.id.tvBadgeHdr)
+        private val tvSource: TextView = itemView.findViewById(R.id.tvTorrentSource)
+        private val tvSize: TextView = itemView.findViewById(R.id.tvTorrentSize)
+        private val tvSeeds: TextView = itemView.findViewById(R.id.tvTorrentSeeds)
+        private val tvDate: TextView = itemView.findViewById(R.id.tvTorrentDate)
+        private val btnFav: TextView = itemView.findViewById(R.id.btnTorrentFav)
 
         fun bind(item: TorrentItem) {
             tvTitle.text = item.title
-
-            val qualityLabel = item.quality.ifBlank { "HD" }
-            tvQuality.text = qualityLabel
-            val badgeRes = when (qualityLabel) {
-                "4K" -> R.drawable.bg_badge_4k
-                "1080p" -> R.drawable.bg_badge_1080
-                "720p" -> R.drawable.bg_badge_720
-                else -> R.drawable.bg_badge_default
-            }
-            tvQuality.setBackgroundResource(badgeRes)
-
-            tvHdr.visibility = if (item.isHdr) View.VISIBLE else View.GONE
             tvSize.text = item.formattedSize()
-            tvSize.visibility = View.VISIBLE
             tvSeeds.text = "▲ ${item.seeds}"
-            tvSeeds.visibility = View.VISIBLE
 
-            val seedColor = when {
-                item.seeds >= 15 -> R.color.status_ok
-                item.seeds >= 3 -> R.color.status_warn
+            val seedsColor = when {
+                item.seeds >= 10 -> R.color.status_ok
+                item.seeds > 0 -> R.color.status_warn
                 else -> R.color.status_err
             }
-            tvSeeds.setTextColor(ContextCompat.getColor(itemView.context, seedColor))
+            tvSeeds.setTextColor(ContextCompat.getColor(itemView.context, seedsColor))
 
-            val dateText = item.formattedDate()
-            if (dateText.isNotEmpty()) {
-                tvDate.text = dateText
+            val dateStr = item.formattedDate()
+            if (dateStr.isNotBlank()) {
+                tvDate.text = dateStr
                 tvDate.visibility = View.VISIBLE
             } else {
                 tvDate.visibility = View.GONE
             }
 
+            if (item.quality.isNotBlank()) {
+                tvBadgeQuality.text = item.quality
+                tvBadgeQuality.visibility = View.VISIBLE
+                val bg = when (item.quality) {
+                    "4K" -> R.drawable.bg_badge_4k
+                    "1080p" -> R.drawable.bg_badge_1080
+                    "720p" -> R.drawable.bg_badge_720
+                    else -> R.drawable.bg_badge_default
+                }
+                tvBadgeQuality.setBackgroundResource(bg)
+            } else {
+                tvBadgeQuality.visibility = View.GONE
+            }
+
+            tvBadgeHdr.visibility = if (item.isHdr) View.VISIBLE else View.GONE
             tvSource.text = item.formattedSource()
-            progressWatch.visibility = View.GONE
+
+            fun renderStar() {
+                val fav = isFavorite(item)
+                btnFav.text = if (fav) "★" else "☆"
+                btnFav.setTextColor(
+                    ContextCompat.getColor(
+                        itemView.context,
+                        if (fav) R.color.accent_emerald else R.color.text_secondary
+                    )
+                )
+            }
+            renderStar()
+
+            btnFav.setOnClickListener {
+                onToggleFavorite(item)
+                renderStar()
+            }
 
             itemView.setOnClickListener {
                 onItemClick(item)
+            }
+
+            itemView.setOnLongClickListener {
+                onToggleFavorite(item)
+                renderStar()
+                true
+            }
+
+            itemView.setOnKeyListener { _, keyCode, event ->
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && keyCode == KeyEvent.KEYCODE_MENU) {
+                    onToggleFavorite(item)
+                    renderStar()
+                    true
+                } else {
+                    false
+                }
             }
         }
     }

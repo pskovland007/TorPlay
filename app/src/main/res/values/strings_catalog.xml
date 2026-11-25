@@ -3,8 +3,11 @@
     <string name="catalog_trending_title">Популярные фильмы</string>
     <string name="catalog_now_playing_title">Новинки кино</string>
     <string name="catalog_series_title">Топ сериалов</string>
+    <string name="torrent_showcase_trending_title">Популярное на торрентах</string>
+    <string name="torrent_showcase_new_title">Новинки за последние дни</string>
+    <string name="torrent_showcase_series_title">Популярные сериалы</string>
     <string name="catalog_loading">Загрузка витрины…</string>
-    <string name="catalog_need_key">Витрина: укажите бесплатный API-ключ в Настройках (нажмите OK)</string>
+    <string name="catalog_need_key">Витрина: укажите бесплатный API-ключ в Настройках или выберите «Торренты (без VPN)» (нажмите OK)</string>
     <string name="catalog_error_prefix">Витрина недоступна:</string>
     <string name="catalog_retry_hint">Нажмите OK, чтобы открыть настройки каталога</string>
     <string name="catalog_type_movie">Фильм</string>
@@ -13,10 +16,11 @@
     <string name="catalog_no_overview">Описание на русском языке отсутствует.</string>
     <string name="catalog_btn_find_torrents">Найти раздачи</string>
     <string name="catalog_btn_close">Закрыть</string>
-    <string name="settings_tmdb_label">Витрина и постеры (каталог)</string>
+    <string name="settings_tmdb_label">Витрина на главном экране (источник)</string>
     <string name="tmdb_showcase_on">✓ Витрина на главном экране: ВКЛ</string>
     <string name="tmdb_showcase_off">✕ Витрина на главном экране: ВЫКЛ</string>
-    <string name="catalog_provider_kinopoisk">Кинопоиск (РФ)</string>
+    <string name="catalog_provider_torrents">Торренты (без VPN)</string>
+    <string name="catalog_provider_kinopoisk">Кинопоиск</string>
     <string name="catalog_provider_tmdb">TMDB</string>
     <string name="settings_kp_key_label">API-ключ Кинопоиска (kinopoiskapiunofficial.tech)</string>
     <string name="settings_tmdb_key_label">TMDB API-ключ (v3 или Bearer-токен)</string>
