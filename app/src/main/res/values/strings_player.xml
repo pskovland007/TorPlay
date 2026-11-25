@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="player_resize_fit">Экран: По размеру</string>
+    <string name="player_resize_zoom">Экран: Заполнить</string>
+    <string name="player_resize_fill">Экран: Растянуть</string>
+    <string name="player_resize_width">Экран: По ширине</string>
+    <string name="player_episodes_btn">Серии</string>
+    <string name="player_next_episode_btn">След. серия ▶</string>
+    <string name="player_auto_next_on">Автосерия: ВКЛ</string>
+    <string name="player_auto_next_off">Автосерия: ВЫКЛ</string>
+    <string name="player_next_watch_now">Смотреть сейчас</string>
+    <string name="player_next_cancel">Отмена</string>
+</resources>
