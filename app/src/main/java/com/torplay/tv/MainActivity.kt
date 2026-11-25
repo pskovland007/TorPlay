@@ -19,6 +19,8 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.ScrollView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -50,10 +52,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var playerPrefs: PlayerPrefs
     private lateinit var maintenanceManager: MaintenanceManager
     private lateinit var updateManager: UpdateManager
+    private lateinit var tmdbClient: TmdbClient
+    private lateinit var posterLoader: PosterLoader
     private lateinit var adapter: TorrentAdapter
     private lateinit var historyAdapter: HistoryAdapter
     private lateinit var favoriteAdapter: FavoriteAdapter
     private lateinit var recentSearchAdapter: RecentSearchAdapter
+    private lateinit var tmdbTrendingAdapter: CatalogAdapter
+    private lateinit var tmdbNowPlayingAdapter: CatalogAdapter
+    private lateinit var tmdbSeriesAdapter: CatalogAdapter
 
     private lateinit var btnTorrServeStatus: LinearLayout
     private lateinit var viewStatusDot: View
@@ -74,7 +81,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnFilterLiveSeeds: TextView
     private lateinit var btnSort: TextView
     private lateinit var tvSearchMeta: TextView
+    private lateinit var scrollHomeShelves: ScrollView
     private lateinit var layoutHomeShelves: LinearLayout
+    private lateinit var layoutTmdbNotice: LinearLayout
+    private lateinit var progressTmdb: ProgressBar
+    private lateinit var tvTmdbNotice: TextView
+    private lateinit var tvTmdbTrendingHeader: TextView
+    private lateinit var rvTmdbTrending: RecyclerView
+    private lateinit var tvTmdbNowPlayingHeader: TextView
+    private lateinit var rvTmdbNowPlaying: RecyclerView
+    private lateinit var tvTmdbSeriesHeader: TextView
+    private lateinit var rvTmdbSeries: RecyclerView
     private lateinit var tvFavoritesHeader: TextView
     private lateinit var rvFavorites: RecyclerView
     private lateinit var tvHistoryHeader: TextView
@@ -93,7 +110,11 @@ class MainActivity : AppCompatActivity() {
     private var launchJob: Job? = null
     private var mirrorCheckJob: Job? = null
     private var torrServeManagerJob: Job? = null
+    private var tmdbLoadJob: Job? = null
     private var pendingStorageAction: (() -> Unit)? = null
+    private var tmdbLoadedOnce: Boolean = false
+    private var tmdbShelves: CatalogShelves? = null
+    private var tmdbIsLoading: Boolean = false
     private var lastPlayedHash: String = ""
     private var waitingForPlayerReturn: Boolean = false
     private var hasCheckedUpdatesOnStart: Boolean = false
@@ -145,6 +166,8 @@ class MainActivity : AppCompatActivity() {
         playerPrefs = PlayerPrefs(this)
         maintenanceManager = MaintenanceManager(this)
         updateManager = UpdateManager(this)
+        tmdbClient = TmdbClient(storage)
+        posterLoader = PosterLoader(this)
 
         hideCamReleases = storage.hideCamReleases
         onlyLiveSeeds = storage.onlyLiveSeeds
@@ -159,6 +182,7 @@ class MainActivity : AppCompatActivity() {
             etSearch.setSelection(storage.lastQuery.length)
         }
         refreshHomeShelves()
+        loadTmdbShowcase(force = false)
         etSearch.requestFocus()
         refreshTorrServeStatus(autoStart = false)
         checkUpdatesOnStartup()
@@ -272,7 +296,17 @@ class MainActivity : AppCompatActivity() {
         btnFilterLiveSeeds = findViewById(R.id.btnFilterLiveSeeds)
         btnSort = findViewById(R.id.btnSort)
         tvSearchMeta = findViewById(R.id.tvSearchMeta)
+        scrollHomeShelves = findViewById(R.id.scrollHomeShelves)
         layoutHomeShelves = findViewById(R.id.layoutHomeShelves)
+        layoutTmdbNotice = findViewById(R.id.layoutTmdbNotice)
+        progressTmdb = findViewById(R.id.progressTmdb)
+        tvTmdbNotice = findViewById(R.id.tvTmdbNotice)
+        tvTmdbTrendingHeader = findViewById(R.id.tvTmdbTrendingHeader)
+        rvTmdbTrending = findViewById(R.id.rvTmdbTrending)
+        tvTmdbNowPlayingHeader = findViewById(R.id.tvTmdbNowPlayingHeader)
+        rvTmdbNowPlaying = findViewById(R.id.rvTmdbNowPlaying)
+        tvTmdbSeriesHeader = findViewById(R.id.tvTmdbSeriesHeader)
+        rvTmdbSeries = findViewById(R.id.rvTmdbSeries)
         tvFavoritesHeader = findViewById(R.id.tvFavoritesHeader)
         rvFavorites = findViewById(R.id.rvFavorites)
         tvHistoryHeader = findViewById(R.id.tvHistoryHeader)
@@ -385,6 +419,20 @@ class MainActivity : AppCompatActivity() {
         )
         rvHistory.layoutManager = LinearLayoutManager(this)
         rvHistory.adapter = historyAdapter
+        rvFavorites.isNestedScrollingEnabled = false
+        rvHistory.isNestedScrollingEnabled = false
+
+        tmdbTrendingAdapter = CatalogAdapter(uiScope, tmdbClient, posterLoader) { item -> showMovieDetailsDialog(item) }
+        rvTmdbTrending.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
+        rvTmdbTrending.adapter = tmdbTrendingAdapter
+
+        tmdbNowPlayingAdapter = CatalogAdapter(uiScope, tmdbClient, posterLoader) { item -> showMovieDetailsDialog(item) }
+        rvTmdbNowPlaying.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
+        rvTmdbNowPlaying.adapter = tmdbNowPlayingAdapter
+
+        tmdbSeriesAdapter = CatalogAdapter(uiScope, tmdbClient, posterLoader) { item -> showMovieDetailsDialog(item) }
+        rvTmdbSeries.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
+        rvTmdbSeries.adapter = tmdbSeriesAdapter
     }
 
     private fun setupListeners() {
@@ -424,6 +472,14 @@ class MainActivity : AppCompatActivity() {
 
         btnSettings.setOnClickListener {
             showSettingsDialog()
+        }
+
+        layoutTmdbNotice.setOnClickListener {
+            if (storage.tmdbApiKey.isBlank()) {
+                showSettingsDialog(focusTmdbKey = true)
+            } else {
+                loadTmdbShowcase(force = true)
+            }
         }
 
         btnVoiceSearch.setOnClickListener {
@@ -529,8 +585,7 @@ class MainActivity : AppCompatActivity() {
         val filtersVisible = layoutFilters.visibility == View.VISIBLE
         val resultsVisible = rvResults.visibility == View.VISIBLE
         val recentVisible = rvRecentSearches.visibility == View.VISIBLE
-        val favsVisible = layoutHomeShelves.visibility == View.VISIBLE && rvFavorites.visibility == View.VISIBLE
-        val historyVisible = layoutHomeShelves.visibility == View.VISIBLE && rvHistory.visibility == View.VISIBLE
+        val homeVisible = scrollHomeShelves.visibility == View.VISIBLE
 
         if (filtersVisible) {
             etSearch.nextFocusDownId = R.id.btnFilterAll
@@ -547,32 +602,160 @@ class MainActivity : AppCompatActivity() {
             btnFilterLiveSeeds.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnFilterLiveSeeds
             btnSort.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnSort
         } else {
-            val downTarget = when {
-                recentVisible -> R.id.rvRecentSearches
-                favsVisible -> R.id.rvFavorites
-                historyVisible -> R.id.rvHistory
-                else -> View.NO_ID
-            }
-            etSearch.nextFocusDownId = if (downTarget != View.NO_ID) downTarget else R.id.etSearch
-            btnVoiceSearch.nextFocusDownId = if (downTarget != View.NO_ID) downTarget else R.id.btnVoiceSearch
-            btnSearch.nextFocusDownId = if (downTarget != View.NO_ID) downTarget else R.id.btnSearch
-
-            if (recentVisible) {
-                val belowRecent = when {
-                    favsVisible -> R.id.rvFavorites
-                    historyVisible -> R.id.rvHistory
-                    else -> View.NO_ID
-                }
-                rvRecentSearches.nextFocusDownId = belowRecent
+            val sections = mutableListOf<View>()
+            if (recentVisible) sections.add(rvRecentSearches)
+            if (homeVisible) {
+                if (layoutTmdbNotice.visibility == View.VISIBLE) sections.add(layoutTmdbNotice)
+                if (rvTmdbTrending.visibility == View.VISIBLE) sections.add(rvTmdbTrending)
+                if (rvTmdbNowPlaying.visibility == View.VISIBLE) sections.add(rvTmdbNowPlaying)
+                if (rvTmdbSeries.visibility == View.VISIBLE) sections.add(rvTmdbSeries)
+                if (rvFavorites.visibility == View.VISIBLE) sections.add(rvFavorites)
+                if (rvHistory.visibility == View.VISIBLE) sections.add(rvHistory)
             }
 
-            rvFavorites.nextFocusUpId = if (recentVisible) R.id.rvRecentSearches else R.id.etSearch
-            rvHistory.nextFocusUpId = when {
-                favsVisible -> R.id.rvFavorites
-                recentVisible -> R.id.rvRecentSearches
-                else -> R.id.etSearch
+            val firstId = sections.firstOrNull()?.id ?: View.NO_ID
+            etSearch.nextFocusDownId = if (firstId != View.NO_ID) firstId else R.id.etSearch
+            btnVoiceSearch.nextFocusDownId = if (firstId != View.NO_ID) firstId else R.id.btnVoiceSearch
+            btnSearch.nextFocusDownId = if (firstId != View.NO_ID) firstId else R.id.btnSearch
+
+            for (idx in sections.indices) {
+                val cur = sections[idx]
+                cur.nextFocusUpId = if (idx == 0) R.id.etSearch else sections[idx - 1].id
+                cur.nextFocusDownId = if (idx + 1 < sections.size) sections[idx + 1].id else View.NO_ID
             }
         }
+    }
+
+    private fun loadTmdbShowcase(force: Boolean) {
+        if (!storage.showTmdbShowcase) {
+            tmdbLoadJob?.cancel()
+            tmdbIsLoading = false
+            tmdbShelves = null
+            tmdbLoadedOnce = false
+            if (layoutFilters.visibility != View.VISIBLE && rvResults.visibility != View.VISIBLE) {
+                refreshHomeShelves()
+            }
+            return
+        }
+
+        val apiKey = storage.tmdbApiKey
+        if (apiKey.isBlank()) {
+            tmdbLoadJob?.cancel()
+            tmdbIsLoading = false
+            tmdbShelves = null
+            tmdbLoadedOnce = false
+            if (layoutFilters.visibility != View.VISIBLE && rvResults.visibility != View.VISIBLE) {
+                refreshHomeShelves()
+            }
+            return
+        }
+
+        if (!force && tmdbLoadedOnce && tmdbShelves?.hasAnyItems() == true) {
+            return
+        }
+
+        tmdbLoadJob?.cancel()
+        tmdbIsLoading = true
+        if (layoutFilters.visibility != View.VISIBLE && rvResults.visibility != View.VISIBLE) {
+            refreshHomeShelves()
+        }
+
+        tmdbLoadJob = uiScope.launch {
+            val shelves = tmdbClient.fetchShelves()
+            tmdbIsLoading = false
+            tmdbLoadedOnce = true
+            tmdbShelves = shelves
+            if (!shelves.error.isNullOrBlank()) {
+                AppLogger.w("TMDB", "Ошибка загрузки витрины: ${shelves.error}")
+            }
+            if (layoutFilters.visibility != View.VISIBLE && rvResults.visibility != View.VISIBLE) {
+                refreshHomeShelves()
+            }
+        }
+    }
+
+    private fun showMovieDetailsDialog(item: CatalogItem) {
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(R.layout.dialog_movie_details)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.78).toInt(),
+            WindowManager.LayoutParams.WRAP_CONTENT
+        )
+
+        val ivPoster = dialog.findViewById<ImageView>(R.id.ivDetailsPoster)
+        val tvTitle = dialog.findViewById<TextView>(R.id.tvDetailsTitle)
+        val tvOriginal = dialog.findViewById<TextView>(R.id.tvDetailsOriginal)
+        val tvRating = dialog.findViewById<TextView>(R.id.tvDetailsRating)
+        val tvType = dialog.findViewById<TextView>(R.id.tvDetailsType)
+        val tvMeta = dialog.findViewById<TextView>(R.id.tvDetailsMeta)
+        val tvOverview = dialog.findViewById<TextView>(R.id.tvDetailsOverview)
+        val btnFind = dialog.findViewById<TextView>(R.id.btnDetailsFindTorrents)
+        val btnFav = dialog.findViewById<TextView>(R.id.btnDetailsFavorite)
+        val btnClose = dialog.findViewById<TextView>(R.id.btnDetailsClose)
+
+        tvTitle.text = item.title
+        if (item.originalTitle.isNotBlank() && !item.originalTitle.equals(item.title, ignoreCase = true)) {
+            tvOriginal.text = item.originalTitle
+            tvOriginal.visibility = View.VISIBLE
+        } else {
+            tvOriginal.visibility = View.GONE
+        }
+
+        val ratingStr = item.formattedRating()
+        if (ratingStr.isNotEmpty()) {
+            tvRating.text = ratingStr
+            tvRating.visibility = View.VISIBLE
+        } else {
+            tvRating.visibility = View.GONE
+        }
+
+        tvType.text = getString(if (item.isSeries()) R.string.catalog_type_series else R.string.catalog_type_movie)
+
+        val metaParts = mutableListOf<String>()
+        if (item.year.isNotBlank()) metaParts.add(item.year)
+        if (item.genreNames.isNotEmpty()) metaParts.add(item.genreNames.joinToString(", "))
+        tvMeta.text = metaParts.joinToString(" • ")
+
+        tvOverview.text = item.overview.ifBlank { getString(R.string.catalog_no_overview) }
+
+        val posterUrl = tmdbClient.buildPosterUrl(item.posterPath)
+        posterLoader.load(uiScope, ivPoster, posterUrl)
+
+        fun updateFavBtn() {
+            val isFav = storage.isFavorite(item.title)
+            btnFav.text = getString(if (isFav) R.string.btn_fav_active else R.string.btn_fav_toggle)
+        }
+        updateFavBtn()
+
+        btnFind.setOnClickListener {
+            dialog.dismiss()
+            val query = item.torrentSearchQuery()
+            etSearch.setText(query)
+            etSearch.setSelection(query.length)
+            updateFavoriteButtonUi()
+            performSearch()
+        }
+
+        btnFav.setOnClickListener {
+            val added = storage.toggleFavorite(item.title)
+            updateFavBtn()
+            updateFavoriteButtonUi()
+            if (layoutFilters.visibility != View.VISIBLE && rvResults.visibility != View.VISIBLE) {
+                refreshHomeShelves()
+            }
+            Toast.makeText(
+                this,
+                if (added) "Добавлено в избранное" else "Удалено из избранного",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
+        btnClose.setOnClickListener { dialog.dismiss() }
+
+        dialog.show()
+        btnFind.requestFocus()
     }
 
     private fun startVoiceSearch() {
@@ -615,6 +798,92 @@ class MainActivity : AppCompatActivity() {
             rvRecentSearches.visibility = View.GONE
         }
 
+        // TMDB Showcase shelves
+        val showcaseEnabled = storage.showTmdbShowcase
+        val shelves = tmdbShelves
+        var hasTmdbContent = false
+
+        if (!showcaseEnabled) {
+            layoutTmdbNotice.visibility = View.GONE
+            tvTmdbTrendingHeader.visibility = View.GONE
+            rvTmdbTrending.visibility = View.GONE
+            tvTmdbNowPlayingHeader.visibility = View.GONE
+            rvTmdbNowPlaying.visibility = View.GONE
+            tvTmdbSeriesHeader.visibility = View.GONE
+            rvTmdbSeries.visibility = View.GONE
+        } else if (storage.tmdbApiKey.isBlank()) {
+            layoutTmdbNotice.visibility = View.VISIBLE
+            progressTmdb.visibility = View.GONE
+            tvTmdbNotice.text = getString(R.string.catalog_need_key)
+            tvTmdbTrendingHeader.visibility = View.GONE
+            rvTmdbTrending.visibility = View.GONE
+            tvTmdbNowPlayingHeader.visibility = View.GONE
+            rvTmdbNowPlaying.visibility = View.GONE
+            tvTmdbSeriesHeader.visibility = View.GONE
+            rvTmdbSeries.visibility = View.GONE
+            hasTmdbContent = true
+        } else if (tmdbIsLoading && shelves?.hasAnyItems() != true) {
+            layoutTmdbNotice.visibility = View.VISIBLE
+            progressTmdb.visibility = View.VISIBLE
+            tvTmdbNotice.text = getString(R.string.catalog_loading)
+            tvTmdbTrendingHeader.visibility = View.GONE
+            rvTmdbTrending.visibility = View.GONE
+            tvTmdbNowPlayingHeader.visibility = View.GONE
+            rvTmdbNowPlaying.visibility = View.GONE
+            tvTmdbSeriesHeader.visibility = View.GONE
+            rvTmdbSeries.visibility = View.GONE
+            hasTmdbContent = true
+        } else if (shelves != null && shelves.hasAnyItems()) {
+            layoutTmdbNotice.visibility = View.GONE
+            hasTmdbContent = true
+
+            if (shelves.trending.isNotEmpty()) {
+                tvTmdbTrendingHeader.visibility = View.VISIBLE
+                rvTmdbTrending.visibility = View.VISIBLE
+                tmdbTrendingAdapter.submitList(shelves.trending)
+            } else {
+                tvTmdbTrendingHeader.visibility = View.GONE
+                rvTmdbTrending.visibility = View.GONE
+            }
+
+            if (shelves.nowPlaying.isNotEmpty()) {
+                tvTmdbNowPlayingHeader.visibility = View.VISIBLE
+                rvTmdbNowPlaying.visibility = View.VISIBLE
+                tmdbNowPlayingAdapter.submitList(shelves.nowPlaying)
+            } else {
+                tvTmdbNowPlayingHeader.visibility = View.GONE
+                rvTmdbNowPlaying.visibility = View.GONE
+            }
+
+            if (shelves.popularSeries.isNotEmpty()) {
+                tvTmdbSeriesHeader.visibility = View.VISIBLE
+                rvTmdbSeries.visibility = View.VISIBLE
+                tmdbSeriesAdapter.submitList(shelves.popularSeries)
+            } else {
+                tvTmdbSeriesHeader.visibility = View.GONE
+                rvTmdbSeries.visibility = View.GONE
+            }
+        } else if (shelves != null && !shelves.error.isNullOrBlank()) {
+            layoutTmdbNotice.visibility = View.VISIBLE
+            progressTmdb.visibility = View.GONE
+            tvTmdbNotice.text = "${getString(R.string.catalog_error_prefix)} ${shelves.error} • OK — повторить"
+            tvTmdbTrendingHeader.visibility = View.GONE
+            rvTmdbTrending.visibility = View.GONE
+            tvTmdbNowPlayingHeader.visibility = View.GONE
+            rvTmdbNowPlaying.visibility = View.GONE
+            tvTmdbSeriesHeader.visibility = View.GONE
+            rvTmdbSeries.visibility = View.GONE
+            hasTmdbContent = true
+        } else {
+            layoutTmdbNotice.visibility = View.GONE
+            tvTmdbTrendingHeader.visibility = View.GONE
+            rvTmdbTrending.visibility = View.GONE
+            tvTmdbNowPlayingHeader.visibility = View.GONE
+            rvTmdbNowPlaying.visibility = View.GONE
+            tvTmdbSeriesHeader.visibility = View.GONE
+            rvTmdbSeries.visibility = View.GONE
+        }
+
         if (favs.isNotEmpty()) {
             tvFavoritesHeader.visibility = View.VISIBLE
             rvFavorites.visibility = View.VISIBLE
@@ -633,8 +902,8 @@ class MainActivity : AppCompatActivity() {
             rvHistory.visibility = View.GONE
         }
 
-        val hasShelves = favs.isNotEmpty() || history.isNotEmpty()
-        layoutHomeShelves.visibility = if (hasShelves) View.VISIBLE else View.GONE
+        val hasShelves = hasTmdbContent || favs.isNotEmpty() || history.isNotEmpty()
+        scrollHomeShelves.visibility = if (hasShelves) View.VISIBLE else View.GONE
         layoutEmpty.visibility = if (hasShelves) View.GONE else View.VISIBLE
         if (!hasShelves) {
             progressSearch.visibility = View.GONE
@@ -769,7 +1038,7 @@ class MainActivity : AppCompatActivity() {
             adapter.submitList(emptyList())
             rvRecentSearches.visibility = View.GONE
             layoutFilters.visibility = View.GONE
-            layoutHomeShelves.visibility = View.GONE
+            scrollHomeShelves.visibility = View.GONE
             rvResults.visibility = View.GONE
             layoutEmpty.visibility = View.VISIBLE
             progressSearch.visibility = View.VISIBLE
@@ -782,12 +1051,12 @@ class MainActivity : AppCompatActivity() {
             if (response.items.isNotEmpty()) {
                 allResults = response.items
                 lastSourceName = response.sourceName
-                layoutHomeShelves.visibility = View.GONE
+                scrollHomeShelves.visibility = View.GONE
                 layoutFilters.visibility = View.VISIBLE
                 renderFilteredResults(focusFirst = true)
             } else {
                 layoutFilters.visibility = View.GONE
-                layoutHomeShelves.visibility = View.GONE
+                scrollHomeShelves.visibility = View.GONE
                 rvResults.visibility = View.GONE
                 layoutEmpty.visibility = View.VISIBLE
                 if (!response.error.isNullOrBlank()) {
@@ -1152,7 +1421,7 @@ class MainActivity : AppCompatActivity() {
         loadList()
     }
 
-    private fun showSettingsDialog() {
+    private fun showSettingsDialog(focusTmdbKey: Boolean = false) {
         hideKeyboard()
         val dialog = Dialog(this)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
@@ -1178,6 +1447,10 @@ class MainActivity : AppCompatActivity() {
         val etCustomParser = dialog.findViewById<EditText>(R.id.etCustomParserUrl)
         val etApiKey = dialog.findViewById<EditText>(R.id.etApiKey)
         val etRutorMirror = dialog.findViewById<EditText>(R.id.etRutorMirror)
+        val btnToggleTmdbShowcase = dialog.findViewById<TextView>(R.id.btnToggleTmdbShowcase)
+        val etTmdbApiKey = dialog.findViewById<EditText>(R.id.etTmdbApiKey)
+        val etTmdbApiUrl = dialog.findViewById<EditText>(R.id.etTmdbApiUrl)
+        val etTmdbImageUrl = dialog.findViewById<EditText>(R.id.etTmdbImageUrl)
         val btnTorrServeManager = dialog.findViewById<TextView>(R.id.btnTorrServeManager)
         val btnBackupExport = dialog.findViewById<TextView>(R.id.btnBackupExport)
         val btnBackupImport = dialog.findViewById<TextView>(R.id.btnBackupImport)
@@ -1197,6 +1470,7 @@ class MainActivity : AppCompatActivity() {
         var publicJacRedEnabled = storage.usePublicJacRed
         var rutorFallbackEnabled = storage.useRutorFallback
         var autoCheckUpdatesEnabled = storage.autoCheckUpdates
+        var tmdbShowcaseEnabled = storage.showTmdbShowcase
 
         fun refreshPlayerChips() {
             btnPlayerBuiltin.isSelected = selectedBuiltIn
@@ -1222,6 +1496,10 @@ class MainActivity : AppCompatActivity() {
             btnToggleAutoUpdate.text = getString(
                 if (autoCheckUpdatesEnabled) R.string.auto_update_on else R.string.auto_update_off
             )
+            btnToggleTmdbShowcase.isSelected = tmdbShowcaseEnabled
+            btnToggleTmdbShowcase.text = getString(
+                if (tmdbShowcaseEnabled) R.string.tmdb_showcase_on else R.string.tmdb_showcase_off
+            )
         }
 
         fun populateFieldsFromStorage() {
@@ -1233,7 +1511,11 @@ class MainActivity : AppCompatActivity() {
             etTorrServe.setText(storage.torrServeUrl)
             etCustomParser.setText(storage.customParserUrl)
             etApiKey.setText(storage.parserApiKey)
+            tmdbShowcaseEnabled = storage.showTmdbShowcase
             etRutorMirror.setText(storage.rutorMirrorUrl)
+            etTmdbApiKey.setText(storage.tmdbApiKey)
+            etTmdbApiUrl.setText(storage.tmdbApiBaseUrl)
+            etTmdbImageUrl.setText(storage.tmdbImageBaseUrl)
             refreshPlayerChips()
             refreshBufferChips()
             refreshSourceChips()
@@ -1273,6 +1555,10 @@ class MainActivity : AppCompatActivity() {
             autoCheckUpdatesEnabled = !autoCheckUpdatesEnabled
             refreshSourceChips()
         }
+        btnToggleTmdbShowcase.setOnClickListener {
+            tmdbShowcaseEnabled = !tmdbShowcaseEnabled
+            refreshSourceChips()
+        }
 
         btnTorrServeManager.setOnClickListener {
             storage.torrServeUrl = etTorrServe.text.toString()
@@ -1289,6 +1575,10 @@ class MainActivity : AppCompatActivity() {
             storage.customParserUrl = etCustomParser.text.toString()
             storage.parserApiKey = etApiKey.text.toString()
             storage.rutorMirrorUrl = etRutorMirror.text.toString()
+            storage.showTmdbShowcase = tmdbShowcaseEnabled
+            storage.tmdbApiKey = etTmdbApiKey.text.toString()
+            storage.tmdbApiBaseUrl = etTmdbApiUrl.text.toString()
+            storage.tmdbImageBaseUrl = etTmdbImageUrl.text.toString()
             runWithStoragePermission {
                 val res = maintenanceManager.exportBackup(storage, playerPrefs)
                 Toast.makeText(this@MainActivity, res.message, Toast.LENGTH_LONG).show()
@@ -1310,6 +1600,7 @@ class MainActivity : AppCompatActivity() {
                     if (dialog.isShowing) {
                         populateFieldsFromStorage()
                     }
+                    loadTmdbShowcase(force = true)
                     refreshTorrServeStatus(autoStart = false)
                 }
             }
@@ -1353,13 +1644,18 @@ class MainActivity : AppCompatActivity() {
             val customUrlInput = etCustomParser.text.toString()
             val apiKeyInput = etApiKey.text.toString()
             val rutorInput = etRutorMirror.text.toString()
+            val tmdbKeyInput = etTmdbApiKey.text.toString()
+            val tmdbApiInput = etTmdbApiUrl.text.toString()
 
             mirrorCheckJob = uiScope.launch {
                 val results = searchEngine.checkMirrors(
                     customUrl = customUrlInput,
                     apiKey = apiKeyInput,
                     rutorUrl = rutorInput
-                )
+                ).toMutableList()
+                if (tmdbKeyInput.isNotBlank()) {
+                    results.add(tmdbClient.probeConnection(tmdbKeyInput, tmdbApiInput))
+                }
                 if (!dialog.isShowing) return@launch
 
                 progressMirrorCheck.visibility = View.GONE
@@ -1422,14 +1718,28 @@ class MainActivity : AppCompatActivity() {
             storage.torrServeUrl = etTorrServe.text.toString()
             storage.customParserUrl = etCustomParser.text.toString()
             storage.parserApiKey = etApiKey.text.toString()
+            val tmdbChanged = storage.showTmdbShowcase != tmdbShowcaseEnabled ||
+                storage.tmdbApiKey != etTmdbApiKey.text.toString().trim() ||
+                storage.tmdbApiBaseUrl != etTmdbApiUrl.text.toString().trim().trimEnd('/').ifBlank { StorageManager.DEFAULT_TMDB_API_URL } ||
+                storage.tmdbImageBaseUrl != etTmdbImageUrl.text.toString().trim().trimEnd('/').ifBlank { StorageManager.DEFAULT_TMDB_IMAGE_URL }
+
             storage.rutorMirrorUrl = etRutorMirror.text.toString()
+            storage.showTmdbShowcase = tmdbShowcaseEnabled
+            storage.tmdbApiKey = etTmdbApiKey.text.toString()
+            storage.tmdbApiBaseUrl = etTmdbApiUrl.text.toString()
+            storage.tmdbImageBaseUrl = etTmdbImageUrl.text.toString()
             dialog.dismiss()
+            if (tmdbChanged) {
+                loadTmdbShowcase(force = true)
+            }
             refreshTorrServeStatus(autoStart = false)
             Toast.makeText(this, "Настройки сохранены", Toast.LENGTH_SHORT).show()
         }
 
         dialog.show()
-        if (selectedBuiltIn) {
+        if (focusTmdbKey) {
+            etTmdbApiKey.requestFocus()
+        } else if (selectedBuiltIn) {
             btnPlayerBuiltin.requestFocus()
         } else {
             btnPlayerExternal.requestFocus()

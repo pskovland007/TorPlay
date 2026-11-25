@@ -389,57 +389,168 @@
                 android:textStyle="bold" />
         </LinearLayout>
 
-        <!-- Home Shelves: History & Favorites (visible when not showing search results) -->
-        <LinearLayout
-            android:id="@+id/layoutHomeShelves"
+        <!-- Home Shelves: TMDB Showcase, Favorites & Watch History -->
+        <ScrollView
+            android:id="@+id/scrollHomeShelves"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:orientation="vertical"
+            android:fillViewport="true"
+            android:scrollbars="none"
             android:visibility="gone">
 
-            <!-- Favorites Shelf -->
-            <TextView
-                android:id="@+id/tvFavoritesHeader"
+            <LinearLayout
+                android:id="@+id/layoutHomeShelves"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:paddingTop="4dp"
-                android:paddingBottom="6dp"
-                android:text="@string/favorites_title"
-                android:textColor="@color/text_primary"
-                android:textSize="15sp"
-                android:textStyle="bold"
-                android:visibility="gone" />
+                android:orientation="vertical"
+                android:paddingBottom="16dp">
 
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/rvFavorites"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:clipToPadding="false"
-                android:nextFocusUp="@+id/etSearch"
-                android:visibility="gone" />
+                <!-- TMDB Notice / Setup / Loading Card -->
+                <LinearLayout
+                    android:id="@+id/layoutTmdbNotice"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="10dp"
+                    android:background="@drawable/bg_card_selector"
+                    android:clickable="true"
+                    android:descendantFocusability="blocksDescendants"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="16dp"
+                    android:paddingTop="10dp"
+                    android:paddingEnd="16dp"
+                    android:paddingBottom="10dp"
+                    android:visibility="gone">
 
-            <!-- History Shelf -->
-            <TextView
-                android:id="@+id/tvHistoryHeader"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:paddingTop="8dp"
-                android:paddingBottom="6dp"
-                android:text="@string/history_title"
-                android:textColor="@color/text_primary"
-                android:textSize="15sp"
-                android:textStyle="bold"
-                android:visibility="gone" />
+                    <ProgressBar
+                        android:id="@+id/progressTmdb"
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:layout_marginEnd="10dp"
+                        android:indeterminateTint="@color/accent_emerald"
+                        android:visibility="gone" />
 
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/rvHistory"
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:clipToPadding="false"
-                android:visibility="gone" />
-        </LinearLayout>
+                    <TextView
+                        android:id="@+id/tvTmdbNotice"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/catalog_need_key"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <!-- TMDB Shelf 1: Trending Movies -->
+                <TextView
+                    android:id="@+id/tvTmdbTrendingHeader"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="6dp"
+                    android:text="@string/catalog_trending_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rvTmdbTrending"
+                    android:layout_width="match_parent"
+                    android:layout_height="236dp"
+                    android:layout_marginBottom="8dp"
+                    android:clipToPadding="false"
+                    android:visibility="gone" />
+
+                <!-- TMDB Shelf 2: Now Playing -->
+                <TextView
+                    android:id="@+id/tvTmdbNowPlayingHeader"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="6dp"
+                    android:text="@string/catalog_now_playing_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rvTmdbNowPlaying"
+                    android:layout_width="match_parent"
+                    android:layout_height="236dp"
+                    android:layout_marginBottom="8dp"
+                    android:clipToPadding="false"
+                    android:visibility="gone" />
+
+                <!-- TMDB Shelf 3: Popular Series -->
+                <TextView
+                    android:id="@+id/tvTmdbSeriesHeader"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="6dp"
+                    android:text="@string/catalog_series_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rvTmdbSeries"
+                    android:layout_width="match_parent"
+                    android:layout_height="236dp"
+                    android:layout_marginBottom="8dp"
+                    android:clipToPadding="false"
+                    android:visibility="gone" />
+
+                <!-- Favorites Shelf -->
+                <TextView
+                    android:id="@+id/tvFavoritesHeader"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="6dp"
+                    android:text="@string/favorites_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rvFavorites"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:clipToPadding="false"
+                    android:nestedScrollingEnabled="false"
+                    android:overScrollMode="never"
+                    android:visibility="gone" />
+
+                <!-- History Shelf -->
+                <TextView
+                    android:id="@+id/tvHistoryHeader"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingTop="8dp"
+                    android:paddingBottom="6dp"
+                    android:text="@string/history_title"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rvHistory"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:clipToPadding="false"
+                    android:nestedScrollingEnabled="false"
+                    android:overScrollMode="never"
+                    android:visibility="gone" />
+            </LinearLayout>
+        </ScrollView>
 
         <!-- Prompt / Searching / Empty / No-filtered-results state -->
         <LinearLayout

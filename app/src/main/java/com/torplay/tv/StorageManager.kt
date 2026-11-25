@@ -52,6 +52,40 @@ class StorageManager(context: Context) {
             prefs.edit().putBoolean(KEY_ONLY_LIVE_SEEDS, value).apply()
         }
 
+    var showTmdbShowcase: Boolean
+        get() = prefs.getBoolean(KEY_SHOW_TMDB_SHOWCASE, true)
+        set(value) {
+            prefs.edit().putBoolean(KEY_SHOW_TMDB_SHOWCASE, value).apply()
+        }
+
+    var tmdbApiKey: String
+        get() = prefs.getString(KEY_TMDB_API_KEY, "")?.trim().orEmpty()
+        set(value) {
+            prefs.edit().putString(KEY_TMDB_API_KEY, value.trim()).apply()
+        }
+
+    var tmdbApiBaseUrl: String
+        get() = prefs.getString(KEY_TMDB_API_BASE, DEFAULT_TMDB_API_URL)
+            ?.trim()
+            ?.trimEnd('/')
+            .orEmpty()
+            .ifBlank { DEFAULT_TMDB_API_URL }
+        set(value) {
+            val clean = value.trim().trimEnd('/').ifBlank { DEFAULT_TMDB_API_URL }
+            prefs.edit().putString(KEY_TMDB_API_BASE, clean).apply()
+        }
+
+    var tmdbImageBaseUrl: String
+        get() = prefs.getString(KEY_TMDB_IMAGE_BASE, DEFAULT_TMDB_IMAGE_URL)
+            ?.trim()
+            ?.trimEnd('/')
+            .orEmpty()
+            .ifBlank { DEFAULT_TMDB_IMAGE_URL }
+        set(value) {
+            val clean = value.trim().trimEnd('/').ifBlank { DEFAULT_TMDB_IMAGE_URL }
+            prefs.edit().putString(KEY_TMDB_IMAGE_BASE, clean).apply()
+        }
+
     var torrServeUrl: String
         get() = prefs.getString(KEY_TORRSERVE_URL, DEFAULT_TORRSERVE_URL)
             ?.trim()
@@ -320,6 +354,10 @@ class StorageManager(context: Context) {
             put(KEY_AUTO_CHECK_UPDATES, autoCheckUpdates)
             put(KEY_HIDE_CAM_RELEASES, hideCamReleases)
             put(KEY_ONLY_LIVE_SEEDS, onlyLiveSeeds)
+            put(KEY_SHOW_TMDB_SHOWCASE, showTmdbShowcase)
+            put(KEY_TMDB_API_KEY, tmdbApiKey)
+            put(KEY_TMDB_API_BASE, tmdbApiBaseUrl)
+            put(KEY_TMDB_IMAGE_BASE, tmdbImageBaseUrl)
             put(KEY_TORRSERVE_URL, torrServeUrl)
             put(KEY_CUSTOM_PARSER_URL, customParserUrl)
             put(KEY_PARSER_API_KEY, parserApiKey)
@@ -341,6 +379,16 @@ class StorageManager(context: Context) {
         if (obj.has(KEY_AUTO_CHECK_UPDATES)) editor.putBoolean(KEY_AUTO_CHECK_UPDATES, obj.optBoolean(KEY_AUTO_CHECK_UPDATES, true))
         if (obj.has(KEY_HIDE_CAM_RELEASES)) editor.putBoolean(KEY_HIDE_CAM_RELEASES, obj.optBoolean(KEY_HIDE_CAM_RELEASES, false))
         if (obj.has(KEY_ONLY_LIVE_SEEDS)) editor.putBoolean(KEY_ONLY_LIVE_SEEDS, obj.optBoolean(KEY_ONLY_LIVE_SEEDS, false))
+        if (obj.has(KEY_SHOW_TMDB_SHOWCASE)) editor.putBoolean(KEY_SHOW_TMDB_SHOWCASE, obj.optBoolean(KEY_SHOW_TMDB_SHOWCASE, true))
+        if (obj.has(KEY_TMDB_API_KEY)) editor.putString(KEY_TMDB_API_KEY, obj.optString(KEY_TMDB_API_KEY, "").trim())
+        if (obj.has(KEY_TMDB_API_BASE)) {
+            val v = obj.optString(KEY_TMDB_API_BASE, DEFAULT_TMDB_API_URL).trim().trimEnd('/').ifBlank { DEFAULT_TMDB_API_URL }
+            editor.putString(KEY_TMDB_API_BASE, v)
+        }
+        if (obj.has(KEY_TMDB_IMAGE_BASE)) {
+            val v = obj.optString(KEY_TMDB_IMAGE_BASE, DEFAULT_TMDB_IMAGE_URL).trim().trimEnd('/').ifBlank { DEFAULT_TMDB_IMAGE_URL }
+            editor.putString(KEY_TMDB_IMAGE_BASE, v)
+        }
         if (obj.has(KEY_TORRSERVE_URL)) {
             val v = obj.optString(KEY_TORRSERVE_URL, DEFAULT_TORRSERVE_URL).trim().trimEnd('/').ifBlank { DEFAULT_TORRSERVE_URL }
             editor.putString(KEY_TORRSERVE_URL, v)
@@ -387,6 +435,10 @@ class StorageManager(context: Context) {
         private const val KEY_AUTO_CHECK_UPDATES = "auto_check_updates"
         private const val KEY_HIDE_CAM_RELEASES = "hide_cam_releases"
         private const val KEY_ONLY_LIVE_SEEDS = "only_live_seeds"
+        private const val KEY_SHOW_TMDB_SHOWCASE = "show_tmdb_showcase"
+        private const val KEY_TMDB_API_KEY = "tmdb_api_key"
+        private const val KEY_TMDB_API_BASE = "tmdb_api_base"
+        private const val KEY_TMDB_IMAGE_BASE = "tmdb_image_base"
         private const val KEY_TORRSERVE_URL = "torrserve_url"
         private const val KEY_CUSTOM_PARSER_URL = "custom_parser_url"
         private const val KEY_PARSER_API_KEY = "parser_api_key"
@@ -403,5 +455,7 @@ class StorageManager(context: Context) {
 
         const val DEFAULT_TORRSERVE_URL = "http://127.0.0.1:8090"
         const val DEFAULT_RUTOR_MIRROR = "https://rutor.info"
+        const val DEFAULT_TMDB_API_URL = "https://api.themoviedb.org/3"
+        const val DEFAULT_TMDB_IMAGE_URL = "https://image.tmdb.org/t/p/w342"
     }
 }

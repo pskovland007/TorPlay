@@ -345,8 +345,110 @@
             android:background="@drawable/bg_input_selector"
             android:hint="https://rutor.info"
             android:inputType="textUri"
-            android:nextFocusDown="@+id/btnTorrServeManager"
+            android:nextFocusDown="@+id/btnToggleTmdbShowcase"
             android:nextFocusUp="@+id/etApiKey"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:singleLine="true"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_muted"
+            android:textSize="14sp" />
+
+        <!-- TMDB Catalog Settings -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_tmdb_label"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/btnToggleTmdbShowcase"
+            android:layout_width="match_parent"
+            android:layout_height="38dp"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="8dp"
+            android:background="@drawable/bg_chip_selector"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:nextFocusDown="@+id/etTmdbApiKey"
+            android:nextFocusLeft="@+id/btnToggleTmdbShowcase"
+            android:nextFocusRight="@+id/btnToggleTmdbShowcase"
+            android:nextFocusUp="@+id/etRutorMirror"
+            android:text="@string/tmdb_showcase_on"
+            android:textColor="@color/text_primary"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_tmdb_key_label"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
+        <EditText
+            android:id="@+id/etTmdbApiKey"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="8dp"
+            android:background="@drawable/bg_input_selector"
+            android:hint="Бесплатный ключ с themoviedb.org"
+            android:inputType="text"
+            android:nextFocusDown="@+id/etTmdbApiUrl"
+            android:nextFocusUp="@+id/btnToggleTmdbShowcase"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:singleLine="true"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_muted"
+            android:textSize="14sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_tmdb_api_label"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
+        <EditText
+            android:id="@+id/etTmdbApiUrl"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="8dp"
+            android:background="@drawable/bg_input_selector"
+            android:hint="https://api.themoviedb.org/3"
+            android:inputType="textUri"
+            android:nextFocusDown="@+id/etTmdbImageUrl"
+            android:nextFocusUp="@+id/etTmdbApiKey"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:singleLine="true"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_muted"
+            android:textSize="14sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_tmdb_img_label"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
+        <EditText
+            android:id="@+id/etTmdbImageUrl"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="10dp"
+            android:background="@drawable/bg_input_selector"
+            android:hint="https://image.tmdb.org/t/p/w342"
+            android:inputType="textUri"
+            android:nextFocusDown="@+id/btnTorrServeManager"
+            android:nextFocusUp="@+id/etTmdbApiUrl"
             android:paddingStart="12dp"
             android:paddingEnd="12dp"
             android:singleLine="true"
@@ -382,7 +484,7 @@
                 android:nextFocusDown="@+id/btnCheckMirrors"
                 android:nextFocusLeft="@+id/btnTorrServeManager"
                 android:nextFocusRight="@+id/btnBackupExport"
-                android:nextFocusUp="@+id/etRutorMirror"
+                android:nextFocusUp="@+id/etTmdbImageUrl"
                 android:paddingStart="8dp"
                 android:paddingEnd="8dp"
                 android:text="@string/btn_torrserve_manager"
@@ -403,7 +505,7 @@
                 android:nextFocusDown="@+id/btnCancelSettings"
                 android:nextFocusLeft="@+id/btnTorrServeManager"
                 android:nextFocusRight="@+id/btnBackupImport"
-                android:nextFocusUp="@+id/etRutorMirror"
+                android:nextFocusUp="@+id/etTmdbImageUrl"
                 android:paddingStart="8dp"
                 android:paddingEnd="8dp"
                 android:text="@string/btn_backup_export"
@@ -424,7 +526,7 @@
                 android:nextFocusDown="@+id/btnCancelSettings"
                 android:nextFocusLeft="@+id/btnBackupExport"
                 android:nextFocusRight="@+id/btnExportLogs"
-                android:nextFocusUp="@+id/etRutorMirror"
+                android:nextFocusUp="@+id/etTmdbImageUrl"
                 android:paddingStart="8dp"
                 android:paddingEnd="8dp"
                 android:text="@string/btn_backup_import"
@@ -444,7 +546,7 @@
                 android:nextFocusDown="@+id/btnSaveSettings"
                 android:nextFocusLeft="@+id/btnBackupImport"
                 android:nextFocusRight="@+id/btnExportLogs"
-                android:nextFocusUp="@+id/etRutorMirror"
+                android:nextFocusUp="@+id/etTmdbImageUrl"
                 android:paddingStart="8dp"
                 android:paddingEnd="8dp"
                 android:text="@string/btn_export_logs"

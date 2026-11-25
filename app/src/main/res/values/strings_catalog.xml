@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="catalog_trending_title">Популярные фильмы</string>
+    <string name="catalog_now_playing_title">Новинки кино</string>
+    <string name="catalog_series_title">Топ сериалов</string>
+    <string name="catalog_loading">Загрузка витрины TMDB…</string>
+    <string name="catalog_need_key">Витрина TMDB: укажите бесплатный API-ключ в Настройках (нажмите OK)</string>
+    <string name="catalog_error_prefix">Витрина TMDB недоступна:</string>
+    <string name="catalog_retry_hint">Нажмите OK, чтобы открыть настройки TMDB</string>
+    <string name="catalog_type_movie">Фильм</string>
+    <string name="catalog_type_series">Сериал</string>
+    <string name="catalog_no_overview">Описание на русском языке отсутствует.</string>
+    <string name="catalog_btn_find_torrents">Найти раздачи</string>
+    <string name="catalog_btn_close">Закрыть</string>
+    <string name="settings_tmdb_label">Витрина и постеры TMDB</string>
+    <string name="tmdb_showcase_on">✓ Витрина TMDB на главном экране: ВКЛ</string>
+    <string name="tmdb_showcase_off">✕ Витрина TMDB на главном экране: ВЫКЛ</string>
+    <string name="settings_tmdb_key_label">TMDB API-ключ (v3 или Bearer-токен)</string>
+    <string name="settings_tmdb_api_label">TMDB API URL / прокси (необязательно)</string>
+    <string name="settings_tmdb_img_label">TMDB URL постеров / прокси (необязательно)</string>
+</resources>
