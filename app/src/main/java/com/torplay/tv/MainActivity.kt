@@ -53,6 +53,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var maintenanceManager: MaintenanceManager
     private lateinit var updateManager: UpdateManager
     private lateinit var tmdbClient: TmdbClient
+    private lateinit var kinopoiskClient: KinopoiskClient
     private lateinit var posterLoader: PosterLoader
     private lateinit var adapter: TorrentAdapter
     private lateinit var historyAdapter: HistoryAdapter
@@ -175,6 +176,7 @@ class MainActivity : AppCompatActivity() {
         maintenanceManager = MaintenanceManager(this)
         updateManager = UpdateManager(this)
         tmdbClient = TmdbClient(storage)
+        kinopoiskClient = KinopoiskClient(storage)
         posterLoader = PosterLoader(this)
 
         hideCamReleases = storage.hideCamReleases
@@ -542,8 +544,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         layoutTmdbNotice.setOnClickListener {
-            if (storage.tmdbApiKey.isBlank()) {
-                showSettingsDialog(focusTmdbKey = true)
+            if (storage.activeCatalogKey().isBlank()) {
+                showSettingsDialog(focusCatalogKey = true)
             } else {
                 loadTmdbShowcase(force = true)
             }
@@ -719,7 +721,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val apiKey = storage.tmdbApiKey
+        val apiKey = storage.activeCatalogKey()
         if (apiKey.isBlank()) {
             tmdbLoadJob?.cancel()
             tmdbIsLoading = false
@@ -741,13 +743,19 @@ class MainActivity : AppCompatActivity() {
             refreshHomeShelves()
         }
 
+        val providerName = storage.activeCatalogName()
+        val useKinopoisk = storage.catalogProvider == StorageManager.CATALOG_PROVIDER_KINOPOISK
         tmdbLoadJob = uiScope.launch {
-            val shelves = tmdbClient.fetchShelves()
+            val shelves = if (useKinopoisk) {
+                kinopoiskClient.fetchShelves()
+            } else {
+                tmdbClient.fetchShelves()
+            }
             tmdbIsLoading = false
             tmdbLoadedOnce = true
             tmdbShelves = shelves
             if (!shelves.error.isNullOrBlank()) {
-                AppLogger.w("TMDB", "Ошибка загрузки витрины: ${shelves.error}")
+                AppLogger.w("Catalog", "Ошибка загрузки витрины ($providerName): ${shelves.error}")
             }
             if (layoutFilters.visibility != View.VISIBLE && rvResults.visibility != View.VISIBLE) {
                 refreshHomeShelves()
@@ -799,10 +807,43 @@ class MainActivity : AppCompatActivity() {
         if (item.genreNames.isNotEmpty()) metaParts.add(item.genreNames.joinToString(", "))
         tvMeta.text = metaParts.joinToString(" • ")
 
-        tvOverview.text = item.overview.ifBlank { getString(R.string.catalog_no_overview) }
+        var detailsJob: Job? = null
+        val needsKpDetails = item.source == KinopoiskClient.SOURCE_ID && item.overview.isBlank() && item.id > 0
+        tvOverview.text = if (needsKpDetails) {
+            getString(R.string.catalog_loading_overview)
+        } else {
+            item.overview.ifBlank { getString(R.string.catalog_no_overview) }
+        }
 
         val posterUrl = tmdbClient.buildPosterUrl(item.posterPath)
         posterLoader.load(uiScope, ivPoster, posterUrl)
+
+        if (needsKpDetails) {
+            detailsJob = uiScope.launch {
+                val full = kinopoiskClient.fetchFilmDetails(item.id)
+                if (!dialog.isShowing) return@launch
+                if (full != null) {
+                    tvOverview.text = full.overview.ifBlank { getString(R.string.catalog_no_overview) }
+                    if (ratingStr.isEmpty()) {
+                        val newRating = full.formattedRating()
+                        if (newRating.isNotEmpty()) {
+                            tvRating.text = newRating
+                            tvRating.visibility = View.VISIBLE
+                        }
+                    }
+                    if (metaParts.isEmpty() || (item.genreNames.isEmpty() && full.genreNames.isNotEmpty())) {
+                        val updatedMeta = mutableListOf<String>()
+                        val yr = item.year.ifBlank { full.year }
+                        if (yr.isNotBlank()) updatedMeta.add(yr)
+                        val gList = if (full.genreNames.isNotEmpty()) full.genreNames else item.genreNames
+                        if (gList.isNotEmpty()) updatedMeta.add(gList.joinToString(", "))
+                        tvMeta.text = updatedMeta.joinToString(" • ")
+                    }
+                } else {
+                    tvOverview.text = getString(R.string.catalog_no_overview)
+                }
+            }
+        }
 
         fun updateFavBtn() {
             val isFav = storage.isFavorite(item.title)
@@ -834,6 +875,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         btnClose.setOnClickListener { dialog.dismiss() }
+        dialog.setOnDismissListener { detailsJob?.cancel() }
 
         dialog.show()
         btnFind.requestFocus()
@@ -892,10 +934,10 @@ class MainActivity : AppCompatActivity() {
             rvTmdbNowPlaying.visibility = View.GONE
             tvTmdbSeriesHeader.visibility = View.GONE
             rvTmdbSeries.visibility = View.GONE
-        } else if (storage.tmdbApiKey.isBlank()) {
+        } else if (storage.activeCatalogKey().isBlank()) {
             layoutTmdbNotice.visibility = View.VISIBLE
             progressTmdb.visibility = View.GONE
-            tvTmdbNotice.text = getString(R.string.catalog_need_key)
+            tvTmdbNotice.text = "Витрина (${storage.activeCatalogName()}): укажите бесплатный API-ключ в Настройках (нажмите OK)"
             tvTmdbTrendingHeader.visibility = View.GONE
             rvTmdbTrending.visibility = View.GONE
             tvTmdbNowPlayingHeader.visibility = View.GONE
@@ -906,7 +948,7 @@ class MainActivity : AppCompatActivity() {
         } else if (tmdbIsLoading && shelves?.hasAnyItems() != true) {
             layoutTmdbNotice.visibility = View.VISIBLE
             progressTmdb.visibility = View.VISIBLE
-            tvTmdbNotice.text = getString(R.string.catalog_loading)
+            tvTmdbNotice.text = "Загрузка витрины (${storage.activeCatalogName()})…"
             tvTmdbTrendingHeader.visibility = View.GONE
             rvTmdbTrending.visibility = View.GONE
             tvTmdbNowPlayingHeader.visibility = View.GONE
@@ -947,7 +989,7 @@ class MainActivity : AppCompatActivity() {
         } else if (shelves != null && !shelves.error.isNullOrBlank()) {
             layoutTmdbNotice.visibility = View.VISIBLE
             progressTmdb.visibility = View.GONE
-            tvTmdbNotice.text = "${getString(R.string.catalog_error_prefix)} ${shelves.error} • OK — повторить"
+            tvTmdbNotice.text = "Витрина (${storage.activeCatalogName()}) недоступна: ${shelves.error} • OK — повторить"
             tvTmdbTrendingHeader.visibility = View.GONE
             rvTmdbTrending.visibility = View.GONE
             tvTmdbNowPlayingHeader.visibility = View.GONE
@@ -1116,9 +1158,14 @@ class MainActivity : AppCompatActivity() {
         tmdbSearchAdapter.submitList(emptyList())
         layoutTmdbSearchResults.visibility = View.GONE
 
-        if (storage.showTmdbShowcase && storage.tmdbApiKey.isNotBlank()) {
+        if (storage.showTmdbShowcase && storage.activeCatalogKey().isNotBlank()) {
+            val useKinopoisk = storage.catalogProvider == StorageManager.CATALOG_PROVIDER_KINOPOISK
             tmdbSearchJob = uiScope.launch {
-                val catalogMatches = tmdbClient.searchMulti(query)
+                val catalogMatches = if (useKinopoisk) {
+                    kinopoiskClient.searchMovies(query)
+                } else {
+                    tmdbClient.searchMulti(query)
+                }
                 if (scrollHomeShelves.visibility == View.VISIBLE) return@launch
                 if (catalogMatches.isNotEmpty()) {
                     tmdbSearchAdapter.submitList(catalogMatches)
@@ -1518,7 +1565,7 @@ class MainActivity : AppCompatActivity() {
         loadList()
     }
 
-    private fun showSettingsDialog(focusTmdbKey: Boolean = false) {
+    private fun showSettingsDialog(focusCatalogKey: Boolean = false) {
         hideKeyboard()
         val dialog = Dialog(this)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
@@ -1545,6 +1592,9 @@ class MainActivity : AppCompatActivity() {
         val etApiKey = dialog.findViewById<EditText>(R.id.etApiKey)
         val etRutorMirror = dialog.findViewById<EditText>(R.id.etRutorMirror)
         val btnToggleTmdbShowcase = dialog.findViewById<TextView>(R.id.btnToggleTmdbShowcase)
+        val btnCatalogKinopoisk = dialog.findViewById<TextView>(R.id.btnCatalogKinopoisk)
+        val btnCatalogTmdb = dialog.findViewById<TextView>(R.id.btnCatalogTmdb)
+        val etKinopoiskApiKey = dialog.findViewById<EditText>(R.id.etKinopoiskApiKey)
         val etTmdbApiKey = dialog.findViewById<EditText>(R.id.etTmdbApiKey)
         val etTmdbApiUrl = dialog.findViewById<EditText>(R.id.etTmdbApiUrl)
         val etTmdbImageUrl = dialog.findViewById<EditText>(R.id.etTmdbImageUrl)
@@ -1568,6 +1618,7 @@ class MainActivity : AppCompatActivity() {
         var rutorFallbackEnabled = storage.useRutorFallback
         var autoCheckUpdatesEnabled = storage.autoCheckUpdates
         var tmdbShowcaseEnabled = storage.showTmdbShowcase
+        var selectedCatalogProvider = storage.catalogProvider
 
         fun refreshPlayerChips() {
             btnPlayerBuiltin.isSelected = selectedBuiltIn
@@ -1597,6 +1648,8 @@ class MainActivity : AppCompatActivity() {
             btnToggleTmdbShowcase.text = getString(
                 if (tmdbShowcaseEnabled) R.string.tmdb_showcase_on else R.string.tmdb_showcase_off
             )
+            btnCatalogKinopoisk.isSelected = selectedCatalogProvider == StorageManager.CATALOG_PROVIDER_KINOPOISK
+            btnCatalogTmdb.isSelected = selectedCatalogProvider == StorageManager.CATALOG_PROVIDER_TMDB
         }
 
         fun populateFieldsFromStorage() {
@@ -1609,7 +1662,9 @@ class MainActivity : AppCompatActivity() {
             etCustomParser.setText(storage.customParserUrl)
             etApiKey.setText(storage.parserApiKey)
             tmdbShowcaseEnabled = storage.showTmdbShowcase
+            selectedCatalogProvider = storage.catalogProvider
             etRutorMirror.setText(storage.rutorMirrorUrl)
+            etKinopoiskApiKey.setText(storage.kinopoiskApiKey)
             etTmdbApiKey.setText(storage.tmdbApiKey)
             etTmdbApiUrl.setText(storage.tmdbApiBaseUrl)
             etTmdbImageUrl.setText(storage.tmdbImageBaseUrl)
@@ -1656,6 +1711,14 @@ class MainActivity : AppCompatActivity() {
             tmdbShowcaseEnabled = !tmdbShowcaseEnabled
             refreshSourceChips()
         }
+        btnCatalogKinopoisk.setOnClickListener {
+            selectedCatalogProvider = StorageManager.CATALOG_PROVIDER_KINOPOISK
+            refreshSourceChips()
+        }
+        btnCatalogTmdb.setOnClickListener {
+            selectedCatalogProvider = StorageManager.CATALOG_PROVIDER_TMDB
+            refreshSourceChips()
+        }
 
         btnTorrServeManager.setOnClickListener {
             storage.torrServeUrl = etTorrServe.text.toString()
@@ -1673,6 +1736,8 @@ class MainActivity : AppCompatActivity() {
             storage.parserApiKey = etApiKey.text.toString()
             storage.rutorMirrorUrl = etRutorMirror.text.toString()
             storage.showTmdbShowcase = tmdbShowcaseEnabled
+            storage.catalogProvider = selectedCatalogProvider
+            storage.kinopoiskApiKey = etKinopoiskApiKey.text.toString()
             storage.tmdbApiKey = etTmdbApiKey.text.toString()
             storage.tmdbApiBaseUrl = etTmdbApiUrl.text.toString()
             storage.tmdbImageBaseUrl = etTmdbImageUrl.text.toString()
@@ -1744,6 +1809,7 @@ class MainActivity : AppCompatActivity() {
             val customUrlInput = etCustomParser.text.toString()
             val apiKeyInput = etApiKey.text.toString()
             val rutorInput = etRutorMirror.text.toString()
+            val kpKeyInput = etKinopoiskApiKey.text.toString()
             val tmdbKeyInput = etTmdbApiKey.text.toString()
             val tmdbApiInput = etTmdbApiUrl.text.toString()
 
@@ -1753,6 +1819,9 @@ class MainActivity : AppCompatActivity() {
                     apiKey = apiKeyInput,
                     rutorUrl = rutorInput
                 ).toMutableList()
+                if (kpKeyInput.isNotBlank()) {
+                    results.add(kinopoiskClient.probeConnection(kpKeyInput))
+                }
                 if (tmdbKeyInput.isNotBlank()) {
                     results.add(tmdbClient.probeConnection(tmdbKeyInput, tmdbApiInput))
                 }
@@ -1784,7 +1853,8 @@ class MainActivity : AppCompatActivity() {
                             LinearLayout.LayoutParams.WRAP_CONTENT
                         )
                         text = if (item.ok) {
-                            "✓ OK (${item.latencyMs} мс)"
+                            val okLabel = item.detail.ifBlank { "OK" }
+                            "✓ $okLabel (${item.latencyMs} мс)"
                         } else {
                             "✕ ${item.detail}"
                         }
@@ -1821,18 +1891,24 @@ class MainActivity : AppCompatActivity() {
             storage.torrServeUrl = etTorrServe.text.toString()
             storage.customParserUrl = etCustomParser.text.toString()
             storage.parserApiKey = etApiKey.text.toString()
-            val tmdbChanged = storage.showTmdbShowcase != tmdbShowcaseEnabled ||
+            val catalogChanged = storage.showTmdbShowcase != tmdbShowcaseEnabled ||
+                storage.catalogProvider != selectedCatalogProvider ||
+                storage.kinopoiskApiKey != etKinopoiskApiKey.text.toString().trim() ||
                 storage.tmdbApiKey != etTmdbApiKey.text.toString().trim() ||
                 storage.tmdbApiBaseUrl != etTmdbApiUrl.text.toString().trim().trimEnd('/').ifBlank { StorageManager.DEFAULT_TMDB_API_URL } ||
                 storage.tmdbImageBaseUrl != etTmdbImageUrl.text.toString().trim().trimEnd('/').ifBlank { StorageManager.DEFAULT_TMDB_IMAGE_URL }
 
             storage.rutorMirrorUrl = etRutorMirror.text.toString()
             storage.showTmdbShowcase = tmdbShowcaseEnabled
+            storage.catalogProvider = selectedCatalogProvider
+            storage.kinopoiskApiKey = etKinopoiskApiKey.text.toString()
             storage.tmdbApiKey = etTmdbApiKey.text.toString()
             storage.tmdbApiBaseUrl = etTmdbApiUrl.text.toString()
             storage.tmdbImageBaseUrl = etTmdbImageUrl.text.toString()
             dialog.dismiss()
-            if (tmdbChanged) {
+            if (catalogChanged) {
+                tmdbShelves = null
+                tmdbLoadedOnce = false
                 loadTmdbShowcase(force = true)
             }
             refreshTorrServeStatus(autoStart = false)
@@ -1840,8 +1916,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         dialog.show()
-        if (focusTmdbKey) {
-            etTmdbApiKey.requestFocus()
+        if (focusCatalogKey) {
+            if (selectedCatalogProvider == StorageManager.CATALOG_PROVIDER_KINOPOISK) {
+                etKinopoiskApiKey.requestFocus()
+            } else {
+                etTmdbApiKey.requestFocus()
+            }
         } else if (selectedBuiltIn) {
             btnPlayerBuiltin.requestFocus()
         } else {

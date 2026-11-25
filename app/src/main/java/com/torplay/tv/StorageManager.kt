@@ -58,6 +58,29 @@ class StorageManager(context: Context) {
             prefs.edit().putBoolean(KEY_SHOW_TMDB_SHOWCASE, value).apply()
         }
 
+    var catalogProvider: Int
+        get() = prefs.getInt(KEY_CATALOG_PROVIDER, CATALOG_PROVIDER_KINOPOISK)
+            .coerceIn(CATALOG_PROVIDER_KINOPOISK, CATALOG_PROVIDER_TMDB)
+        set(value) {
+            prefs.edit()
+                .putInt(KEY_CATALOG_PROVIDER, value.coerceIn(CATALOG_PROVIDER_KINOPOISK, CATALOG_PROVIDER_TMDB))
+                .apply()
+        }
+
+    var kinopoiskApiKey: String
+        get() = prefs.getString(KEY_KINOPOISK_API_KEY, "")?.trim().orEmpty()
+        set(value) {
+            prefs.edit().putString(KEY_KINOPOISK_API_KEY, value.trim()).apply()
+        }
+
+    fun activeCatalogKey(): String {
+        return if (catalogProvider == CATALOG_PROVIDER_KINOPOISK) kinopoiskApiKey else tmdbApiKey
+    }
+
+    fun activeCatalogName(): String {
+        return if (catalogProvider == CATALOG_PROVIDER_KINOPOISK) "Кинопоиск" else "TMDB"
+    }
+
     var tmdbApiKey: String
         get() = prefs.getString(KEY_TMDB_API_KEY, "")?.trim().orEmpty()
         set(value) {
@@ -355,6 +378,8 @@ class StorageManager(context: Context) {
             put(KEY_HIDE_CAM_RELEASES, hideCamReleases)
             put(KEY_ONLY_LIVE_SEEDS, onlyLiveSeeds)
             put(KEY_SHOW_TMDB_SHOWCASE, showTmdbShowcase)
+            put(KEY_CATALOG_PROVIDER, catalogProvider)
+            put(KEY_KINOPOISK_API_KEY, kinopoiskApiKey)
             put(KEY_TMDB_API_KEY, tmdbApiKey)
             put(KEY_TMDB_API_BASE, tmdbApiBaseUrl)
             put(KEY_TMDB_IMAGE_BASE, tmdbImageBaseUrl)
@@ -380,6 +405,16 @@ class StorageManager(context: Context) {
         if (obj.has(KEY_HIDE_CAM_RELEASES)) editor.putBoolean(KEY_HIDE_CAM_RELEASES, obj.optBoolean(KEY_HIDE_CAM_RELEASES, false))
         if (obj.has(KEY_ONLY_LIVE_SEEDS)) editor.putBoolean(KEY_ONLY_LIVE_SEEDS, obj.optBoolean(KEY_ONLY_LIVE_SEEDS, false))
         if (obj.has(KEY_SHOW_TMDB_SHOWCASE)) editor.putBoolean(KEY_SHOW_TMDB_SHOWCASE, obj.optBoolean(KEY_SHOW_TMDB_SHOWCASE, true))
+        if (obj.has(KEY_CATALOG_PROVIDER)) {
+            editor.putInt(
+                KEY_CATALOG_PROVIDER,
+                obj.optInt(KEY_CATALOG_PROVIDER, CATALOG_PROVIDER_KINOPOISK)
+                    .coerceIn(CATALOG_PROVIDER_KINOPOISK, CATALOG_PROVIDER_TMDB)
+            )
+        }
+        if (obj.has(KEY_KINOPOISK_API_KEY)) {
+            editor.putString(KEY_KINOPOISK_API_KEY, obj.optString(KEY_KINOPOISK_API_KEY, "").trim())
+        }
         if (obj.has(KEY_TMDB_API_KEY)) editor.putString(KEY_TMDB_API_KEY, obj.optString(KEY_TMDB_API_KEY, "").trim())
         if (obj.has(KEY_TMDB_API_BASE)) {
             val v = obj.optString(KEY_TMDB_API_BASE, DEFAULT_TMDB_API_URL).trim().trimEnd('/').ifBlank { DEFAULT_TMDB_API_URL }
@@ -436,6 +471,8 @@ class StorageManager(context: Context) {
         private const val KEY_HIDE_CAM_RELEASES = "hide_cam_releases"
         private const val KEY_ONLY_LIVE_SEEDS = "only_live_seeds"
         private const val KEY_SHOW_TMDB_SHOWCASE = "show_tmdb_showcase"
+        private const val KEY_CATALOG_PROVIDER = "catalog_provider"
+        private const val KEY_KINOPOISK_API_KEY = "kinopoisk_api_key"
         private const val KEY_TMDB_API_KEY = "tmdb_api_key"
         private const val KEY_TMDB_API_BASE = "tmdb_api_base"
         private const val KEY_TMDB_IMAGE_BASE = "tmdb_image_base"
@@ -452,6 +489,9 @@ class StorageManager(context: Context) {
         const val BUFFER_PROFILE_FAST = 0
         const val BUFFER_PROFILE_STANDARD = 1
         const val BUFFER_PROFILE_4K = 2
+
+        const val CATALOG_PROVIDER_KINOPOISK = 0
+        const val CATALOG_PROVIDER_TMDB = 1
 
         const val DEFAULT_TORRSERVE_URL = "http://127.0.0.1:8090"
         const val DEFAULT_RUTOR_MIRROR = "https://rutor.info"

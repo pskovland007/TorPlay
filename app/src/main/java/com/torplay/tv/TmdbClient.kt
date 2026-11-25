@@ -24,7 +24,8 @@ data class CatalogItem(
     val rating: Double,
     val overview: String,
     val posterPath: String,
-    val genreNames: List<String>
+    val genreNames: List<String>,
+    val source: String = "tmdb"
 ) {
     fun isSeries(): Boolean = mediaType.equals("tv", ignoreCase = true)
 

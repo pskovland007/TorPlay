@@ -373,7 +373,7 @@
             android:textColorHint="@color/text_muted"
             android:textSize="14sp" />
 
-        <!-- TMDB Catalog Settings -->
+        <!-- Catalog Settings (Kinopoisk / TMDB) -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -391,7 +391,7 @@
             android:clickable="true"
             android:focusable="true"
             android:gravity="center"
-            android:nextFocusDown="@+id/etTmdbApiKey"
+            android:nextFocusDown="@+id/btnCatalogKinopoisk"
             android:nextFocusLeft="@+id/btnToggleTmdbShowcase"
             android:nextFocusRight="@+id/btnToggleTmdbShowcase"
             android:nextFocusUp="@+id/etRutorMirror"
@@ -399,6 +399,75 @@
             android:textColor="@color/text_primary"
             android:textSize="12sp"
             android:textStyle="bold" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/btnCatalogKinopoisk"
+                android:layout_width="0dp"
+                android:layout_height="38dp"
+                android:layout_marginEnd="8dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_chip_selector"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:nextFocusDown="@+id/etKinopoiskApiKey"
+                android:nextFocusLeft="@+id/btnCatalogKinopoisk"
+                android:nextFocusRight="@+id/btnCatalogTmdb"
+                android:nextFocusUp="@+id/btnToggleTmdbShowcase"
+                android:text="@string/catalog_provider_kinopoisk"
+                android:textColor="@color/text_primary"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/btnCatalogTmdb"
+                android:layout_width="0dp"
+                android:layout_height="38dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_chip_selector"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:nextFocusDown="@+id/etKinopoiskApiKey"
+                android:nextFocusLeft="@+id/btnCatalogKinopoisk"
+                android:nextFocusRight="@+id/btnCatalogTmdb"
+                android:nextFocusUp="@+id/btnToggleTmdbShowcase"
+                android:text="@string/catalog_provider_tmdb"
+                android:textColor="@color/text_primary"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_kp_key_label"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
+        <EditText
+            android:id="@+id/etKinopoiskApiKey"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="8dp"
+            android:background="@drawable/bg_input_selector"
+            android:hint="Ключ X-API-KEY с kinopoiskapiunofficial.tech"
+            android:inputType="text"
+            android:nextFocusDown="@+id/etTmdbApiKey"
+            android:nextFocusUp="@+id/btnCatalogKinopoisk"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:singleLine="true"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_muted"
+            android:textSize="14sp" />
 
         <TextView
             android:layout_width="wrap_content"
@@ -417,7 +486,7 @@
             android:hint="Бесплатный ключ с themoviedb.org"
             android:inputType="text"
             android:nextFocusDown="@+id/etTmdbApiUrl"
-            android:nextFocusUp="@+id/btnToggleTmdbShowcase"
+            android:nextFocusUp="@+id/etKinopoiskApiKey"
             android:paddingStart="12dp"
             android:paddingEnd="12dp"
             android:singleLine="true"
