@@ -25,8 +25,10 @@
     <string name="source_jacred_off">✕ Публичный JacRed: выкл</string>
     <string name="source_rutor_on">✓ Резервный Rutor: вкл</string>
     <string name="source_rutor_off">✕ Резервный Rutor: выкл</string>
-    <string name="auto_update_on">✓ Автопроверка обновлений при запуске: ВКЛ</string>
-    <string name="auto_update_off">✕ Автопроверка обновлений при запуске: ВЫКЛ</string>
+    <string name="settings_updates_label">Обновления с GitHub</string>
+    <string name="auto_update_on">✓ Автопроверка: ВКЛ</string>
+    <string name="auto_update_off">✕ Автопроверка: ВЫКЛ</string>
+    <string name="btn_check_update_now">Проверить сейчас</string>
     <string name="btn_check_mirrors">Проверить зеркала</string>
     <string name="checking_mirrors">Проверяем доступность зеркал…</string>
     <string name="settings_torrserve_label">Адрес TorrServe MatriX</string>

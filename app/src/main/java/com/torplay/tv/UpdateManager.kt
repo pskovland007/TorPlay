@@ -43,6 +43,11 @@ class UpdateManager(private val context: Context) {
         val versionLabel: String
     )
 
+    data class CheckResult(
+        val release: ReleaseInfo?,
+        val error: String? = null
+    )
+
     private val apiClient = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
@@ -57,36 +62,71 @@ class UpdateManager(private val context: Context) {
         .build()
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var isDialogShowing: Boolean = false
 
-    suspend fun checkLatestRelease(): ReleaseInfo? = withContext(Dispatchers.IO) {
-        val latest = fetchReleaseObject(LATEST_RELEASE_URL)?.let { parseReleaseJson(it) }
-        if (latest != null) return@withContext latest
+    suspend fun checkLatestRelease(): ReleaseInfo? = checkLatestReleaseDetailed().release
 
-        // Fallback to recent releases list (handles pre-release or missing /latest)
+    suspend fun checkLatestReleaseDetailed(): CheckResult = withContext(Dispatchers.IO) {
+        var lastErr: String? = null
+
+        // 1. Primary: GitHub API /releases/latest
+        val latestAttempt = fetchReleaseObject(LATEST_RELEASE_URL)
+        latestAttempt.first?.let { obj ->
+            parseReleaseJson(obj)?.let { rel ->
+                AppLogger.i("Update", "GitHub /latest: ${rel.versionLabel} (${rel.apkName}, tag=${rel.tagName})")
+                return@withContext CheckResult(rel, null)
+            }
+        }
+        if (latestAttempt.second != null) {
+            lastErr = latestAttempt.second
+        }
+
+        // 2. Fallback: GitHub API /releases?per_page=5
         val listReq = Request.Builder()
             .url(ALL_RELEASES_URL)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "TorPlay-TV")
             .build()
 
-        runCatching {
+        val listResult = runCatching {
             apiClient.newCall(listReq).execute().use { resp ->
-                if (!resp.isSuccessful) return@withContext null
+                if (!resp.isSuccessful) {
+                    lastErr = "GitHub API HTTP ${resp.code}"
+                    return@use null
+                }
                 val raw = resp.body?.string().orEmpty()
-                if (raw.isBlank()) return@withContext null
+                if (raw.isBlank()) return@use null
                 val arr = JSONArray(raw)
                 for (i in 0 until arr.length()) {
                     val obj = arr.optJSONObject(i) ?: continue
                     if (obj.optBoolean("draft", false)) continue
                     val parsed = parseReleaseJson(obj)
-                    if (parsed != null) return@withContext parsed
+                    if (parsed != null) return@use parsed
                 }
                 null
             }
+        }.onFailure { err ->
+            lastErr = err.message?.take(60) ?: err.javaClass.simpleName
         }.getOrNull()
+
+        if (listResult != null) {
+            AppLogger.i("Update", "GitHub /releases: ${listResult.versionLabel} (${listResult.apkName})")
+            return@withContext CheckResult(listResult, null)
+        }
+
+        // 3. Fallback without GitHub API rate limits: follow /releases/latest web redirect & expanded_assets
+        val webFallback = fetchReleaseViaWebFallback()
+        if (webFallback != null) {
+            AppLogger.i("Update", "GitHub web fallback: ${webFallback.versionLabel} (${webFallback.apkName})")
+            return@withContext CheckResult(webFallback, null)
+        }
+
+        val errMsg = lastErr ?: "Нет ответа от GitHub"
+        AppLogger.w("Update", "Проверка обновлений не удалась: $errMsg")
+        CheckResult(null, errMsg)
     }
 
-    private fun fetchReleaseObject(url: String): JSONObject? {
+    private fun fetchReleaseObject(url: String): Pair<JSONObject?, String?> {
         val req = Request.Builder()
             .url(url)
             .header("Accept", "application/vnd.github+json")
@@ -95,11 +135,55 @@ class UpdateManager(private val context: Context) {
 
         return runCatching {
             apiClient.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return@use null
+                if (!resp.isSuccessful) return@use null to "GitHub API HTTP ${resp.code}"
                 val raw = resp.body?.string().orEmpty()
-                if (raw.isBlank()) return@use null
-                JSONObject(raw)
+                if (raw.isBlank()) return@use null to "Пустой ответ GitHub"
+                JSONObject(raw) to null
             }
+        }.getOrElse { err ->
+            null to (err.message?.take(60) ?: err.javaClass.simpleName)
+        }
+    }
+
+    private fun fetchReleaseViaWebFallback(): ReleaseInfo? {
+        return runCatching {
+            val latestReq = Request.Builder()
+                .url(WEB_LATEST_RELEASE_URL)
+                .header("User-Agent", "TorPlay-TV")
+                .build()
+            val tag = apiClient.newCall(latestReq).execute().use { resp ->
+                if (!resp.isSuccessful) return@use ""
+                val finalUrl = resp.request.url.toString()
+                if (finalUrl.contains("/releases/tag/")) {
+                    finalUrl.substringAfter("/releases/tag/").substringBefore('?').trim()
+                } else {
+                    ""
+                }
+            }
+            if (tag.isBlank()) return@runCatching null
+
+            val assetsReq = Request.Builder()
+                .url("$WEB_EXPANDED_ASSETS_PREFIX$tag")
+                .header("User-Agent", "TorPlay-TV")
+                .build()
+            val html = apiClient.newCall(assetsReq).execute().use { resp ->
+                if (!resp.isSuccessful) return@use ""
+                resp.body?.string().orEmpty()
+            }
+            val match = WEB_APK_HREF_REGEX.find(html) ?: return@runCatching null
+            val relHref = match.groupValues[1].trim()
+            val apkUrl = if (relHref.startsWith("http")) relHref else "https://github.com$relHref"
+            val apkName = relHref.substringAfterLast('/').ifBlank { "TorPlay-update.apk" }
+            val verLabel = extractVersionLabel(apkName, tag, tag)
+            ReleaseInfo(
+                tagName = tag,
+                title = "TorPlay $verLabel",
+                apkUrl = apkUrl,
+                apkName = apkName,
+                apkSizeBytes = 0L,
+                body = "Релиз $tag на GitHub (получено через резервный канал).",
+                versionLabel = verLabel
+            )
         }.getOrNull()
     }
 
@@ -150,12 +234,17 @@ class UpdateManager(private val context: Context) {
         manualCheck: Boolean
     ) {
         val isNewer = isNewerRelease(release, currentVersionName)
+        AppLogger.i("Update", "Сравнение версий: текущая=$currentVersionName, GitHub=${release.versionLabel}, новее=$isNewer, manual=$manualCheck")
         if (!manualCheck && !isNewer) {
+            return
+        }
+        if (isDialogShowing) {
             return
         }
         if (activityContext is Activity && (activityContext.isFinishing || activityContext.isDestroyed)) {
             return
         }
+        isDialogShowing = true
 
         val dialog = Dialog(activityContext)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
@@ -359,6 +448,7 @@ class UpdateManager(private val context: Context) {
         }
 
         dialog.setOnDismissListener {
+            isDialogShowing = false
             if (isDownloading) {
                 cancelled.set(true)
                 activeCall?.cancel()
@@ -433,10 +523,15 @@ class UpdateManager(private val context: Context) {
             "https://api.github.com/repos/pskovland007/TorPlay/releases/latest"
         private const val ALL_RELEASES_URL =
             "https://api.github.com/repos/pskovland007/TorPlay/releases?per_page=5"
+        private const val WEB_LATEST_RELEASE_URL =
+            "https://github.com/pskovland007/TorPlay/releases/latest"
+        private const val WEB_EXPANDED_ASSETS_PREFIX =
+            "https://github.com/pskovland007/TorPlay/releases/expanded_assets/"
 
         private val APK_VERSION_REGEX = Regex("v(\\d+(?:\\.\\d+)+(?:-[A-Za-z0-9.]+)?)", RegexOption.IGNORE_CASE)
         private val SEMVER_REGEX = Regex("(\\d+)\\.(\\d+)(?:\\.(\\d+))?")
         private val STAGE_REGEX = Regex("stage(\\d+)(?:\\.(\\d+))?([a-z])?", RegexOption.IGNORE_CASE)
+        private val WEB_APK_HREF_REGEX = Regex("href=\"(/[^\"]+/releases/download/[^\"]+\\.apk)\"", RegexOption.IGNORE_CASE)
 
         fun extractVersionLabel(apkName: String, tagName: String, releaseTitle: String): String {
             val cleanApk = apkName.removeSuffix(".apk").removeSuffix(".APK")

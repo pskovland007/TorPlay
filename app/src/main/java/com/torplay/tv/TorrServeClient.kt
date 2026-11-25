@@ -3,6 +3,7 @@ package com.torplay.tv
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -61,38 +62,93 @@ class TorrServeClient(private val storage: StorageManager) {
             return null
         }
 
-        tryStartLocalTorrServe(context)
-
-        repeat(16) {
-            delay(500)
-            checkEcho()?.let { return it }
+        val installedPkg = findInstalledPackage(context)
+        if (installedPkg == null) {
+            AppLogger.w("TorrServe", "Локальный пакет TorrServe не установлен")
+            return null
         }
+
+        // Phase 1: Try starting TorrServe silently in background without switching screen
+        tryStartServicesSilently(context, installedPkg)
+        repeat(6) {
+            delay(450)
+            checkEcho()?.let { ver ->
+                AppLogger.i("TorrServe", "Тихий фоновый запуск успешен ($ver)")
+                return ver
+            }
+        }
+
+        // Phase 2: Android 9+ may block background service start — wake via activity, then auto-return to TorPlay
+        val launchedUi = tryLaunchTorrServeActivity(context, installedPkg)
+        if (!launchedUi) {
+            AppLogger.w("TorrServe", "Не удалось запустить активность $installedPkg")
+            return null
+        }
+
+        repeat(14) {
+            delay(500)
+            checkEcho()?.let { ver ->
+                AppLogger.i("TorrServe", "Запущен через активность ($ver), возвращаемся в TorPlay")
+                bringTorPlayToFront(context)
+                return ver
+            }
+        }
+
+        bringTorPlayToFront(context)
         return null
     }
 
-    private fun tryStartLocalTorrServe(context: Context) {
+    private fun findInstalledPackage(context: Context): String? {
         val pm = context.packageManager
-        val installedPkg = TORRSERVE_PACKAGES.firstOrNull { pkg ->
+        return TORRSERVE_PACKAGES.firstOrNull { pkg ->
             runCatching { pm.getPackageInfo(pkg, 0) }.isSuccess
-        } ?: return
+        }
+    }
 
+    private fun tryStartServicesSilently(context: Context, installedPkg: String) {
         val serviceClasses = listOf(
             "ru.yourok.torrserve.server.local.services.GlobalTorrServeService",
             "ru.yourok.torrserve.server.local.ServerFile"
         )
         for (cls in serviceClasses) {
-            runCatching {
-                val svcIntent = Intent().setComponent(ComponentName(installedPkg, cls))
-                context.startService(svcIntent)
+            val svcIntent = Intent().setComponent(ComponentName(installedPkg, cls))
+            val started = runCatching {
+                ContextCompat.startForegroundService(context, svcIntent)
+                true
+            }.getOrDefault(false)
+            if (!started) {
+                runCatching { context.startService(svcIntent) }
             }
         }
+    }
 
-        runCatching {
+    private fun tryLaunchTorrServeActivity(context: Context, installedPkg: String): Boolean {
+        val pm = context.packageManager
+        return runCatching {
             val launchIntent = pm.getLaunchIntentForPackage(installedPkg)
                 ?: pm.getLeanbackLaunchIntentForPackage(installedPkg)
             if (launchIntent != null) {
-                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
                 context.startActivity(launchIntent)
+                true
+            } else {
+                false
+            }
+        }.getOrDefault(false)
+    }
+
+    private suspend fun bringTorPlayToFront(context: Context) {
+        withContext(Dispatchers.Main) {
+            runCatching {
+                val backIntent = Intent(context, MainActivity::class.java).apply {
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                            Intent.FLAG_ACTIVITY_NO_ANIMATION
+                    )
+                }
+                context.startActivity(backIntent)
             }
         }
     }

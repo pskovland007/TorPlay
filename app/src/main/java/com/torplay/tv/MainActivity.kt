@@ -121,7 +121,11 @@ class MainActivity : AppCompatActivity() {
     private var tmdbIsLoading: Boolean = false
     private var lastPlayedHash: String = ""
     private var waitingForPlayerReturn: Boolean = false
-    private var hasCheckedUpdatesOnStart: Boolean = false
+    private var isSettingsDialogOpen: Boolean = false
+    private var updateCheckJob: Job? = null
+    private var lastSuccessfulUpdateCheckMs: Long = 0L
+    private var lastPromptedUpdateVersion: String = ""
+    private var pendingUpdateRelease: UpdateManager.ReleaseInfo? = null
 
     private var allResults: List<TorrentItem> = emptyList()
     private var lastSourceName: String = ""
@@ -189,7 +193,7 @@ class MainActivity : AppCompatActivity() {
         loadTmdbShowcase(force = false)
         etSearch.requestFocus()
         refreshTorrServeStatus(autoStart = false)
-        checkUpdatesOnStartup()
+        scheduleAutoUpdateCheck(initialDelayMs = 1_500L)
     }
 
     override fun onResume() {
@@ -208,6 +212,8 @@ class MainActivity : AppCompatActivity() {
             refreshHomeShelves()
         }
         refreshTorrServeStatus(autoStart = false)
+        showPendingUpdateIfReady()
+        scheduleAutoUpdateCheck(initialDelayMs = 1_200L)
     }
 
     override fun onDestroy() {
@@ -269,14 +275,57 @@ class MainActivity : AppCompatActivity() {
         super.onBackPressed()
     }
 
-    private fun checkUpdatesOnStartup() {
-        if (hasCheckedUpdatesOnStart || !storage.autoCheckUpdates) return
-        hasCheckedUpdatesOnStart = true
-        uiScope.launch {
-            delay(1_800L)
-            val release = updateManager.checkLatestRelease() ?: return@launch
+    private fun showPendingUpdateIfReady() {
+        val pending = pendingUpdateRelease ?: return
+        if (isFinishing || isDestroyed || isSettingsDialogOpen || layoutLoadingOverlay.visibility == View.VISIBLE) {
+            return
+        }
+        pendingUpdateRelease = null
+        lastPromptedUpdateVersion = pending.versionLabel
+        updateManager.showUpdateDialog(
+            activityContext = this,
+            release = pending,
+            currentVersionName = BuildConfig.VERSION_NAME,
+            manualCheck = false
+        )
+    }
+
+    private fun scheduleAutoUpdateCheck(initialDelayMs: Long) {
+        if (!storage.autoCheckUpdates) return
+        if (updateCheckJob?.isActive == true) return
+        val now = System.currentTimeMillis()
+        if (lastSuccessfulUpdateCheckMs > 0L && (now - lastSuccessfulUpdateCheckMs) < AUTO_UPDATE_COOLDOWN_MS) {
+            return
+        }
+
+        updateCheckJob = uiScope.launch {
+            delay(initialDelayMs)
+            var result = updateManager.checkLatestReleaseDetailed()
+            if (result.release == null) {
+                // Retry once in case TV Wi-Fi was still waking up from standby
+                delay(6_000L)
+                if (isFinishing || isDestroyed || !storage.autoCheckUpdates) return@launch
+                result = updateManager.checkLatestReleaseDetailed()
+            }
+
+            val release = result.release ?: return@launch
+            lastSuccessfulUpdateCheckMs = System.currentTimeMillis()
+
             if (isFinishing || isDestroyed) return@launch
-            if (layoutLoadingOverlay.visibility == View.VISIBLE) return@launch
+            if (!updateManager.isNewerRelease(release, BuildConfig.VERSION_NAME)) return@launch
+            if (release.versionLabel == lastPromptedUpdateVersion) return@launch
+
+            if (isSettingsDialogOpen || layoutLoadingOverlay.visibility == View.VISIBLE) {
+                pendingUpdateRelease = release
+                Toast.makeText(
+                    this@MainActivity,
+                    "Доступно обновление TorPlay v${release.versionLabel}",
+                    Toast.LENGTH_LONG
+                ).show()
+                return@launch
+            }
+
+            lastPromptedUpdateVersion = release.versionLabel
             updateManager.showUpdateDialog(
                 activityContext = this@MainActivity,
                 release = release,
@@ -1664,8 +1713,10 @@ class MainActivity : AppCompatActivity() {
         btnCheckUpdates.setOnClickListener {
             Toast.makeText(this, "Проверяем релизы на GitHub…", Toast.LENGTH_SHORT).show()
             uiScope.launch {
-                val release = updateManager.checkLatestRelease()
+                val result = updateManager.checkLatestReleaseDetailed()
+                val release = result.release
                 if (release != null) {
+                    lastSuccessfulUpdateCheckMs = System.currentTimeMillis()
                     updateManager.showUpdateDialog(
                         activityContext = this@MainActivity,
                         release = release,
@@ -1673,10 +1724,11 @@ class MainActivity : AppCompatActivity() {
                         manualCheck = true
                     )
                 } else {
+                    val detail = result.error?.let { " ($it)" }.orEmpty()
                     Toast.makeText(
                         this@MainActivity,
-                        "Не удалось получить список релизов с GitHub",
-                        Toast.LENGTH_SHORT
+                        "Не удалось проверить GitHub$detail",
+                        Toast.LENGTH_LONG
                     ).show()
                 }
             }
@@ -1752,8 +1804,11 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        isSettingsDialogOpen = true
         dialog.setOnDismissListener {
+            isSettingsDialogOpen = false
             mirrorCheckJob?.cancel()
+            showPendingUpdateIfReady()
         }
 
         btnCancel.setOnClickListener { dialog.dismiss() }
@@ -1797,5 +1852,9 @@ class MainActivity : AppCompatActivity() {
     private fun hideKeyboard() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
         imm?.hideSoftInputFromWindow(etSearch.windowToken, 0)
+    }
+
+    companion object {
+        private const val AUTO_UPDATE_COOLDOWN_MS = 15L * 60L * 1000L
     }
 }
