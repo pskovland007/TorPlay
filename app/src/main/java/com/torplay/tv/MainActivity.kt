@@ -14,6 +14,7 @@ import android.text.TextUtils
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.Window
 import android.view.WindowManager
@@ -1192,7 +1193,7 @@ class MainActivity : AppCompatActivity() {
             etSearch.setText(query)
             etSearch.setSelection(query.length)
             updateFavoriteButtonUi()
-            performSearch()
+            performSearch(fallbackQueries = item.fallbackSearchQueries())
         }
 
 
@@ -1474,7 +1475,7 @@ class MainActivity : AppCompatActivity() {
         tvTorrServeStatus.text = label
     }
 
-    private fun performSearch() {
+    private fun performSearch(fallbackQueries: List<String> = emptyList()) {
         val query = etSearch.text.toString().trim()
         if (query.isBlank()) {
             Toast.makeText(this, "Введите название фильма", Toast.LENGTH_SHORT).show()
@@ -1523,10 +1524,45 @@ class MainActivity : AppCompatActivity() {
             tvEmptyMessage.text = getString(R.string.searching)
             updateDpadFocusRoutes()
 
-            val response = searchEngine.search(query)
+            var response = searchEngine.search(query)
+            var matchedQuery = query
+
+            if (response.items.isEmpty()) {
+                val retryList = LinkedHashSet<String>()
+                for (fq in fallbackQueries) {
+                    val clean = fq.trim()
+                    if (clean.isNotBlank() && !clean.equals(query, ignoreCase = true)) {
+                        retryList.add(clean)
+                    }
+                }
+                val withoutYear = TRAILING_YEAR_REGEX.replace(query, "").trim()
+                if (withoutYear.length >= 2 && !withoutYear.equals(query, ignoreCase = true)) {
+                    retryList.add(withoutYear)
+                }
+
+                for (altQuery in retryList) {
+                    tvEmptyMessage.text = "Уточняем поиск: $altQuery…"
+                    val altResp = searchEngine.search(altQuery)
+                    if (altResp.items.isNotEmpty()) {
+                        response = altResp
+                        matchedQuery = altQuery
+                        break
+                    }
+                }
+            }
+
             progressSearch.visibility = View.GONE
 
             if (response.items.isNotEmpty()) {
+                if (!matchedQuery.equals(query, ignoreCase = true)) {
+                    etSearch.setText(matchedQuery)
+                    etSearch.setSelection(matchedQuery.length)
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Показаны раздачи по запросу «$matchedQuery»",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
                 allResults = response.items
                 lastSourceName = response.sourceName
                 scrollHomeShelves.visibility = View.GONE
@@ -1537,10 +1573,18 @@ class MainActivity : AppCompatActivity() {
                 scrollHomeShelves.visibility = View.GONE
                 rvResults.visibility = View.GONE
                 layoutEmpty.visibility = View.VISIBLE
-                if (!response.error.isNullOrBlank()) {
-                    AppLogger.w("Search", "Запрос '$query': ${response.error}")
+                val rawErr = response.error.orEmpty()
+                if (rawErr.isNotBlank()) {
+                    AppLogger.w("Search", "Запрос '$query': $rawErr")
                 }
-                tvEmptyMessage.text = response.error ?: getString(R.string.no_results)
+                val isBlockedRutorFallback = storage.usePublicJacRed &&
+                    (rawErr.contains("rutor", ignoreCase = true) ||
+                        rawErr.contains("Unable to resolve host", ignoreCase = true))
+                tvEmptyMessage.text = when {
+                    rawErr.isBlank() || isBlockedRutorFallback ->
+                        "Раздачи по запросу «$query» не найдены"
+                    else -> rawErr
+                }
                 updateDpadFocusRoutes()
             }
         }
@@ -1905,12 +1949,16 @@ class MainActivity : AppCompatActivity() {
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
         dialog.setContentView(R.layout.dialog_settings)
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
-        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
+        dialog.window?.setSoftInputMode(
+            WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN or
+                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+        )
         dialog.window?.setLayout(
-            (resources.displayMetrics.widthPixels * 0.76).toInt(),
-            WindowManager.LayoutParams.WRAP_CONTENT
+            (resources.displayMetrics.widthPixels * 0.80).toInt(),
+            (resources.displayMetrics.heightPixels * 0.88).toInt()
         )
 
+        val scrollSettings = dialog.findViewById<ScrollView>(R.id.scrollSettings)
         val tvVersion = dialog.findViewById<TextView>(R.id.tvSettingsVersion)
         val btnCheckUpdates = dialog.findViewById<TextView>(R.id.btnCheckUpdates)
         val btnPlayerBuiltin = dialog.findViewById<TextView>(R.id.btnPlayerBuiltin)
@@ -2011,61 +2059,122 @@ class MainActivity : AppCompatActivity() {
 
         populateFieldsFromStorage()
 
+        val settingsInputs = listOf(
+            etTorrServe,
+            etCustomParser,
+            etApiKey,
+            etRutorMirror,
+            etKinopoiskApiKey,
+            etTmdbApiKey,
+            etTmdbApiUrl,
+            etTmdbImageUrl
+        )
+
+        fun hideDialogKeyboard() {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            val token = dialog.currentFocus?.windowToken ?: dialog.window?.decorView?.windowToken
+            if (token != null) {
+                imm?.hideSoftInputFromWindow(token, 0)
+            }
+            for (input in settingsInputs) {
+                if (input.hasFocus()) {
+                    input.clearFocus()
+                }
+            }
+        }
+
+        for (input in settingsInputs) {
+            input.setOnEditorActionListener { _, actionId, event ->
+                val isDone = actionId == EditorInfo.IME_ACTION_DONE ||
+                    actionId == EditorInfo.IME_ACTION_NEXT ||
+                    (event != null &&
+                        event.action == KeyEvent.ACTION_DOWN &&
+                        (event.keyCode == KeyEvent.KEYCODE_ENTER || event.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER))
+                if (isDone) {
+                    hideDialogKeyboard()
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+
+        scrollSettings.setOnTouchListener { _, event ->
+            if (event.action == MotionEvent.ACTION_MOVE && settingsInputs.any { it.hasFocus() }) {
+                hideDialogKeyboard()
+            }
+            false
+        }
+
         btnPlayerBuiltin.setOnClickListener {
+            hideDialogKeyboard()
             selectedBuiltIn = true
             refreshPlayerChips()
         }
         btnPlayerExternal.setOnClickListener {
+            hideDialogKeyboard()
             selectedBuiltIn = false
             refreshPlayerChips()
         }
         btnBufferFast.setOnClickListener {
+            hideDialogKeyboard()
             selectedBufferProfile = StorageManager.BUFFER_PROFILE_FAST
             refreshBufferChips()
         }
         btnBufferStandard.setOnClickListener {
+            hideDialogKeyboard()
             selectedBufferProfile = StorageManager.BUFFER_PROFILE_STANDARD
             refreshBufferChips()
         }
         btnBuffer4k.setOnClickListener {
+            hideDialogKeyboard()
             selectedBufferProfile = StorageManager.BUFFER_PROFILE_4K
             refreshBufferChips()
         }
         btnTogglePublicJacRed.setOnClickListener {
+            hideDialogKeyboard()
             publicJacRedEnabled = !publicJacRedEnabled
             refreshSourceChips()
         }
         btnToggleRutorFallback.setOnClickListener {
+            hideDialogKeyboard()
             rutorFallbackEnabled = !rutorFallbackEnabled
             refreshSourceChips()
         }
         btnToggleAutoUpdate.setOnClickListener {
+            hideDialogKeyboard()
             autoCheckUpdatesEnabled = !autoCheckUpdatesEnabled
             refreshSourceChips()
         }
         btnToggleTmdbShowcase.setOnClickListener {
+            hideDialogKeyboard()
             tmdbShowcaseEnabled = !tmdbShowcaseEnabled
             refreshSourceChips()
         }
         btnCatalogTorrents.setOnClickListener {
+            hideDialogKeyboard()
             selectedCatalogProvider = StorageManager.CATALOG_PROVIDER_TORRENTS
             refreshSourceChips()
         }
         btnCatalogKinopoisk.setOnClickListener {
+            hideDialogKeyboard()
             selectedCatalogProvider = StorageManager.CATALOG_PROVIDER_KINOPOISK
             refreshSourceChips()
         }
         btnCatalogTmdb.setOnClickListener {
+            hideDialogKeyboard()
             selectedCatalogProvider = StorageManager.CATALOG_PROVIDER_TMDB
             refreshSourceChips()
         }
 
         btnTorrServeManager.setOnClickListener {
+            hideDialogKeyboard()
             storage.torrServeUrl = etTorrServe.text.toString()
             showTorrServeManagerDialog()
         }
 
         btnBackupExport.setOnClickListener {
+            hideDialogKeyboard()
             storage.useBuiltInPlayer = selectedBuiltIn
             storage.bufferProfile = selectedBufferProfile
             storage.usePublicJacRed = publicJacRedEnabled
@@ -2088,6 +2197,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         btnBackupImport.setOnClickListener {
+            hideDialogKeyboard()
             runWithStoragePermission {
                 val res = maintenanceManager.importBackup(storage, playerPrefs)
                 Toast.makeText(this@MainActivity, res.message, Toast.LENGTH_LONG).show()
@@ -2109,6 +2219,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         btnExportLogs.setOnClickListener {
+            hideDialogKeyboard()
             runWithStoragePermission {
                 val res = maintenanceManager.exportLogs(storage)
                 Toast.makeText(this@MainActivity, res.message, Toast.LENGTH_LONG).show()
@@ -2116,6 +2227,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         btnCheckUpdates.setOnClickListener {
+            hideDialogKeyboard()
             Toast.makeText(this, "Проверяем релизы на GitHub…", Toast.LENGTH_SHORT).show()
             uiScope.launch {
                 val result = updateManager.checkLatestReleaseDetailed()
@@ -2140,6 +2252,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         btnCheckMirrors.setOnClickListener {
+            hideDialogKeyboard()
             mirrorCheckJob?.cancel()
             layoutMirrorResults.visibility = View.VISIBLE
             progressMirrorCheck.visibility = View.VISIBLE
@@ -2277,5 +2390,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val AUTO_UPDATE_COOLDOWN_MS = 15L * 60L * 1000L
+        private val TRAILING_YEAR_REGEX = Regex("\\s+\\(?((?:19|20)\\d{2})\\)?$")
     }
 }

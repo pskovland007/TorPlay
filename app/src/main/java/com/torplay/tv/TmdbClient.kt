@@ -41,6 +41,23 @@ data class CatalogItem(
             title
         }
     }
+
+    fun fallbackSearchQueries(): List<String> {
+        val primary = torrentSearchQuery().trim()
+        val list = mutableListOf<String>()
+        val cleanTitle = title.trim()
+        if (cleanTitle.isNotBlank() && !cleanTitle.equals(primary, ignoreCase = true)) {
+            list.add(cleanTitle)
+        }
+        val cleanOrig = originalTitle.trim()
+        if (cleanOrig.isNotBlank() &&
+            !cleanOrig.equals(primary, ignoreCase = true) &&
+            list.none { it.equals(cleanOrig, ignoreCase = true) }
+        ) {
+            list.add(cleanOrig)
+        }
+        return list
+    }
 }
 
 data class CatalogShelves(
