@@ -50,6 +50,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adapter: TorrentAdapter
     private lateinit var historyAdapter: HistoryAdapter
     private lateinit var favoriteAdapter: FavoriteAdapter
+    private lateinit var recentSearchAdapter: RecentSearchAdapter
 
     private lateinit var btnTorrServeStatus: LinearLayout
     private lateinit var viewStatusDot: View
@@ -59,12 +60,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var etSearch: EditText
     private lateinit var btnVoiceSearch: LinearLayout
     private lateinit var btnSearch: TextView
+    private lateinit var rvRecentSearches: RecyclerView
     private lateinit var layoutFilters: LinearLayout
     private lateinit var btnFilterAll: TextView
     private lateinit var btnFilter4k: TextView
     private lateinit var btnFilter1080: TextView
     private lateinit var btnFilter720: TextView
     private lateinit var btnFilterHdr: TextView
+    private lateinit var btnFilterNoCam: TextView
+    private lateinit var btnFilterLiveSeeds: TextView
     private lateinit var btnSort: TextView
     private lateinit var tvSearchMeta: TextView
     private lateinit var layoutHomeShelves: LinearLayout
@@ -93,6 +97,8 @@ class MainActivity : AppCompatActivity() {
     private var lastSourceName: String = ""
     private var currentFilter: QualityFilter = QualityFilter.ALL
     private var currentSort: SortMode = SortMode.SEEDS
+    private var hideCamReleases: Boolean = false
+    private var onlyLiveSeeds: Boolean = false
 
     private val voiceSearchLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -123,6 +129,9 @@ class MainActivity : AppCompatActivity() {
         torrServeClient = TorrServeClient(storage)
         playerController = PlayerController(this)
         updateManager = UpdateManager(this)
+
+        hideCamReleases = storage.hideCamReleases
+        onlyLiveSeeds = storage.onlyLiveSeeds
 
         bindViews()
         setupListeners()
@@ -236,12 +245,15 @@ class MainActivity : AppCompatActivity() {
         etSearch = findViewById(R.id.etSearch)
         btnVoiceSearch = findViewById(R.id.btnVoiceSearch)
         btnSearch = findViewById(R.id.btnSearch)
+        rvRecentSearches = findViewById(R.id.rvRecentSearches)
         layoutFilters = findViewById(R.id.layoutFilters)
         btnFilterAll = findViewById(R.id.btnFilterAll)
         btnFilter4k = findViewById(R.id.btnFilter4k)
         btnFilter1080 = findViewById(R.id.btnFilter1080)
         btnFilter720 = findViewById(R.id.btnFilter720)
         btnFilterHdr = findViewById(R.id.btnFilterHdr)
+        btnFilterNoCam = findViewById(R.id.btnFilterNoCam)
+        btnFilterLiveSeeds = findViewById(R.id.btnFilterLiveSeeds)
         btnSort = findViewById(R.id.btnSort)
         tvSearchMeta = findViewById(R.id.tvSearchMeta)
         layoutHomeShelves = findViewById(R.id.layoutHomeShelves)
@@ -263,22 +275,98 @@ class MainActivity : AppCompatActivity() {
         rvResults.layoutManager = LinearLayoutManager(this)
         rvResults.adapter = adapter
 
-        favoriteAdapter = FavoriteAdapter { fav ->
-            etSearch.setText(fav.query)
-            etSearch.setSelection(fav.query.length)
-            updateFavoriteButtonUi()
-            performSearch()
-        }
+        recentSearchAdapter = RecentSearchAdapter(
+            onItemClick = { query ->
+                etSearch.setText(query)
+                etSearch.setSelection(query.length)
+                updateFavoriteButtonUi()
+                performSearch()
+            },
+            onItemMenu = { query ->
+                showShelfActionDialog(
+                    title = getString(R.string.action_recent_title),
+                    subtitle = query,
+                    deleteOneLabel = getString(R.string.action_recent_delete_one),
+                    clearAllLabel = getString(R.string.action_recent_clear_all),
+                    onDeleteOne = {
+                        storage.removeRecentSearch(query)
+                        refreshHomeShelves()
+                        Toast.makeText(this, "Запрос удалён", Toast.LENGTH_SHORT).show()
+                    },
+                    onClearAll = {
+                        storage.clearRecentSearches()
+                        refreshHomeShelves()
+                        Toast.makeText(this, "Недавние запросы очищены", Toast.LENGTH_SHORT).show()
+                    }
+                )
+            }
+        )
+        rvRecentSearches.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
+        rvRecentSearches.adapter = recentSearchAdapter
+
+        favoriteAdapter = FavoriteAdapter(
+            onItemClick = { fav ->
+                etSearch.setText(fav.query)
+                etSearch.setSelection(fav.query.length)
+                updateFavoriteButtonUi()
+                performSearch()
+            },
+            onItemMenu = { fav ->
+                showShelfActionDialog(
+                    title = getString(R.string.action_favorite_title),
+                    subtitle = fav.query,
+                    deleteOneLabel = getString(R.string.action_favorite_delete_one),
+                    clearAllLabel = getString(R.string.action_favorite_clear_all),
+                    onDeleteOne = {
+                        storage.removeFavorite(fav.query)
+                        updateFavoriteButtonUi()
+                        refreshHomeShelves()
+                        Toast.makeText(this, "Удалено из избранного", Toast.LENGTH_SHORT).show()
+                    },
+                    onClearAll = {
+                        storage.clearFavorites()
+                        updateFavoriteButtonUi()
+                        refreshHomeShelves()
+                        Toast.makeText(this, "Избранное очищено", Toast.LENGTH_SHORT).show()
+                    }
+                )
+            }
+        )
         rvFavorites.layoutManager = LinearLayoutManager(this)
         rvFavorites.adapter = favoriteAdapter
 
-        historyAdapter = HistoryAdapter { entry ->
-            val torrentItem = TorrentItem(
-                title = entry.title,
-                magnet = entry.link
-            )
-            openHistoryEntry(torrentItem, entry)
-        }
+        historyAdapter = HistoryAdapter(
+            onItemClick = { entry ->
+                val torrentItem = TorrentItem(
+                    title = entry.title,
+                    magnet = entry.link
+                )
+                openHistoryEntry(torrentItem, entry)
+            },
+            onItemMenu = { entry ->
+                val label = if (entry.episodeLabel.isNotBlank()) {
+                    "${entry.title} — ${entry.episodeLabel}"
+                } else {
+                    entry.title
+                }
+                showShelfActionDialog(
+                    title = getString(R.string.action_history_title),
+                    subtitle = label,
+                    deleteOneLabel = getString(R.string.action_history_delete_one),
+                    clearAllLabel = getString(R.string.action_history_clear_all),
+                    onDeleteOne = {
+                        storage.removeWatchHistoryItem(entry.id)
+                        refreshHomeShelves()
+                        Toast.makeText(this, "Удалено из истории", Toast.LENGTH_SHORT).show()
+                    },
+                    onClearAll = {
+                        storage.clearWatchHistory()
+                        refreshHomeShelves()
+                        Toast.makeText(this, "История просмотров очищена", Toast.LENGTH_SHORT).show()
+                    }
+                )
+            }
+        )
         rvHistory.layoutManager = LinearLayoutManager(this)
         rvHistory.adapter = historyAdapter
     }
@@ -336,6 +424,20 @@ class MainActivity : AppCompatActivity() {
         btnFilter720.setOnClickListener { applyFilter(QualityFilter.HD_720) }
         btnFilterHdr.setOnClickListener { applyFilter(QualityFilter.HDR) }
 
+        btnFilterNoCam.setOnClickListener {
+            hideCamReleases = !hideCamReleases
+            storage.hideCamReleases = hideCamReleases
+            updateFilterChipsUi()
+            renderFilteredResults(focusFirst = false)
+        }
+
+        btnFilterLiveSeeds.setOnClickListener {
+            onlyLiveSeeds = !onlyLiveSeeds
+            storage.onlyLiveSeeds = onlyLiveSeeds
+            updateFilterChipsUi()
+            renderFilteredResults(focusFirst = false)
+        }
+
         btnSort.setOnClickListener {
             currentSort = when (currentSort) {
                 SortMode.SEEDS -> SortMode.SIZE
@@ -351,15 +453,60 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun showShelfActionDialog(
+        title: String,
+        subtitle: String,
+        deleteOneLabel: String,
+        clearAllLabel: String,
+        onDeleteOne: () -> Unit,
+        onClearAll: () -> Unit
+    ) {
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(R.layout.dialog_shelf_actions)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.46).toInt(),
+            WindowManager.LayoutParams.WRAP_CONTENT
+        )
+
+        val tvTitle = dialog.findViewById<TextView>(R.id.tvActionDialogTitle)
+        val tvSubtitle = dialog.findViewById<TextView>(R.id.tvActionDialogSubtitle)
+        val btnDeleteOne = dialog.findViewById<TextView>(R.id.btnActionDeleteOne)
+        val btnClearAll = dialog.findViewById<TextView>(R.id.btnActionClearAll)
+        val btnCancel = dialog.findViewById<TextView>(R.id.btnActionCancel)
+
+        tvTitle.text = title
+        tvSubtitle.text = subtitle
+        btnDeleteOne.text = deleteOneLabel
+        btnClearAll.text = clearAllLabel
+
+        btnDeleteOne.setOnClickListener {
+            dialog.dismiss()
+            onDeleteOne()
+        }
+        btnClearAll.setOnClickListener {
+            dialog.dismiss()
+            onClearAll()
+        }
+        btnCancel.setOnClickListener {
+            dialog.dismiss()
+        }
+
+        dialog.show()
+        btnDeleteOne.requestFocus()
+    }
+
     private fun updateDpadFocusRoutes() {
         val filtersVisible = layoutFilters.visibility == View.VISIBLE
         val resultsVisible = rvResults.visibility == View.VISIBLE
+        val recentVisible = rvRecentSearches.visibility == View.VISIBLE
         val favsVisible = layoutHomeShelves.visibility == View.VISIBLE && rvFavorites.visibility == View.VISIBLE
         val historyVisible = layoutHomeShelves.visibility == View.VISIBLE && rvHistory.visibility == View.VISIBLE
 
         if (filtersVisible) {
             etSearch.nextFocusDownId = R.id.btnFilterAll
-            btnVoiceSearch.nextFocusDownId = R.id.btnFilterHdr
+            btnVoiceSearch.nextFocusDownId = R.id.btnFilterLiveSeeds
             btnSearch.nextFocusDownId = R.id.btnSort
 
             val filterDown = if (resultsVisible) R.id.rvResults else View.NO_ID
@@ -368,9 +515,12 @@ class MainActivity : AppCompatActivity() {
             btnFilter1080.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnFilter1080
             btnFilter720.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnFilter720
             btnFilterHdr.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnFilterHdr
+            btnFilterNoCam.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnFilterNoCam
+            btnFilterLiveSeeds.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnFilterLiveSeeds
             btnSort.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnSort
         } else {
             val downTarget = when {
+                recentVisible -> R.id.rvRecentSearches
                 favsVisible -> R.id.rvFavorites
                 historyVisible -> R.id.rvHistory
                 else -> View.NO_ID
@@ -378,7 +528,22 @@ class MainActivity : AppCompatActivity() {
             etSearch.nextFocusDownId = if (downTarget != View.NO_ID) downTarget else R.id.etSearch
             btnVoiceSearch.nextFocusDownId = if (downTarget != View.NO_ID) downTarget else R.id.btnVoiceSearch
             btnSearch.nextFocusDownId = if (downTarget != View.NO_ID) downTarget else R.id.btnSearch
-            rvHistory.nextFocusUpId = if (favsVisible) R.id.rvFavorites else R.id.etSearch
+
+            if (recentVisible) {
+                val belowRecent = when {
+                    favsVisible -> R.id.rvFavorites
+                    historyVisible -> R.id.rvHistory
+                    else -> View.NO_ID
+                }
+                rvRecentSearches.nextFocusDownId = belowRecent
+            }
+
+            rvFavorites.nextFocusUpId = if (recentVisible) R.id.rvRecentSearches else R.id.etSearch
+            rvHistory.nextFocusUpId = when {
+                favsVisible -> R.id.rvFavorites
+                recentVisible -> R.id.rvRecentSearches
+                else -> R.id.etSearch
+            }
         }
     }
 
@@ -411,8 +576,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshHomeShelves() {
+        val recents = storage.getRecentSearches()
         val favs = storage.getFavorites()
         val history = storage.getWatchHistory()
+
+        if (recents.isNotEmpty()) {
+            rvRecentSearches.visibility = View.VISIBLE
+            recentSearchAdapter.submitList(recents)
+        } else {
+            rvRecentSearches.visibility = View.GONE
+        }
 
         if (favs.isNotEmpty()) {
             tvFavoritesHeader.visibility = View.VISIBLE
@@ -454,17 +627,22 @@ class MainActivity : AppCompatActivity() {
         btnFilter1080.isSelected = currentFilter == QualityFilter.FHD_1080
         btnFilter720.isSelected = currentFilter == QualityFilter.HD_720
         btnFilterHdr.isSelected = currentFilter == QualityFilter.HDR
+        btnFilterNoCam.isSelected = hideCamReleases
+        btnFilterLiveSeeds.isSelected = onlyLiveSeeds
     }
 
     private fun renderFilteredResults(focusFirst: Boolean) {
         val filtered = allResults.filter { item ->
-            when (currentFilter) {
+            val qualityOk = when (currentFilter) {
                 QualityFilter.ALL -> true
                 QualityFilter.UHD_4K -> item.quality == "4K"
                 QualityFilter.FHD_1080 -> item.quality == "1080p"
                 QualityFilter.HD_720 -> item.quality == "720p"
                 QualityFilter.HDR -> item.isHdr
             }
+            val camOk = !hideCamReleases || !item.isCamRelease()
+            val seedsOk = !onlyLiveSeeds || item.seeds > 0
+            qualityOk && camOk && seedsOk
         }
 
         val sorted = when (currentSort) {
@@ -552,6 +730,7 @@ class MainActivity : AppCompatActivity() {
 
         hideKeyboard()
         storage.lastQuery = query
+        storage.addRecentSearch(query)
         updateFavoriteButtonUi()
 
         searchJob?.cancel()
@@ -560,6 +739,7 @@ class MainActivity : AppCompatActivity() {
             currentFilter = QualityFilter.ALL
             updateFilterChipsUi()
             adapter.submitList(emptyList())
+            rvRecentSearches.visibility = View.GONE
             layoutFilters.visibility = View.GONE
             layoutHomeShelves.visibility = View.GONE
             rvResults.visibility = View.GONE

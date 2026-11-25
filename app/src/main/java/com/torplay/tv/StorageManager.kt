@@ -33,6 +33,18 @@ class StorageManager(context: Context) {
             prefs.edit().putBoolean(KEY_AUTO_CHECK_UPDATES, value).apply()
         }
 
+    var hideCamReleases: Boolean
+        get() = prefs.getBoolean(KEY_HIDE_CAM_RELEASES, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_HIDE_CAM_RELEASES, value).apply()
+        }
+
+    var onlyLiveSeeds: Boolean
+        get() = prefs.getBoolean(KEY_ONLY_LIVE_SEEDS, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_ONLY_LIVE_SEEDS, value).apply()
+        }
+
     var torrServeUrl: String
         get() = prefs.getString(KEY_TORRSERVE_URL, DEFAULT_TORRSERVE_URL)
             ?.trim()
@@ -143,9 +155,22 @@ class StorageManager(context: Context) {
                 updatedAt = System.currentTimeMillis()
             )
         )
-        val trimmed = current.take(15)
+        persistWatchHistory(current.take(15))
+    }
+
+    fun removeWatchHistoryItem(id: String) {
+        if (id.isBlank()) return
+        val updated = getWatchHistory().filterNot { it.id == id }
+        persistWatchHistory(updated)
+    }
+
+    fun clearWatchHistory() {
+        prefs.edit().putString(KEY_WATCH_HISTORY, "[]").apply()
+    }
+
+    private fun persistWatchHistory(items: List<WatchHistoryEntry>) {
         val arr = JSONArray()
-        for (item in trimmed) {
+        for (item in items) {
             arr.put(
                 JSONObject().apply {
                     put("id", item.id)
@@ -203,8 +228,24 @@ class StorageManager(context: Context) {
                 add(0, FavoriteQuery(query = clean, addedAt = System.currentTimeMillis()))
             }
         }
+        persistFavorites(updated.take(20))
+        return !exists
+    }
+
+    fun removeFavorite(query: String) {
+        val lower = query.trim().lowercase(Locale.ROOT)
+        if (lower.isBlank()) return
+        val updated = getFavorites().filterNot { it.query.lowercase(Locale.ROOT) == lower }
+        persistFavorites(updated)
+    }
+
+    fun clearFavorites() {
+        prefs.edit().putString(KEY_FAVORITES, "[]").apply()
+    }
+
+    private fun persistFavorites(items: List<FavoriteQuery>) {
         val arr = JSONArray()
-        for (fav in updated.take(20)) {
+        for (fav in items) {
             arr.put(
                 JSONObject().apply {
                     put("query", fav.query)
@@ -213,7 +254,49 @@ class StorageManager(context: Context) {
             )
         }
         prefs.edit().putString(KEY_FAVORITES, arr.toString()).apply()
-        return !exists
+    }
+
+    fun getRecentSearches(): List<String> {
+        val raw = prefs.getString(KEY_RECENT_SEARCHES, "[]").orEmpty()
+        val list = mutableListOf<String>()
+        runCatching {
+            val arr = JSONArray(raw)
+            for (i in 0 until arr.length()) {
+                val q = arr.optString(i).trim()
+                if (q.isNotBlank()) list.add(q)
+            }
+        }
+        return list.take(8)
+    }
+
+    fun addRecentSearch(query: String) {
+        val clean = query.trim()
+        if (clean.isBlank()) return
+        val lower = clean.lowercase(Locale.ROOT)
+        val updated = getRecentSearches()
+            .filterNot { it.lowercase(Locale.ROOT) == lower }
+            .toMutableList()
+        updated.add(0, clean)
+        persistRecentSearches(updated.take(8))
+    }
+
+    fun removeRecentSearch(query: String) {
+        val lower = query.trim().lowercase(Locale.ROOT)
+        if (lower.isBlank()) return
+        val updated = getRecentSearches().filterNot { it.lowercase(Locale.ROOT) == lower }
+        persistRecentSearches(updated)
+    }
+
+    fun clearRecentSearches() {
+        prefs.edit().putString(KEY_RECENT_SEARCHES, "[]").apply()
+    }
+
+    private fun persistRecentSearches(items: List<String>) {
+        val arr = JSONArray()
+        for (q in items) {
+            arr.put(q)
+        }
+        prefs.edit().putString(KEY_RECENT_SEARCHES, arr.toString()).apply()
     }
 
     companion object {
@@ -222,6 +305,8 @@ class StorageManager(context: Context) {
         private const val KEY_USE_PUBLIC_JACRED = "use_public_jacred"
         private const val KEY_USE_RUTOR_FALLBACK = "use_rutor_fallback"
         private const val KEY_AUTO_CHECK_UPDATES = "auto_check_updates"
+        private const val KEY_HIDE_CAM_RELEASES = "hide_cam_releases"
+        private const val KEY_ONLY_LIVE_SEEDS = "only_live_seeds"
         private const val KEY_TORRSERVE_URL = "torrserve_url"
         private const val KEY_CUSTOM_PARSER_URL = "custom_parser_url"
         private const val KEY_PARSER_API_KEY = "parser_api_key"
@@ -230,6 +315,7 @@ class StorageManager(context: Context) {
         private const val KEY_WATCHED_EPISODES = "watched_episodes"
         private const val KEY_WATCH_HISTORY = "watch_history"
         private const val KEY_FAVORITES = "favorites"
+        private const val KEY_RECENT_SEARCHES = "recent_searches"
 
         const val DEFAULT_TORRSERVE_URL = "http://127.0.0.1:8090"
         const val DEFAULT_RUTOR_MIRROR = "https://rutor.info"

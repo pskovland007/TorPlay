@@ -3,6 +3,7 @@ package com.torplay.tv
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
@@ -39,6 +40,7 @@ class TorrentAdapter(
         private val tvSeeds: TextView = itemView.findViewById(R.id.tvSeeds)
         private val tvDate: TextView = itemView.findViewById(R.id.tvDate)
         private val tvSource: TextView = itemView.findViewById(R.id.tvSource)
+        private val progressWatch: ProgressBar = itemView.findViewById(R.id.progressWatch)
 
         fun bind(item: TorrentItem) {
             tvTitle.text = item.title
@@ -55,7 +57,9 @@ class TorrentAdapter(
 
             tvHdr.visibility = if (item.isHdr) View.VISIBLE else View.GONE
             tvSize.text = item.formattedSize()
+            tvSize.visibility = View.VISIBLE
             tvSeeds.text = "▲ ${item.seeds}"
+            tvSeeds.visibility = View.VISIBLE
 
             val seedColor = when {
                 item.seeds >= 15 -> R.color.status_ok
@@ -73,6 +77,7 @@ class TorrentAdapter(
             }
 
             tvSource.text = item.formattedSource()
+            progressWatch.visibility = View.GONE
 
             itemView.setOnClickListener {
                 onItemClick(item)

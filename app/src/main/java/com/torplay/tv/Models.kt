@@ -35,6 +35,8 @@ data class TorrentItem(
         if (voices.isNotEmpty()) parts.add(voices.take(2).joinToString(", "))
         return parts.joinToString(" • ")
     }
+
+    fun isCamRelease(): Boolean = isCamTitle(title)
 }
 
 data class SearchResponse(
@@ -113,12 +115,27 @@ data class WatchHistoryEntry(
             "$cur / $tot"
         }
     }
+
+    fun progressPermille(): Int {
+        if (durationMs <= 0L || positionMs <= 0L) return 0
+        return ((positionMs * 1000L) / durationMs).toInt().coerceIn(1, 1000)
+    }
 }
 
 data class FavoriteQuery(
     val query: String,
     val addedAt: Long
 )
+
+private val CAM_TITLE_REGEX = Regex(
+    "(?:^|[\\s.\\-\\[\\](_/|])(?:cam|camrip|hdcam|ts|hdts|telesync|telecine|tc|hdtc|screener|dvdscr|bdscr|workprint|wp|экранка)(?:$|[\\s.\\-\\[\\])_/|])",
+    RegexOption.IGNORE_CASE
+)
+
+fun isCamTitle(title: String): Boolean {
+    if (title.isBlank()) return false
+    return CAM_TITLE_REGEX.containsMatchIn(title)
+}
 
 fun formatBytes(bytes: Long): String {
     val gb = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)

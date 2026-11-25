@@ -97,4 +97,16 @@
             android:textColor="@color/text_secondary"
             android:textSize="13sp" />
     </LinearLayout>
+
+    <ProgressBar
+        android:id="@+id/progressWatch"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="4dp"
+        android:layout_marginTop="8dp"
+        android:max="1000"
+        android:progress="0"
+        android:progressBackgroundTint="@color/border_subtle"
+        android:progressTint="@color/accent_emerald"
+        android:visibility="gone" />
 </LinearLayout>
