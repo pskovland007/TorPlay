@@ -23,4 +23,5 @@
     <color name="badge_720">#475569</color>
     <color name="badge_hdr">#D97706</color>
     <color name="badge_default">#334155</color>
+    <color name="ic_launcher_bg">#081B2A</color>
 </resources>

@@ -50,9 +50,11 @@
     <string name="episodes_title">Выберите серию</string>
     <string name="history_title">История просмотров</string>
     <string name="favorites_title">Избранное</string>
-    <string name="shelf_hint_history">OK — продолжить • Удержание OK / Меню — удалить</string>
+    <string name="shelf_hint_history">OK — продолжить • Удержание OK / Меню — избранное или удалить</string>
     <string name="shelf_hint_favorite">OK — поиск • Удержание OK / Меню — удалить</string>
     <string name="action_history_title">История просмотров</string>
+    <string name="action_history_fav_add">★ Добавить в избранное</string>
+    <string name="action_history_fav_remove">✕ Убрать из избранного</string>
     <string name="action_history_delete_one">Удалить из истории</string>
     <string name="action_history_clear_all">Очистить всю историю</string>
     <string name="action_favorite_title">Избранное</string>

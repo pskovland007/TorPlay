@@ -2389,6 +2389,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private fun updateCornerStatsUi(info: TorrServeInfo) {
         val speedText = if (info.downloadSpeed > 0.0) info.formattedSpeed() else "0 КБ/с"
         tvCornerSpeed.text = speedText
+        tvCornerSpeed.setTextColor(0xD8FFFFFF.toInt())
 
         val peersText = if (info.connectedSeeders > 0) {
             "▲ ${info.connectedSeeders} • ${info.activePeers}/${info.totalPeers}"
@@ -2403,10 +2404,11 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             else -> R.color.status_err
         }
         val resolvedColor = ContextCompat.getColor(this, colorRes)
-        tvCornerPeers.setTextColor(resolvedColor)
+        val softColor = (resolvedColor and 0x00FFFFFF) or 0xB8000000.toInt()
+        tvCornerPeers.setTextColor(softColor)
         val dotBg = viewCornerStatsDot.background?.mutate()
         if (dotBg is GradientDrawable) {
-            dotBg.setColor(resolvedColor)
+            dotBg.setColor(softColor)
         }
         updateCornerStatsVisibility()
     }

@@ -524,11 +524,16 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     entry.title
                 }
+                val isFav = storage.isFavoriteTorrent(TorrentItem(title = entry.title, magnet = entry.link))
                 showShelfActionDialog(
                     title = getString(R.string.action_history_title),
                     subtitle = label,
                     deleteOneLabel = getString(R.string.action_history_delete_one),
                     clearAllLabel = getString(R.string.action_history_clear_all),
+                    extraActionLabel = getString(
+                        if (isFav) R.string.action_history_fav_remove else R.string.action_history_fav_add
+                    ),
+                    onExtraAction = { toggleFavoriteFromHistoryEntry(entry) },
                     onDeleteOne = {
                         storage.removeWatchHistoryItem(entry.id)
                         refreshHomeShelves()
@@ -696,11 +701,28 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun toggleFavoriteFromHistoryEntry(entry: WatchHistoryEntry): Boolean {
+        val item = TorrentItem(
+            title = entry.title,
+            magnet = entry.link
+        )
+        val added = storage.toggleFavoriteTorrent(item)
+        refreshHomeShelves()
+        Toast.makeText(
+            this,
+            if (added) "★ Добавлено в избранное" else "Убрано из избранного",
+            Toast.LENGTH_SHORT
+        ).show()
+        return added
+    }
+
     private fun showShelfActionDialog(
         title: String,
         subtitle: String,
         deleteOneLabel: String,
         clearAllLabel: String,
+        extraActionLabel: String? = null,
+        onExtraAction: (() -> Unit)? = null,
         onDeleteOne: () -> Unit,
         onClearAll: () -> Unit
     ) {
@@ -715,6 +737,7 @@ class MainActivity : AppCompatActivity() {
 
         val tvTitle = dialog.findViewById<TextView>(R.id.tvActionDialogTitle)
         val tvSubtitle = dialog.findViewById<TextView>(R.id.tvActionDialogSubtitle)
+        val btnExtra = dialog.findViewById<TextView>(R.id.btnActionExtra)
         val btnDeleteOne = dialog.findViewById<TextView>(R.id.btnActionDeleteOne)
         val btnClearAll = dialog.findViewById<TextView>(R.id.btnActionClearAll)
         val btnCancel = dialog.findViewById<TextView>(R.id.btnActionCancel)
@@ -723,6 +746,20 @@ class MainActivity : AppCompatActivity() {
         tvSubtitle.text = subtitle
         btnDeleteOne.text = deleteOneLabel
         btnClearAll.text = clearAllLabel
+
+        val hasExtra = !extraActionLabel.isNullOrBlank() && onExtraAction != null
+        if (hasExtra) {
+            btnExtra.visibility = View.VISIBLE
+            btnExtra.text = extraActionLabel
+            btnDeleteOne.nextFocusUpId = R.id.btnActionExtra
+            btnExtra.setOnClickListener {
+                dialog.dismiss()
+                onExtraAction?.invoke()
+            }
+        } else {
+            btnExtra.visibility = View.GONE
+            btnDeleteOne.nextFocusUpId = R.id.btnActionDeleteOne
+        }
 
         btnDeleteOne.setOnClickListener {
             dialog.dismiss()
@@ -737,7 +774,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         dialog.show()
-        btnDeleteOne.requestFocus()
+        if (hasExtra) {
+            btnExtra.requestFocus()
+        } else {
+            btnDeleteOne.requestFocus()
+        }
     }
 
     private fun updateDpadFocusRoutes() {
@@ -1024,11 +1065,19 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     entry.title
                 }
+                val isFav = storage.isFavoriteTorrent(TorrentItem(title = entry.title, magnet = entry.link))
                 showShelfActionDialog(
                     title = getString(R.string.action_history_title),
                     subtitle = label,
                     deleteOneLabel = getString(R.string.action_history_delete_one),
                     clearAllLabel = getString(R.string.action_history_clear_all),
+                    extraActionLabel = getString(
+                        if (isFav) R.string.action_history_fav_remove else R.string.action_history_fav_add
+                    ),
+                    onExtraAction = {
+                        toggleFavoriteFromHistoryEntry(entry)
+                        if (dialog.isShowing) renderModal()
+                    },
                     onDeleteOne = {
                         storage.removeWatchHistoryItem(entry.id)
                         refreshHomeShelves()
