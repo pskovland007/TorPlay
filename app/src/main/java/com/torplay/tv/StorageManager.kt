@@ -149,6 +149,27 @@ class StorageManager(context: Context) {
             prefs.edit().putString(KEY_NETWORK_PROXY_URL, value.trim()).apply()
         }
 
+    var showPlayerStatsHud: Boolean
+        get() = prefs.getBoolean(KEY_SHOW_PLAYER_STATS_HUD, true)
+        set(value) {
+            prefs.edit().putBoolean(KEY_SHOW_PLAYER_STATS_HUD, value).apply()
+        }
+
+    var plasmaPixelShift: Boolean
+        get() = prefs.getBoolean(KEY_PLASMA_PIXEL_SHIFT, true)
+        set(value) {
+            prefs.edit().putBoolean(KEY_PLASMA_PIXEL_SHIFT, value).apply()
+        }
+
+    var playerStatsCorner: Int
+        get() = prefs.getInt(KEY_PLAYER_STATS_CORNER, STATS_CORNER_TOP_RIGHT)
+            .coerceIn(STATS_CORNER_TOP_RIGHT, STATS_CORNER_BOTTOM_RIGHT)
+        set(value) {
+            prefs.edit()
+                .putInt(KEY_PLAYER_STATS_CORNER, value.coerceIn(STATS_CORNER_TOP_RIGHT, STATS_CORNER_BOTTOM_RIGHT))
+                .apply()
+        }
+
     fun activeCatalogRequiresKey(): Boolean {
         return catalogProvider != CATALOG_PROVIDER_TORRENTS
     }
@@ -829,6 +850,9 @@ class StorageManager(context: Context) {
             put(KEY_USE_DOH_DNS, useDohDns)
             put(KEY_USE_DPI_BYPASS, useDpiBypass)
             put(KEY_NETWORK_PROXY_URL, networkProxyUrl)
+            put(KEY_SHOW_PLAYER_STATS_HUD, showPlayerStatsHud)
+            put(KEY_PLASMA_PIXEL_SHIFT, plasmaPixelShift)
+            put(KEY_PLAYER_STATS_CORNER, playerStatsCorner)
             put(KEY_USE_PUBLIC_JACRED, usePublicJacRed)
             put(KEY_USE_RUTOR_FALLBACK, useRutorFallback)
             put(KEY_AUTO_CHECK_UPDATES, autoCheckUpdates)
@@ -873,6 +897,15 @@ class StorageManager(context: Context) {
         if (obj.has(KEY_USE_DOH_DNS)) editor.putBoolean(KEY_USE_DOH_DNS, obj.optBoolean(KEY_USE_DOH_DNS, true))
         if (obj.has(KEY_USE_DPI_BYPASS)) editor.putBoolean(KEY_USE_DPI_BYPASS, obj.optBoolean(KEY_USE_DPI_BYPASS, false))
         if (obj.has(KEY_NETWORK_PROXY_URL)) editor.putString(KEY_NETWORK_PROXY_URL, obj.optString(KEY_NETWORK_PROXY_URL, "").trim())
+        if (obj.has(KEY_SHOW_PLAYER_STATS_HUD)) editor.putBoolean(KEY_SHOW_PLAYER_STATS_HUD, obj.optBoolean(KEY_SHOW_PLAYER_STATS_HUD, true))
+        if (obj.has(KEY_PLASMA_PIXEL_SHIFT)) editor.putBoolean(KEY_PLASMA_PIXEL_SHIFT, obj.optBoolean(KEY_PLASMA_PIXEL_SHIFT, true))
+        if (obj.has(KEY_PLAYER_STATS_CORNER)) {
+            editor.putInt(
+                KEY_PLAYER_STATS_CORNER,
+                obj.optInt(KEY_PLAYER_STATS_CORNER, STATS_CORNER_TOP_RIGHT)
+                    .coerceIn(STATS_CORNER_TOP_RIGHT, STATS_CORNER_BOTTOM_RIGHT)
+            )
+        }
         if (obj.has(KEY_USE_PUBLIC_JACRED)) editor.putBoolean(KEY_USE_PUBLIC_JACRED, obj.optBoolean(KEY_USE_PUBLIC_JACRED, true))
         if (obj.has(KEY_USE_RUTOR_FALLBACK)) editor.putBoolean(KEY_USE_RUTOR_FALLBACK, obj.optBoolean(KEY_USE_RUTOR_FALLBACK, true))
         if (obj.has(KEY_AUTO_CHECK_UPDATES)) editor.putBoolean(KEY_AUTO_CHECK_UPDATES, obj.optBoolean(KEY_AUTO_CHECK_UPDATES, true))
@@ -968,6 +1001,9 @@ class StorageManager(context: Context) {
         private const val KEY_USE_DOH_DNS = "use_doh_dns"
         private const val KEY_USE_DPI_BYPASS = "use_dpi_bypass"
         private const val KEY_NETWORK_PROXY_URL = "network_proxy_url"
+        private const val KEY_SHOW_PLAYER_STATS_HUD = "show_player_stats_hud"
+        private const val KEY_PLASMA_PIXEL_SHIFT = "plasma_pixel_shift"
+        private const val KEY_PLAYER_STATS_CORNER = "player_stats_corner"
         private const val KEY_DEFAULTS_V106_APPLIED = "defaults_v106_applied"
         private const val KEY_TORRSERVE_URL = "torrserve_url"
         private const val KEY_CUSTOM_PARSER_URL = "custom_parser_url"
@@ -985,6 +1021,10 @@ class StorageManager(context: Context) {
         const val PLAYER_ENGINE_MEDIA3 = 0
         const val PLAYER_ENGINE_VLC = 1
         const val PLAYER_ENGINE_EXTERNAL = 2
+
+        const val STATS_CORNER_TOP_RIGHT = 0
+        const val STATS_CORNER_TOP_LEFT = 1
+        const val STATS_CORNER_BOTTOM_RIGHT = 2
 
         const val BUFFER_PROFILE_FAST = 0
         const val BUFFER_PROFILE_STANDARD = 1

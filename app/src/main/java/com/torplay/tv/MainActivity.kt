@@ -2272,26 +2272,65 @@ class MainActivity : AppCompatActivity() {
                 WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
         )
         dialog.window?.setLayout(
-            (resources.displayMetrics.widthPixels * 0.80).toInt(),
+            (resources.displayMetrics.widthPixels * 0.86).toInt(),
             (resources.displayMetrics.heightPixels * 0.88).toInt()
         )
 
-        val scrollSettings = dialog.findViewById<ScrollView>(R.id.scrollSettings)
+        // Header & containers
+        val btnSettingsBack = dialog.findViewById<TextView>(R.id.btnSettingsBack)
+        val viewBrandDot = dialog.findViewById<View>(R.id.viewSettingsBrandDot)
+        val tvSettingsHeader = dialog.findViewById<TextView>(R.id.tvSettingsHeader)
         val tvVersion = dialog.findViewById<TextView>(R.id.tvSettingsVersion)
-        val btnCheckUpdates = dialog.findViewById<TextView>(R.id.btnCheckUpdates)
+        val layoutHub = dialog.findViewById<LinearLayout>(R.id.layoutSettingsHub)
+        val scrollSettings = dialog.findViewById<ScrollView>(R.id.scrollSettings)
+
+        // Hub tiles (2x3)
+        val tilePlayer = dialog.findViewById<LinearLayout>(R.id.tilePlayer)
+        val tileNetwork = dialog.findViewById<LinearLayout>(R.id.tileNetwork)
+        val tileCatalog = dialog.findViewById<LinearLayout>(R.id.tileCatalog)
+        val tileSearch = dialog.findViewById<LinearLayout>(R.id.tileSearch)
+        val tileTorrServe = dialog.findViewById<LinearLayout>(R.id.tileTorrServe)
+        val tileSystem = dialog.findViewById<LinearLayout>(R.id.tileSystem)
+
+        val tvTilePlayerStatus = dialog.findViewById<TextView>(R.id.tvTilePlayerStatus)
+        val tvTileNetworkStatus = dialog.findViewById<TextView>(R.id.tvTileNetworkStatus)
+        val tvTileCatalogStatus = dialog.findViewById<TextView>(R.id.tvTileCatalogStatus)
+        val tvTileSearchStatus = dialog.findViewById<TextView>(R.id.tvTileSearchStatus)
+        val tvTileTorrServeStatus = dialog.findViewById<TextView>(R.id.tvTileTorrServeStatus)
+        val tvTileSystemStatus = dialog.findViewById<TextView>(R.id.tvTileSystemStatus)
+
+        // Section containers
+        val sectionPlayer = dialog.findViewById<LinearLayout>(R.id.sectionPlayer)
+        val sectionNetwork = dialog.findViewById<LinearLayout>(R.id.sectionNetwork)
+        val sectionCatalog = dialog.findViewById<LinearLayout>(R.id.sectionCatalog)
+        val sectionSearch = dialog.findViewById<LinearLayout>(R.id.sectionSearch)
+        val sectionTorrServe = dialog.findViewById<LinearLayout>(R.id.sectionTorrServe)
+        val sectionSystem = dialog.findViewById<LinearLayout>(R.id.sectionSystem)
+
+        // Section 1: Player controls
         val btnPlayerBuiltin = dialog.findViewById<TextView>(R.id.btnPlayerBuiltin)
         val btnPlayerVlc = dialog.findViewById<TextView>(R.id.btnPlayerVlc)
         val btnPlayerExternal = dialog.findViewById<TextView>(R.id.btnPlayerExternal)
         val btnBufferFast = dialog.findViewById<TextView>(R.id.btnBufferFast)
         val btnBufferStandard = dialog.findViewById<TextView>(R.id.btnBufferStandard)
         val btnBuffer4k = dialog.findViewById<TextView>(R.id.btnBuffer4k)
-        val btnTogglePublicJacRed = dialog.findViewById<TextView>(R.id.btnTogglePublicJacRed)
-        val btnToggleRutorFallback = dialog.findViewById<TextView>(R.id.btnToggleRutorFallback)
-        val btnToggleAutoUpdate = dialog.findViewById<TextView>(R.id.btnToggleAutoUpdate)
-        val etTorrServe = dialog.findViewById<EditText>(R.id.etTorrServeUrl)
-        val etCustomParser = dialog.findViewById<EditText>(R.id.etCustomParserUrl)
-        val etApiKey = dialog.findViewById<EditText>(R.id.etApiKey)
-        val etRutorMirror = dialog.findViewById<EditText>(R.id.etRutorMirror)
+        val btnToggleCornerStats = dialog.findViewById<TextView>(R.id.btnToggleCornerStats)
+        val btnTogglePixelShift = dialog.findViewById<TextView>(R.id.btnTogglePixelShift)
+        val btnCornerTopRight = dialog.findViewById<TextView>(R.id.btnCornerTopRight)
+        val btnCornerTopLeft = dialog.findViewById<TextView>(R.id.btnCornerTopLeft)
+        val btnCornerBottomRight = dialog.findViewById<TextView>(R.id.btnCornerBottomRight)
+
+        // Section 2: Network controls
+        val btnToggleDoh = dialog.findViewById<TextView>(R.id.btnToggleDoh)
+        val btnToggleDpiBypass = dialog.findViewById<TextView>(R.id.btnToggleDpiBypass)
+        val etNetworkProxy = dialog.findViewById<EditText>(R.id.etNetworkProxy)
+        val btnCheckMirrors = dialog.findViewById<TextView>(R.id.btnCheckMirrors)
+        val layoutMirrorResults = dialog.findViewById<LinearLayout>(R.id.layoutMirrorResults)
+        val progressMirrorCheck = dialog.findViewById<ProgressBar>(R.id.progressMirrorCheck)
+        val tvMirrorCheckStatus = dialog.findViewById<TextView>(R.id.tvMirrorCheckStatus)
+        val layoutMirrorList = dialog.findViewById<LinearLayout>(R.id.layoutMirrorList)
+
+        // Section 3: Catalog controls
         val btnToggleTmdbShowcase = dialog.findViewById<TextView>(R.id.btnToggleTmdbShowcase)
         val btnCatalogTorrents = dialog.findViewById<TextView>(R.id.btnCatalogTorrents)
         val btnCatalogKinopoisk = dialog.findViewById<TextView>(R.id.btnCatalogKinopoisk)
@@ -2300,25 +2339,36 @@ class MainActivity : AppCompatActivity() {
         val etTmdbApiKey = dialog.findViewById<EditText>(R.id.etTmdbApiKey)
         val etTmdbApiUrl = dialog.findViewById<EditText>(R.id.etTmdbApiUrl)
         val etTmdbImageUrl = dialog.findViewById<EditText>(R.id.etTmdbImageUrl)
-        val btnToggleDoh = dialog.findViewById<TextView>(R.id.btnToggleDoh)
-        val btnToggleDpiBypass = dialog.findViewById<TextView>(R.id.btnToggleDpiBypass)
-        val etNetworkProxy = dialog.findViewById<EditText>(R.id.etNetworkProxy)
+
+        // Section 4: Search controls
+        val btnTogglePublicJacRed = dialog.findViewById<TextView>(R.id.btnTogglePublicJacRed)
+        val btnToggleRutorFallback = dialog.findViewById<TextView>(R.id.btnToggleRutorFallback)
+        val etCustomParser = dialog.findViewById<EditText>(R.id.etCustomParserUrl)
+        val etApiKey = dialog.findViewById<EditText>(R.id.etApiKey)
+        val etRutorMirror = dialog.findViewById<EditText>(R.id.etRutorMirror)
+
+        // Section 5: TorrServe controls
+        val etTorrServe = dialog.findViewById<EditText>(R.id.etTorrServeUrl)
         val btnTorrServeManager = dialog.findViewById<TextView>(R.id.btnTorrServeManager)
+
+        // Section 6: System controls
+        val btnToggleAutoUpdate = dialog.findViewById<TextView>(R.id.btnToggleAutoUpdate)
+        val btnCheckUpdates = dialog.findViewById<TextView>(R.id.btnCheckUpdates)
         val btnBackupExport = dialog.findViewById<TextView>(R.id.btnBackupExport)
         val btnBackupImport = dialog.findViewById<TextView>(R.id.btnBackupImport)
         val btnExportLogs = dialog.findViewById<TextView>(R.id.btnExportLogs)
-        val layoutMirrorResults = dialog.findViewById<LinearLayout>(R.id.layoutMirrorResults)
-        val progressMirrorCheck = dialog.findViewById<ProgressBar>(R.id.progressMirrorCheck)
-        val tvMirrorCheckStatus = dialog.findViewById<TextView>(R.id.tvMirrorCheckStatus)
-        val layoutMirrorList = dialog.findViewById<LinearLayout>(R.id.layoutMirrorList)
-        val btnCheckMirrors = dialog.findViewById<TextView>(R.id.btnCheckMirrors)
+
+        // Footer controls
         val btnCancel = dialog.findViewById<TextView>(R.id.btnCancelSettings)
         val btnSave = dialog.findViewById<TextView>(R.id.btnSaveSettings)
 
-        tvVersion.text = "Версия ${BuildConfig.VERSION_NAME}"
+        tvVersion.text = "v${BuildConfig.VERSION_NAME}"
 
         var selectedPlayerEngine = storage.playerEngine
         var selectedBufferProfile = storage.bufferProfile
+        var showCornerStats = storage.showPlayerStatsHud
+        var plasmaShiftEnabled = storage.plasmaPixelShift
+        var selectedStatsCorner = storage.playerStatsCorner
         var publicJacRedEnabled = storage.usePublicJacRed
         var rutorFallbackEnabled = storage.useRutorFallback
         var autoCheckUpdatesEnabled = storage.autoCheckUpdates
@@ -2327,16 +2377,74 @@ class MainActivity : AppCompatActivity() {
         var dohEnabled = storage.useDohDns
         var dpiBypassEnabled = storage.useDpiBypass
 
+        var activeSectionId: Int = 0 // 0 = Hub, 1..6 = Sections
+        var lastOpenedTile: View = tilePlayer
+
+        fun refreshHubSubtitles() {
+            val engShort = when (selectedPlayerEngine) {
+                StorageManager.PLAYER_ENGINE_VLC -> "VLC"
+                StorageManager.PLAYER_ENGINE_EXTERNAL -> "Внешний"
+                else -> "Media3"
+            }
+            val bufShort = when (selectedBufferProfile) {
+                StorageManager.BUFFER_PROFILE_FAST -> "Быстрый"
+                StorageManager.BUFFER_PROFILE_4K -> "4K"
+                else -> "Стандарт"
+            }
+            val hudShort = if (showCornerStats) "Плашка ВКЛ" else "Плашка ВЫКЛ"
+            tvTilePlayerStatus.text = "$engShort • $bufShort • $hudShort"
+
+            val dohShort = if (dohEnabled) "DoH ВКЛ" else "DoH ВЫКЛ"
+            val dpiShort = if (dpiBypassEnabled) " • DPI" else ""
+            val proxyShort = if (etNetworkProxy.text.toString().trim().isNotBlank()) "Прокси задан" else "Прокси нет"
+            tvTileNetworkStatus.text = "$dohShort$dpiShort • $proxyShort"
+
+            val catName = when (selectedCatalogProvider) {
+                StorageManager.CATALOG_PROVIDER_TORRENTS -> "Торренты"
+                StorageManager.CATALOG_PROVIDER_TMDB -> "TMDB"
+                else -> "Кинопоиск"
+            }
+            val showShort = if (tmdbShowcaseEnabled) "Витрина ВКЛ" else "Витрина ВЫКЛ"
+            tvTileCatalogStatus.text = "$catName • $showShort"
+
+            val srcParts = mutableListOf<String>()
+            if (publicJacRedEnabled) srcParts.add("JacRed")
+            if (rutorFallbackEnabled) srcParts.add("Rutor")
+            if (etCustomParser.text.toString().trim().isNotBlank()) srcParts.add("Свой")
+            tvTileSearchStatus.text = if (srcParts.isEmpty()) "Отключено" else srcParts.joinToString(" • ")
+
+            val tsClean = etTorrServe.text.toString().trim()
+                .removePrefix("http://")
+                .removePrefix("https://")
+                .ifBlank { "127.0.0.1:8090" }
+            tvTileTorrServeStatus.text = "$tsClean • Менеджер"
+
+            tvTileSystemStatus.text = "v${BuildConfig.VERSION_NAME} • Бэкап • Логи"
+        }
+
         fun refreshPlayerChips() {
             btnPlayerBuiltin.isSelected = selectedPlayerEngine == StorageManager.PLAYER_ENGINE_MEDIA3
             btnPlayerVlc.isSelected = selectedPlayerEngine == StorageManager.PLAYER_ENGINE_VLC
             btnPlayerExternal.isSelected = selectedPlayerEngine == StorageManager.PLAYER_ENGINE_EXTERNAL
+            btnToggleCornerStats.isSelected = showCornerStats
+            btnToggleCornerStats.text = getString(
+                if (showCornerStats) R.string.player_corner_stats_on else R.string.player_corner_stats_off
+            )
+            btnTogglePixelShift.isSelected = plasmaShiftEnabled
+            btnTogglePixelShift.text = getString(
+                if (plasmaShiftEnabled) R.string.player_pixel_shift_on else R.string.player_pixel_shift_off
+            )
+            btnCornerTopRight.isSelected = selectedStatsCorner == StorageManager.STATS_CORNER_TOP_RIGHT
+            btnCornerTopLeft.isSelected = selectedStatsCorner == StorageManager.STATS_CORNER_TOP_LEFT
+            btnCornerBottomRight.isSelected = selectedStatsCorner == StorageManager.STATS_CORNER_BOTTOM_RIGHT
+            refreshHubSubtitles()
         }
 
         fun refreshBufferChips() {
             btnBufferFast.isSelected = selectedBufferProfile == StorageManager.BUFFER_PROFILE_FAST
             btnBufferStandard.isSelected = selectedBufferProfile == StorageManager.BUFFER_PROFILE_STANDARD
             btnBuffer4k.isSelected = selectedBufferProfile == StorageManager.BUFFER_PROFILE_4K
+            refreshHubSubtitles()
         }
 
         fun refreshSourceChips() {
@@ -2363,11 +2471,15 @@ class MainActivity : AppCompatActivity() {
             btnToggleDoh.text = getString(if (dohEnabled) R.string.net_doh_on else R.string.net_doh_off)
             btnToggleDpiBypass.isSelected = dpiBypassEnabled
             btnToggleDpiBypass.text = getString(if (dpiBypassEnabled) R.string.net_dpi_on else R.string.net_dpi_off)
+            refreshHubSubtitles()
         }
 
         fun populateFieldsFromStorage() {
             selectedPlayerEngine = storage.playerEngine
             selectedBufferProfile = storage.bufferProfile
+            showCornerStats = storage.showPlayerStatsHud
+            plasmaShiftEnabled = storage.plasmaPixelShift
+            selectedStatsCorner = storage.playerStatsCorner
             publicJacRedEnabled = storage.usePublicJacRed
             rutorFallbackEnabled = storage.useRutorFallback
             autoCheckUpdatesEnabled = storage.autoCheckUpdates
@@ -2413,6 +2525,125 @@ class MainActivity : AppCompatActivity() {
                 if (input.hasFocus()) {
                     input.clearFocus()
                 }
+            }
+        }
+
+        val allSections = listOf(sectionPlayer, sectionNetwork, sectionCatalog, sectionSearch, sectionTorrServe, sectionSystem)
+
+        fun showHub(focusTarget: View = lastOpenedTile) {
+            hideDialogKeyboard()
+            activeSectionId = 0
+            refreshHubSubtitles()
+            btnSettingsBack.visibility = View.GONE
+            viewBrandDot.visibility = View.VISIBLE
+            tvSettingsHeader.text = getString(R.string.settings_title)
+            scrollSettings.visibility = View.GONE
+            layoutHub.visibility = View.VISIBLE
+            btnCancel.nextFocusUpId = R.id.tileSearch
+            btnSave.nextFocusUpId = R.id.tileSystem
+            focusTarget.post { focusTarget.requestFocus() }
+        }
+
+        fun openSection(sectionId: Int, customFocusTarget: View? = null) {
+            hideDialogKeyboard()
+            activeSectionId = sectionId
+            layoutHub.visibility = View.GONE
+            scrollSettings.visibility = View.VISIBLE
+            scrollSettings.scrollTo(0, 0)
+            for (sec in allSections) sec.visibility = View.GONE
+
+            btnSettingsBack.visibility = View.VISIBLE
+            viewBrandDot.visibility = View.GONE
+
+            val defaultFocus: View
+            val footerUpLeftId: Int
+            val footerUpRightId: Int
+            when (sectionId) {
+                1 -> {
+                    lastOpenedTile = tilePlayer
+                    tvSettingsHeader.text = getString(R.string.settings_hub_player)
+                    sectionPlayer.visibility = View.VISIBLE
+                    defaultFocus = when (selectedPlayerEngine) {
+                        StorageManager.PLAYER_ENGINE_VLC -> btnPlayerVlc
+                        StorageManager.PLAYER_ENGINE_EXTERNAL -> btnPlayerExternal
+                        else -> btnPlayerBuiltin
+                    }
+                    footerUpLeftId = R.id.btnCornerTopRight
+                    footerUpRightId = R.id.btnCornerBottomRight
+                }
+                2 -> {
+                    lastOpenedTile = tileNetwork
+                    tvSettingsHeader.text = getString(R.string.settings_hub_network)
+                    sectionNetwork.visibility = View.VISIBLE
+                    defaultFocus = btnToggleDoh
+                    footerUpLeftId = R.id.btnCheckMirrors
+                    footerUpRightId = R.id.btnCheckMirrors
+                }
+                3 -> {
+                    lastOpenedTile = tileCatalog
+                    tvSettingsHeader.text = getString(R.string.settings_hub_catalog)
+                    sectionCatalog.visibility = View.VISIBLE
+                    defaultFocus = btnToggleTmdbShowcase
+                    footerUpLeftId = R.id.etTmdbImageUrl
+                    footerUpRightId = R.id.etTmdbImageUrl
+                }
+                4 -> {
+                    lastOpenedTile = tileSearch
+                    tvSettingsHeader.text = getString(R.string.settings_hub_search)
+                    sectionSearch.visibility = View.VISIBLE
+                    defaultFocus = btnTogglePublicJacRed
+                    footerUpLeftId = R.id.etRutorMirror
+                    footerUpRightId = R.id.etRutorMirror
+                }
+                5 -> {
+                    lastOpenedTile = tileTorrServe
+                    tvSettingsHeader.text = getString(R.string.settings_hub_torrserve)
+                    sectionTorrServe.visibility = View.VISIBLE
+                    defaultFocus = btnTorrServeManager
+                    footerUpLeftId = R.id.btnTorrServeManager
+                    footerUpRightId = R.id.btnTorrServeManager
+                }
+                else -> {
+                    lastOpenedTile = tileSystem
+                    tvSettingsHeader.text = getString(R.string.settings_hub_system)
+                    sectionSystem.visibility = View.VISIBLE
+                    defaultFocus = btnToggleAutoUpdate
+                    footerUpLeftId = R.id.btnBackupExport
+                    footerUpRightId = R.id.btnExportLogs
+                }
+            }
+            btnSettingsBack.nextFocusDownId = defaultFocus.id
+            btnSettingsBack.nextFocusLeftId = R.id.btnSettingsBack
+            btnSettingsBack.nextFocusRightId = R.id.btnSettingsBack
+            btnSettingsBack.nextFocusUpId = R.id.btnSettingsBack
+            btnCancel.nextFocusUpId = footerUpLeftId
+            btnSave.nextFocusUpId = footerUpRightId
+
+            val target = customFocusTarget ?: defaultFocus
+            target.post { target.requestFocus() }
+        }
+
+        // Hub tile click listeners
+        tilePlayer.setOnClickListener { openSection(1) }
+        tileNetwork.setOnClickListener { openSection(2) }
+        tileCatalog.setOnClickListener { openSection(3) }
+        tileSearch.setOnClickListener { openSection(4) }
+        tileTorrServe.setOnClickListener { openSection(5) }
+        tileSystem.setOnClickListener { openSection(6) }
+        btnSettingsBack.setOnClickListener { showHub(lastOpenedTile) }
+
+        // Hardware BACK inside a section returns to the 2x3 Hub
+        dialog.setOnKeyListener { _, keyCode, event ->
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
+                if (activeSectionId != 0) {
+                    showHub(lastOpenedTile)
+                    true
+                } else {
+                    dialog.dismiss()
+                    true
+                }
+            } else {
+                false
             }
         }
 
@@ -2469,6 +2700,31 @@ class MainActivity : AppCompatActivity() {
             selectedBufferProfile = StorageManager.BUFFER_PROFILE_4K
             refreshBufferChips()
         }
+        btnToggleCornerStats.setOnClickListener {
+            hideDialogKeyboard()
+            showCornerStats = !showCornerStats
+            refreshPlayerChips()
+        }
+        btnTogglePixelShift.setOnClickListener {
+            hideDialogKeyboard()
+            plasmaShiftEnabled = !plasmaShiftEnabled
+            refreshPlayerChips()
+        }
+        btnCornerTopRight.setOnClickListener {
+            hideDialogKeyboard()
+            selectedStatsCorner = StorageManager.STATS_CORNER_TOP_RIGHT
+            refreshPlayerChips()
+        }
+        btnCornerTopLeft.setOnClickListener {
+            hideDialogKeyboard()
+            selectedStatsCorner = StorageManager.STATS_CORNER_TOP_LEFT
+            refreshPlayerChips()
+        }
+        btnCornerBottomRight.setOnClickListener {
+            hideDialogKeyboard()
+            selectedStatsCorner = StorageManager.STATS_CORNER_BOTTOM_RIGHT
+            refreshPlayerChips()
+        }
         btnTogglePublicJacRed.setOnClickListener {
             hideDialogKeyboard()
             publicJacRedEnabled = !publicJacRedEnabled
@@ -2521,10 +2777,12 @@ class MainActivity : AppCompatActivity() {
             showTorrServeManagerDialog()
         }
 
-        btnBackupExport.setOnClickListener {
-            hideDialogKeyboard()
+        fun persistDraftToStorage() {
             storage.playerEngine = selectedPlayerEngine
             storage.bufferProfile = selectedBufferProfile
+            storage.showPlayerStatsHud = showCornerStats
+            storage.plasmaPixelShift = plasmaShiftEnabled
+            storage.playerStatsCorner = selectedStatsCorner
             storage.usePublicJacRed = publicJacRedEnabled
             storage.useRutorFallback = rutorFallbackEnabled
             storage.autoCheckUpdates = autoCheckUpdatesEnabled
@@ -2540,7 +2798,12 @@ class MainActivity : AppCompatActivity() {
             storage.tmdbImageBaseUrl = etTmdbImageUrl.text.toString()
             storage.useDohDns = dohEnabled
             storage.useDpiBypass = dpiBypassEnabled
-            storage.networkProxyUrl = etNetworkProxy.text.toString()
+            storage.networkProxyUrl = etNetworkProxy.text.toString().trim()
+        }
+
+        btnBackupExport.setOnClickListener {
+            hideDialogKeyboard()
+            persistDraftToStorage()
             runWithStoragePermission {
                 val res = maintenanceManager.exportBackup(storage, playerPrefs)
                 Toast.makeText(this@MainActivity, res.message, Toast.LENGTH_LONG).show()
@@ -2693,14 +2956,6 @@ class MainActivity : AppCompatActivity() {
 
         btnCancel.setOnClickListener { dialog.dismiss() }
         btnSave.setOnClickListener {
-            storage.playerEngine = selectedPlayerEngine
-            storage.bufferProfile = selectedBufferProfile
-            storage.usePublicJacRed = publicJacRedEnabled
-            storage.useRutorFallback = rutorFallbackEnabled
-            storage.autoCheckUpdates = autoCheckUpdatesEnabled
-            storage.torrServeUrl = etTorrServe.text.toString()
-            storage.customParserUrl = etCustomParser.text.toString()
-            storage.parserApiKey = etApiKey.text.toString()
             val proxyTrimmed = etNetworkProxy.text.toString().trim()
             val catalogChanged = storage.showTmdbShowcase != tmdbShowcaseEnabled ||
                 storage.catalogProvider != selectedCatalogProvider ||
@@ -2712,16 +2967,7 @@ class MainActivity : AppCompatActivity() {
                 storage.useDpiBypass != dpiBypassEnabled ||
                 storage.networkProxyUrl != proxyTrimmed
 
-            storage.rutorMirrorUrl = etRutorMirror.text.toString()
-            storage.showTmdbShowcase = tmdbShowcaseEnabled
-            storage.catalogProvider = selectedCatalogProvider
-            storage.kinopoiskApiKey = etKinopoiskApiKey.text.toString()
-            storage.tmdbApiKey = etTmdbApiKey.text.toString()
-            storage.tmdbApiBaseUrl = etTmdbApiUrl.text.toString()
-            storage.tmdbImageBaseUrl = etTmdbImageUrl.text.toString()
-            storage.useDohDns = dohEnabled
-            storage.useDpiBypass = dpiBypassEnabled
-            storage.networkProxyUrl = proxyTrimmed
+            persistDraftToStorage()
             dialog.dismiss()
             if (catalogChanged) {
                 tmdbShelves = null
@@ -2735,17 +2981,14 @@ class MainActivity : AppCompatActivity() {
 
         dialog.show()
         if (focusCatalogKey) {
-            when (selectedCatalogProvider) {
-                StorageManager.CATALOG_PROVIDER_TORRENTS -> btnCatalogTorrents.requestFocus()
-                StorageManager.CATALOG_PROVIDER_KINOPOISK -> etKinopoiskApiKey.requestFocus()
-                else -> etTmdbApiKey.requestFocus()
+            val keyTarget = when (selectedCatalogProvider) {
+                StorageManager.CATALOG_PROVIDER_TORRENTS -> btnCatalogTorrents
+                StorageManager.CATALOG_PROVIDER_KINOPOISK -> etKinopoiskApiKey
+                else -> etTmdbApiKey
             }
+            openSection(3, customFocusTarget = keyTarget)
         } else {
-            when (selectedPlayerEngine) {
-                StorageManager.PLAYER_ENGINE_VLC -> btnPlayerVlc.requestFocus()
-                StorageManager.PLAYER_ENGINE_EXTERNAL -> btnPlayerExternal.requestFocus()
-                else -> btnPlayerBuiltin.requestFocus()
-            }
+            showHub(tilePlayer)
         }
     }
 

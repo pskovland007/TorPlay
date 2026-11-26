@@ -99,6 +99,9 @@ object AppLogger {
             append("Network bypass: DoH=").append(storage.useDohDns)
                 .append(" | DPI-TLS=").append(storage.useDpiBypass)
                 .append(" | Proxy=").append(if (storage.networkProxyUrl.isNotBlank()) "set" else "none").append('\n')
+            append("Player HUD: stats=").append(storage.showPlayerStatsHud)
+                .append(" | pixelShift=").append(storage.plasmaPixelShift)
+                .append(" | corner=").append(storage.playerStatsCorner).append('\n')
             append("==============================\n\n")
             if (linesSnapshot.isEmpty()) {
                 append("(Записей пока нет)\n")

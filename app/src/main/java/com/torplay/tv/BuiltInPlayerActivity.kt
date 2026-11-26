@@ -12,8 +12,11 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.graphics.drawable.GradientDrawable
 import android.view.GestureDetector
+import android.view.Gravity
 import android.view.KeyEvent
+import androidx.core.content.ContextCompat
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
@@ -94,8 +97,13 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private lateinit var btnAudioTrack: TextView
     private lateinit var btnAudioBoost: TextView
     private lateinit var btnSubtitles: TextView
+    private lateinit var layoutCornerStats: LinearLayout
+    private lateinit var viewCornerStatsDot: View
+    private lateinit var tvCornerSpeed: TextView
+    private lateinit var tvCornerPeers: TextView
     private lateinit var btnResizeMode: TextView
     private lateinit var btnEngineSwitch: TextView
+    private lateinit var btnAltSources: TextView
     private lateinit var btnEpisodes: TextView
     private lateinit var btnNextEpisode: TextView
     private lateinit var btnAutoNext: TextView
@@ -196,9 +204,29 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private var gestureStartPosMs: Long = 0L
     private var pendingSwipeSeekMs: Long = -1L
 
+    private var showCornerStatsHud: Boolean = true
+    private var plasmaPixelShiftEnabled: Boolean = true
+    private var cornerStatsPosition: Int = StorageManager.STATS_CORNER_TOP_RIGHT
+    private var pixelShiftStepIndex: Int = 0
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private val osdHideRunnable = Runnable { hideOsd() }
     private val quickHudHideRunnable = Runnable { tvQuickHud.visibility = View.GONE }
+
+    private val pixelShiftRunnable = object : Runnable {
+        override fun run() {
+            if (!showCornerStatsHud || !plasmaPixelShiftEnabled) return
+            pixelShiftStepIndex = (pixelShiftStepIndex + 1) % PIXEL_SHIFT_OFFSETS_DP.size
+            val (dxDp, dyDp) = PIXEL_SHIFT_OFFSETS_DP[pixelShiftStepIndex]
+            val density = resources.displayMetrics.density
+            layoutCornerStats.animate()
+                .translationX(dxDp * density)
+                .translationY(dyDp * density)
+                .setDuration(600L)
+                .start()
+            mainHandler.postDelayed(this, PIXEL_SHIFT_INTERVAL_MS)
+        }
+    }
 
     private val nextCountdownRunnable = object : Runnable {
         override fun run() {
@@ -219,7 +247,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             updateOsdProgress()
             checkAutoNextTrigger()
             checkPlaybackStallWatchdog()
-            if (layoutOsd.visibility == View.VISIBLE || isBufferingNow) {
+            if (layoutOsd.visibility == View.VISIBLE || isBufferingNow || showCornerStatsHud) {
                 maybePollTorrServeStats(forceFast = isBufferingNow)
             }
             updateBufferingOverlayState()
@@ -340,6 +368,9 @@ class BuiltInPlayerActivity : AppCompatActivity() {
 
         resizeModeIndex = playerPrefs.resizeModeIndex
         autoNextEnabled = playerPrefs.autoNextEpisode
+        showCornerStatsHud = storage.showPlayerStatsHud
+        plasmaPixelShiftEnabled = storage.plasmaPixelShift
+        cornerStatsPosition = storage.playerStatsCorner
         val isContinuing = fromHistoryLaunch ||
             startPositionMs > 2_000L ||
             storage.hasWatchHistoryFor(link, torrentHash)
@@ -355,17 +386,25 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         setupTouchGestures()
         updateSurfaceVisibility()
         applyResizeMode(showFeedback = false)
+        configureCornerStatsHud()
         updateEngineSwitchUi()
         updateAudioBoostUi()
         updateAutoNextUi()
         updateSeriesControlsUi()
         initActivePlayer(startPositionMs)
         loadEpisodesMetadata()
+        if (showCornerStatsHud && torrentHash.isNotBlank()) {
+            maybePollTorrServeStats(forceFast = true)
+        }
     }
 
     override fun onStart() {
         super.onStart()
         mainHandler.post(progressUpdateRunnable)
+        if (showCornerStatsHud && plasmaPixelShiftEnabled) {
+            mainHandler.removeCallbacks(pixelShiftRunnable)
+            mainHandler.postDelayed(pixelShiftRunnable, PIXEL_SHIFT_INTERVAL_MS)
+        }
     }
 
     override fun onStop() {
@@ -374,6 +413,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         mainHandler.removeCallbacks(osdHideRunnable)
         mainHandler.removeCallbacks(quickHudHideRunnable)
         mainHandler.removeCallbacks(nextCountdownRunnable)
+        mainHandler.removeCallbacks(pixelShiftRunnable)
         savePlaybackProgress()
         pausePlayback()
     }
@@ -496,8 +536,13 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         btnAudioTrack = findViewById(R.id.btnAudioTrack)
         btnAudioBoost = findViewById(R.id.btnAudioBoost)
         btnSubtitles = findViewById(R.id.btnSubtitles)
+        layoutCornerStats = findViewById(R.id.layoutCornerStats)
+        viewCornerStatsDot = findViewById(R.id.viewCornerStatsDot)
+        tvCornerSpeed = findViewById(R.id.tvCornerSpeed)
+        tvCornerPeers = findViewById(R.id.tvCornerPeers)
         btnResizeMode = findViewById(R.id.btnResizeMode)
         btnEngineSwitch = findViewById(R.id.btnEngineSwitch)
+        btnAltSources = findViewById(R.id.btnAltSources)
         btnEpisodes = findViewById(R.id.btnEpisodes)
         btnNextEpisode = findViewById(R.id.btnNextEpisode)
         btnAutoNext = findViewById(R.id.btnAutoNext)
@@ -578,6 +623,12 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         btnEngineSwitch.setOnClickListener {
             cyclePlayerEngineMode()
             scheduleOsdAutoHide()
+        }
+        btnAltSources.setOnClickListener {
+            val resumeAt = currentPositionMs()
+                .coerceAtLeast(vlcRequestedStartTimeMs)
+                .coerceAtLeast(pendingInitialSeekMs)
+            showAlternativeSourcesDialog(resumeAtMs = resumeAt, manualTrigger = true)
         }
         btnEpisodes.setOnClickListener {
             showEpisodeSwitcherDialog()
@@ -919,7 +970,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         }
 
         // Dynamic single-row left/right focus routing
-        val rowButtons = mutableListOf<TextView>(btnAudioTrack, btnAudioBoost, btnSubtitles, btnResizeMode, btnEngineSwitch)
+        val rowButtons = mutableListOf<TextView>(btnAudioTrack, btnAudioBoost, btnSubtitles, btnResizeMode, btnEngineSwitch, btnAltSources)
         if (multi) rowButtons.add(btnEpisodes)
         if (hasNext) rowButtons.add(btnNextEpisode)
         if (multi) rowButtons.add(btnAutoNext)
@@ -1633,6 +1684,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         uiScope.launch {
             val info = runCatching { torrServeClient.getTorrentInfo(torrentHash) }.getOrNull() ?: return@launch
             updateTorrentStatsSummary(info)
+            updateCornerStatsUi(info)
             val vids = torrServeClient.filterAndSortVideos(info.files)
             val resolved = if (vids.isNotEmpty()) vids else info.files
             if (resolved.isNotEmpty()) {
@@ -1650,7 +1702,11 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private fun maybePollTorrServeStats(forceFast: Boolean = false) {
         if (torrentHash.isBlank()) return
         val now = System.currentTimeMillis()
-        val interval = if (forceFast) 1_400L else 2_500L
+        val interval = when {
+            forceFast -> 1_400L
+            showCornerStatsHud -> 2_000L
+            else -> 2_500L
+        }
         if (now - lastTorrStatsFetchMs < interval) return
         if (statsJob?.isActive == true) return
         lastTorrStatsFetchMs = now
@@ -1679,6 +1735,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             }
 
             updateTorrentStatsSummary(info)
+            updateCornerStatsUi(info)
             updateStreamInfoText()
             if (isBufferingNow) {
                 val speedUi = if (info.downloadSpeed > 0.0) info.formattedSpeed() else "поиск пиров"
@@ -2301,6 +2358,57 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         }
         mainHandler.removeCallbacks(nextCountdownRunnable)
         layoutNextEpisode.visibility = View.GONE
+        updateCornerStatsVisibility()
+    }
+
+    private fun configureCornerStatsHud() {
+        val lp = layoutCornerStats.layoutParams as? FrameLayout.LayoutParams
+        if (lp != null) {
+            lp.gravity = when (cornerStatsPosition) {
+                StorageManager.STATS_CORNER_TOP_LEFT -> Gravity.TOP or Gravity.START
+                StorageManager.STATS_CORNER_BOTTOM_RIGHT -> Gravity.BOTTOM or Gravity.END
+                else -> Gravity.TOP or Gravity.END
+            }
+            layoutCornerStats.layoutParams = lp
+        }
+        if (!plasmaPixelShiftEnabled) {
+            layoutCornerStats.translationX = 0f
+            layoutCornerStats.translationY = 0f
+        }
+        updateCornerStatsVisibility()
+    }
+
+    private fun updateCornerStatsVisibility() {
+        val shouldShow = showCornerStatsHud &&
+            torrentHash.isNotBlank() &&
+            layoutOsd.visibility != View.VISIBLE &&
+            !nextCardActive
+        layoutCornerStats.visibility = if (shouldShow) View.VISIBLE else View.GONE
+    }
+
+    private fun updateCornerStatsUi(info: TorrServeInfo) {
+        val speedText = if (info.downloadSpeed > 0.0) info.formattedSpeed() else "0 КБ/с"
+        tvCornerSpeed.text = speedText
+
+        val peersText = if (info.connectedSeeders > 0) {
+            "▲ ${info.connectedSeeders} • ${info.activePeers}/${info.totalPeers}"
+        } else {
+            "▲ ${info.activePeers}/${info.totalPeers}"
+        }
+        tvCornerPeers.text = peersText
+
+        val colorRes = when {
+            info.activePeers > 0 || info.downloadSpeed >= 50_000.0 -> R.color.accent_emerald
+            info.totalPeers > 0 -> R.color.status_warn
+            else -> R.color.status_err
+        }
+        val resolvedColor = ContextCompat.getColor(this, colorRes)
+        tvCornerPeers.setTextColor(resolvedColor)
+        val dotBg = viewCornerStatsDot.background?.mutate()
+        if (dotBg is GradientDrawable) {
+            dotBg.setColor(resolvedColor)
+        }
+        updateCornerStatsVisibility()
     }
 
     private fun showOsd() {
@@ -2309,6 +2417,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         maybePollTorrServeStats()
         layoutPlayerBuffering.visibility = View.GONE
         layoutOsd.visibility = View.VISIBLE
+        updateCornerStatsVisibility()
         btnPlayPause.requestFocus()
         scheduleOsdAutoHide()
     }
@@ -2316,6 +2425,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private fun hideOsd() {
         mainHandler.removeCallbacks(osdHideRunnable)
         layoutOsd.visibility = View.GONE
+        updateCornerStatsVisibility()
     }
 
     private fun scheduleOsdAutoHide() {
@@ -2802,7 +2912,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         }
     }
 
-    private fun showAlternativeSourcesDialog(resumeAtMs: Long) {
+    private fun showAlternativeSourcesDialog(resumeAtMs: Long, manualTrigger: Boolean = false) {
         if (isFinishing || isDestroyed) return
         if (altSourcesDialog?.isShowing == true) return
 
@@ -2824,6 +2934,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         )
         altSourcesDialog = dialog
 
+        val tvAltTitle = dialog.findViewById<TextView>(R.id.tvAltTitle)
         val tvSubtitle = dialog.findViewById<TextView>(R.id.tvAltSubtitle)
         val layoutLoading = dialog.findViewById<LinearLayout>(R.id.layoutAltLoading)
         val tvLoadingText = dialog.findViewById<TextView>(R.id.tvAltLoadingText)
@@ -2832,8 +2943,16 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         val btnWait = dialog.findViewById<TextView>(R.id.btnAltWait)
         val btnManual = dialog.findViewById<TextView>(R.id.btnAltManualSearch)
 
+        tvAltTitle.text = getString(
+            if (manualTrigger) R.string.alt_sources_manual_title else R.string.alt_sources_title
+        )
+        btnWait.text = getString(
+            if (manualTrigger) R.string.alt_sources_btn_close else R.string.alt_sources_btn_wait
+        )
+
         val posText = if (resumeAtMs > 2_000L) " • продолжим с ${formatDuration(resumeAtMs)}" else ""
-        tvSubtitle.text = "Поиск: «$displayQuery» (пиры: $lastTorrActivePeers/$lastTorrTotalPeers)$posText"
+        val peersInfo = if (lastTorrActivePeers >= 0) " (пиры: $lastTorrActivePeers/$lastTorrTotalPeers)" else ""
+        tvSubtitle.text = "Поиск: «$displayQuery»$peersInfo$posText"
         tvLoadingText.text = "Ищем живые раздачи для «$displayQuery»…"
 
         val altAdapter = TorrentAdapter(
@@ -2855,12 +2974,14 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         rvAlt.adapter = altAdapter
 
         btnWait.setOnClickListener {
-            altSourcesSnoozeUntilMs = System.currentTimeMillis() + 45_000L
-            deadTorrentSinceMs = 0L
-            altSourcesDialogShownForHash = ""
+            if (!manualTrigger) {
+                altSourcesSnoozeUntilMs = System.currentTimeMillis() + 45_000L
+                deadTorrentSinceMs = 0L
+                altSourcesDialogShownForHash = ""
+                showQuickHudMessage("⏳ Продолжаем ожидание пиров…")
+            }
             dialog.dismiss()
             resumePlayback()
-            showQuickHudMessage("⏳ Продолжаем ожидание пиров…")
         }
 
         btnManual.setOnClickListener {
@@ -3036,6 +3157,18 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             lastSwitchedTorrentHash = ""
             return h
         }
+
+        private const val PIXEL_SHIFT_INTERVAL_MS = 45_000L
+        private val PIXEL_SHIFT_OFFSETS_DP = arrayOf(
+            0f to 0f,
+            5f to 0f,
+            5f to 5f,
+            0f to 5f,
+            -5f to 5f,
+            -5f to 0f,
+            -5f to -5f,
+            0f to -5f
+        )
 
         private val BOOST_STEPS_DB = intArrayOf(0, 3, 6, 9, 12)
         private val BTIH_REGEX = Regex("btih:([a-zA-Z0-9]+)", RegexOption.IGNORE_CASE)

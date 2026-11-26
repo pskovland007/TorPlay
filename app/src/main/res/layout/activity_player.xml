@@ -27,6 +27,62 @@
         android:clickable="true"
         android:focusable="false" />
 
+    <!-- Variant A: Persistent Glassmorphic Corner Speed & Peers Pill (with Plasma/OLED pixel shift) -->
+    <LinearLayout
+        android:id="@+id/layoutCornerStats"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_marginStart="22dp"
+        android:layout_marginTop="18dp"
+        android:layout_marginEnd="22dp"
+        android:layout_marginBottom="20dp"
+        android:background="@drawable/bg_player_corner_stats"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="6dp"
+        android:visibility="gone">
+
+        <View
+            android:id="@+id/viewCornerStatsDot"
+            android:layout_width="8dp"
+            android:layout_height="8dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/bg_corner_dot" />
+
+        <TextView
+            android:id="@+id/tvCornerSpeed"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:singleLine="true"
+            android:text="0 КБ/с"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="7dp"
+            android:layout_marginEnd="7dp"
+            android:text="•"
+            android:textColor="#80FFFFFF"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/tvCornerPeers"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:singleLine="true"
+            android:text="▲ 0/0"
+            android:textColor="@color/accent_emerald"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
     <!-- Live TorrServe Buffering Overlay inside Player -->
     <LinearLayout
         android:id="@+id/layoutPlayerBuffering"
@@ -383,12 +439,33 @@
                         android:gravity="center"
                         android:nextFocusDown="@+id/btnEngineSwitch"
                         android:nextFocusLeft="@+id/btnResizeMode"
-                        android:nextFocusRight="@+id/btnEpisodes"
+                        android:nextFocusRight="@+id/btnAltSources"
                         android:nextFocusUp="@+id/btnPlayPause"
                         android:paddingStart="15dp"
                         android:paddingEnd="15dp"
                         android:singleLine="true"
                         android:text="@string/player_engine_switch_vlc_hw"
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/btnAltSources"
+                        android:layout_width="wrap_content"
+                        android:layout_height="38dp"
+                        android:layout_marginEnd="8dp"
+                        android:background="@drawable/bg_player_pill_selector"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:nextFocusDown="@+id/btnAltSources"
+                        android:nextFocusLeft="@+id/btnEngineSwitch"
+                        android:nextFocusRight="@+id/btnEpisodes"
+                        android:nextFocusUp="@+id/btnPlayPause"
+                        android:paddingStart="15dp"
+                        android:paddingEnd="15dp"
+                        android:singleLine="true"
+                        android:text="@string/player_alt_sources_btn"
                         android:textColor="@color/text_primary"
                         android:textSize="13sp"
                         android:textStyle="bold" />

@@ -21,4 +21,23 @@
     <string name="alt_sources_empty">Живые альтернативы не найдены. Попробуйте «Найти вручную».</string>
     <string name="alt_sources_btn_wait">Подождать ещё</string>
     <string name="alt_sources_btn_manual">Найти вручную</string>
+    <string name="player_alt_sources_btn">Раздачи</string>
+    <string name="alt_sources_manual_title">Альтернативные раздачи</string>
+    <string name="alt_sources_btn_close">Закрыть</string>
+    <string name="settings_player_hud_label">Плашка скорости и защита экрана</string>
+    <string name="player_corner_stats_on">✓ Плашка в углу: ВКЛ</string>
+    <string name="player_corner_stats_off">✕ Плашка в углу: ВЫКЛ</string>
+    <string name="player_pixel_shift_on">✓ Сдвиг пикселей (плазма): ВКЛ</string>
+    <string name="player_pixel_shift_off">✕ Сдвиг пикселей (плазма): ВЫКЛ</string>
+    <string name="player_corner_pos_label">Позиция плашки</string>
+    <string name="player_corner_top_right">Вверху справа</string>
+    <string name="player_corner_top_left">Вверху слева</string>
+    <string name="player_corner_bottom_right">Внизу справа</string>
+    <string name="settings_hub_player">Плеер</string>
+    <string name="settings_hub_network">Сеть и обход</string>
+    <string name="settings_hub_catalog">Каталог</string>
+    <string name="settings_hub_search">Поиск раздач</string>
+    <string name="settings_hub_torrserve">TorrServe</string>
+    <string name="settings_hub_system">Система</string>
+    <string name="settings_btn_back">← Назад</string>
 </resources>

@@ -4,913 +4,1391 @@
     android:layout_height="match_parent"
     android:background="@drawable/bg_dialog"
     android:orientation="vertical"
-    android:paddingStart="22dp"
+    android:paddingStart="24dp"
     android:paddingTop="18dp"
-    android:paddingEnd="22dp"
+    android:paddingEnd="24dp"
     android:paddingBottom="16dp">
 
-    <ScrollView
-        android:id="@+id/scrollSettings"
+    <!-- Top Header Bar (switches between Hub title and Section Back+Title) -->
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:fadeScrollbars="false"
-        android:fillViewport="true">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:paddingEnd="4dp"
-            android:paddingBottom="12dp">
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingBottom="12dp">
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/settings_title"
-                    android:textColor="@color/text_primary"
-                    android:textSize="19sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/tvSettingsVersion"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:textColor="@color/text_muted"
-                    android:textSize="12sp" />
-            </LinearLayout>
-
-
-        </LinearLayout>
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingBottom="14dp">
 
         <TextView
+            android:id="@+id/btnSettingsBack"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_player_label"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="10dp"
-            android:orientation="horizontal">
-
-            <TextView
-                android:id="@+id/btnPlayerBuiltin"
-                android:layout_width="0dp"
-                android:layout_height="44dp"
-                android:layout_marginEnd="6dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_chip_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:maxLines="2"
-                android:nextFocusDown="@+id/btnBufferFast"
-                android:nextFocusLeft="@+id/btnPlayerBuiltin"
-                android:nextFocusRight="@+id/btnPlayerVlc"
-                android:nextFocusUp="@+id/btnPlayerBuiltin"
-                android:paddingStart="6dp"
-                android:paddingEnd="6dp"
-                android:text="@string/player_engine_media3"
-                android:textColor="@color/text_primary"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/btnPlayerVlc"
-                android:layout_width="0dp"
-                android:layout_height="44dp"
-                android:layout_marginEnd="6dp"
-                android:layout_weight="1.25"
-                android:background="@drawable/bg_chip_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:maxLines="2"
-                android:nextFocusDown="@+id/btnBufferStandard"
-                android:nextFocusLeft="@+id/btnPlayerBuiltin"
-                android:nextFocusRight="@+id/btnPlayerExternal"
-                android:nextFocusUp="@+id/btnPlayerVlc"
-                android:paddingStart="6dp"
-                android:paddingEnd="6dp"
-                android:text="@string/player_engine_vlc"
-                android:textColor="@color/text_primary"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/btnPlayerExternal"
-                android:layout_width="0dp"
-                android:layout_height="44dp"
-                android:layout_weight="0.85"
-                android:background="@drawable/bg_chip_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:maxLines="2"
-                android:nextFocusDown="@+id/btnBuffer4k"
-                android:nextFocusLeft="@+id/btnPlayerVlc"
-                android:nextFocusRight="@+id/btnPlayerExternal"
-                android:nextFocusUp="@+id/btnPlayerExternal"
-                android:paddingStart="6dp"
-                android:paddingEnd="6dp"
-                android:text="@string/player_engine_external"
-                android:textColor="@color/text_primary"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_buffer_label"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="10dp"
-            android:orientation="horizontal">
-
-            <TextView
-                android:id="@+id/btnBufferFast"
-                android:layout_width="0dp"
-                android:layout_height="36dp"
-                android:layout_marginEnd="6dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_chip_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusDown="@+id/btnTogglePublicJacRed"
-                android:nextFocusLeft="@+id/btnBufferFast"
-                android:nextFocusRight="@+id/btnBufferStandard"
-                android:nextFocusUp="@+id/btnPlayerBuiltin"
-                android:text="@string/buffer_fast"
-                android:textColor="@color/text_primary"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/btnBufferStandard"
-                android:layout_width="0dp"
-                android:layout_height="36dp"
-                android:layout_marginEnd="6dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_chip_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusDown="@+id/btnTogglePublicJacRed"
-                android:nextFocusLeft="@+id/btnBufferFast"
-                android:nextFocusRight="@+id/btnBuffer4k"
-                android:nextFocusUp="@+id/btnPlayerVlc"
-                android:text="@string/buffer_standard"
-                android:textColor="@color/text_primary"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/btnBuffer4k"
-                android:layout_width="0dp"
-                android:layout_height="36dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_chip_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusDown="@+id/btnToggleRutorFallback"
-                android:nextFocusLeft="@+id/btnBufferStandard"
-                android:nextFocusRight="@+id/btnBuffer4k"
-                android:nextFocusUp="@+id/btnPlayerExternal"
-                android:text="@string/buffer_4k"
-                android:textColor="@color/text_primary"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_sources_label"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="8dp"
-            android:orientation="horizontal">
-
-            <TextView
-                android:id="@+id/btnTogglePublicJacRed"
-                android:layout_width="0dp"
-                android:layout_height="38dp"
-                android:layout_marginEnd="8dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_chip_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusDown="@+id/btnToggleAutoUpdate"
-                android:nextFocusLeft="@+id/btnTogglePublicJacRed"
-                android:nextFocusRight="@+id/btnToggleRutorFallback"
-                android:nextFocusUp="@+id/btnBufferFast"
-                android:text="@string/source_jacred_on"
-                android:textColor="@color/text_primary"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/btnToggleRutorFallback"
-                android:layout_width="0dp"
-                android:layout_height="38dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_chip_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusDown="@+id/btnCheckUpdates"
-                android:nextFocusLeft="@+id/btnTogglePublicJacRed"
-                android:nextFocusRight="@+id/btnToggleRutorFallback"
-                android:nextFocusUp="@+id/btnBuffer4k"
-                android:text="@string/source_rutor_on"
-                android:textColor="@color/text_primary"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_updates_label"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="10dp"
-            android:orientation="horizontal">
-
-            <TextView
-                android:id="@+id/btnToggleAutoUpdate"
-                android:layout_width="0dp"
-                android:layout_height="38dp"
-                android:layout_marginEnd="8dp"
-                android:layout_weight="1.1"
-                android:background="@drawable/bg_chip_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusDown="@+id/etTorrServeUrl"
-                android:nextFocusLeft="@+id/btnToggleAutoUpdate"
-                android:nextFocusRight="@+id/btnCheckUpdates"
-                android:nextFocusUp="@+id/btnTogglePublicJacRed"
-                android:text="@string/auto_update_on"
-                android:textColor="@color/text_primary"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/btnCheckUpdates"
-                android:layout_width="0dp"
-                android:layout_height="38dp"
-                android:layout_weight="0.9"
-                android:background="@drawable/bg_button_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusDown="@+id/etTorrServeUrl"
-                android:nextFocusLeft="@+id/btnToggleAutoUpdate"
-                android:nextFocusRight="@+id/btnCheckUpdates"
-                android:nextFocusUp="@+id/btnToggleRutorFallback"
-                android:paddingStart="12dp"
-                android:paddingEnd="12dp"
-                android:text="@string/btn_check_update_now"
-                android:textColor="@color/text_button_accent_selector"
-                android:textSize="13sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_torrserve_label"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <EditText
-            android:id="@+id/etTorrServeUrl"
-            android:layout_width="match_parent"
-            android:layout_height="40dp"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="8dp"
-            android:background="@drawable/bg_input_selector"
-            android:hint="http://127.0.0.1:8090"
-            android:inputType="textUri"
-            android:nextFocusDown="@+id/etCustomParserUrl"
-            android:nextFocusUp="@+id/btnToggleAutoUpdate"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:imeOptions="actionDone"
-            android:singleLine="true"
-            android:textColor="@color/text_primary"
-            android:textColorHint="@color/text_muted"
-            android:textSize="14sp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_jacred_label"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <EditText
-            android:id="@+id/etCustomParserUrl"
-            android:layout_width="match_parent"
-            android:layout_height="40dp"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="8dp"
-            android:background="@drawable/bg_input_selector"
-            android:hint="Оставьте пустым для автоподбора"
-            android:inputType="textUri"
-            android:nextFocusDown="@+id/etApiKey"
-            android:nextFocusUp="@+id/etTorrServeUrl"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:imeOptions="actionDone"
-            android:singleLine="true"
-            android:textColor="@color/text_primary"
-            android:textColorHint="@color/text_muted"
-            android:textSize="14sp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_apikey_label"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <EditText
-            android:id="@+id/etApiKey"
-            android:layout_width="match_parent"
-            android:layout_height="40dp"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="8dp"
-            android:background="@drawable/bg_input_selector"
-            android:hint="API Key (если требуется)"
-            android:inputType="text"
-            android:nextFocusDown="@+id/etRutorMirror"
-            android:nextFocusUp="@+id/etCustomParserUrl"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:imeOptions="actionDone"
-            android:singleLine="true"
-            android:textColor="@color/text_primary"
-            android:textColorHint="@color/text_muted"
-            android:textSize="14sp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_rutor_label"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <EditText
-            android:id="@+id/etRutorMirror"
-            android:layout_width="match_parent"
-            android:layout_height="40dp"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="10dp"
-            android:background="@drawable/bg_input_selector"
-            android:hint="https://rutor.info"
-            android:inputType="textUri"
-            android:nextFocusDown="@+id/btnToggleTmdbShowcase"
-            android:nextFocusUp="@+id/etApiKey"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:imeOptions="actionDone"
-            android:singleLine="true"
-            android:textColor="@color/text_primary"
-            android:textColorHint="@color/text_muted"
-            android:textSize="14sp" />
-
-        <!-- Catalog Settings (Kinopoisk / TMDB) -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_tmdb_label"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <TextView
-            android:id="@+id/btnToggleTmdbShowcase"
-            android:layout_width="match_parent"
-            android:layout_height="38dp"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="8dp"
-            android:background="@drawable/bg_chip_selector"
+            android:layout_height="36dp"
+            android:layout_marginEnd="14dp"
+            android:background="@drawable/bg_button_selector"
             android:clickable="true"
             android:focusable="true"
             android:gravity="center"
-            android:nextFocusDown="@+id/btnCatalogTorrents"
-            android:nextFocusLeft="@+id/btnToggleTmdbShowcase"
-            android:nextFocusRight="@+id/btnToggleTmdbShowcase"
-            android:nextFocusUp="@+id/etRutorMirror"
-            android:text="@string/tmdb_showcase_on"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:text="@string/settings_btn_back"
             android:textColor="@color/text_primary"
-            android:textSize="12sp"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <View
+            android:id="@+id/viewSettingsBrandDot"
+            android:layout_width="10dp"
+            android:layout_height="10dp"
+            android:layout_marginEnd="10dp"
+            android:background="@drawable/bg_corner_dot" />
+
+        <TextView
+            android:id="@+id/tvSettingsHeader"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="@string/settings_title"
+            android:textColor="@color/text_primary"
+            android:textSize="20sp"
             android:textStyle="bold" />
 
+        <TextView
+            android:id="@+id/tvSettingsVersion"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_player_corner_stats"
+            android:paddingStart="10dp"
+            android:paddingTop="4dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="4dp"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Main Body: Swaps between 2x3 Tile Hub and Scrollable Section Detail -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <!-- HUB VIEW: 2 rows x 3 columns of focusable Android TV tile cards -->
         <LinearLayout
+            android:id="@+id/layoutSettingsHub"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:orientation="horizontal">
-
-            <TextView
-                android:id="@+id/btnCatalogTorrents"
-                android:layout_width="0dp"
-                android:layout_height="38dp"
-                android:layout_marginEnd="6dp"
-                android:layout_weight="1.25"
-                android:background="@drawable/bg_chip_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusDown="@+id/etKinopoiskApiKey"
-                android:nextFocusLeft="@+id/btnCatalogTorrents"
-                android:nextFocusRight="@+id/btnCatalogKinopoisk"
-                android:nextFocusUp="@+id/btnToggleTmdbShowcase"
-                android:text="@string/catalog_provider_torrents"
-                android:textColor="@color/text_primary"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/btnCatalogKinopoisk"
-                android:layout_width="0dp"
-                android:layout_height="38dp"
-                android:layout_marginEnd="6dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_chip_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusDown="@+id/etKinopoiskApiKey"
-                android:nextFocusLeft="@+id/btnCatalogTorrents"
-                android:nextFocusRight="@+id/btnCatalogTmdb"
-                android:nextFocusUp="@+id/btnToggleTmdbShowcase"
-                android:text="@string/catalog_provider_kinopoisk"
-                android:textColor="@color/text_primary"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/btnCatalogTmdb"
-                android:layout_width="0dp"
-                android:layout_height="38dp"
-                android:layout_weight="0.8"
-                android:background="@drawable/bg_chip_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusDown="@+id/etKinopoiskApiKey"
-                android:nextFocusLeft="@+id/btnCatalogKinopoisk"
-                android:nextFocusRight="@+id/btnCatalogTmdb"
-                android:nextFocusUp="@+id/btnToggleTmdbShowcase"
-                android:text="@string/catalog_provider_tmdb"
-                android:textColor="@color/text_primary"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_kp_key_label"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <EditText
-            android:id="@+id/etKinopoiskApiKey"
-            android:layout_width="match_parent"
-            android:layout_height="40dp"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="8dp"
-            android:background="@drawable/bg_input_selector"
-            android:hint="Ключ X-API-KEY с kinopoiskapiunofficial.tech"
-            android:inputType="text"
-            android:nextFocusDown="@+id/etTmdbApiKey"
-            android:nextFocusUp="@+id/btnCatalogTorrents"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:imeOptions="actionDone"
-            android:singleLine="true"
-            android:textColor="@color/text_primary"
-            android:textColorHint="@color/text_muted"
-            android:textSize="14sp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_tmdb_key_label"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <EditText
-            android:id="@+id/etTmdbApiKey"
-            android:layout_width="match_parent"
-            android:layout_height="40dp"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="8dp"
-            android:background="@drawable/bg_input_selector"
-            android:hint="Бесплатный ключ с themoviedb.org"
-            android:inputType="text"
-            android:nextFocusDown="@+id/etTmdbApiUrl"
-            android:nextFocusUp="@+id/etKinopoiskApiKey"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:imeOptions="actionDone"
-            android:singleLine="true"
-            android:textColor="@color/text_primary"
-            android:textColorHint="@color/text_muted"
-            android:textSize="14sp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_tmdb_api_label"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <EditText
-            android:id="@+id/etTmdbApiUrl"
-            android:layout_width="match_parent"
-            android:layout_height="40dp"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="8dp"
-            android:background="@drawable/bg_input_selector"
-            android:hint="https://api.themoviedb.org/3"
-            android:inputType="textUri"
-            android:nextFocusDown="@+id/etTmdbImageUrl"
-            android:nextFocusUp="@+id/etTmdbApiKey"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:imeOptions="actionDone"
-            android:singleLine="true"
-            android:textColor="@color/text_primary"
-            android:textColorHint="@color/text_muted"
-            android:textSize="14sp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_tmdb_img_label"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <EditText
-            android:id="@+id/etTmdbImageUrl"
-            android:layout_width="match_parent"
-            android:layout_height="40dp"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="10dp"
-            android:background="@drawable/bg_input_selector"
-            android:hint="https://image.tmdb.org/t/p/w342"
-            android:inputType="textUri"
-            android:nextFocusDown="@+id/btnToggleDoh"
-            android:nextFocusUp="@+id/etTmdbApiUrl"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:imeOptions="actionDone"
-            android:singleLine="true"
-            android:textColor="@color/text_primary"
-            android:textColorHint="@color/text_muted"
-            android:textSize="14sp" />
-
-        <!-- Network & DPI Bypass Row -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_network_bypass_label"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="8dp"
-            android:orientation="horizontal">
-
-            <TextView
-                android:id="@+id/btnToggleDoh"
-                android:layout_width="0dp"
-                android:layout_height="38dp"
-                android:layout_marginEnd="8dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_chip_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusDown="@+id/etNetworkProxy"
-                android:nextFocusLeft="@+id/btnToggleDoh"
-                android:nextFocusRight="@+id/btnToggleDpiBypass"
-                android:nextFocusUp="@+id/etTmdbImageUrl"
-                android:text="@string/net_doh_on"
-                android:textColor="@color/text_primary"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/btnToggleDpiBypass"
-                android:layout_width="0dp"
-                android:layout_height="38dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_chip_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusDown="@+id/etNetworkProxy"
-                android:nextFocusLeft="@+id/btnToggleDoh"
-                android:nextFocusRight="@+id/btnToggleDpiBypass"
-                android:nextFocusUp="@+id/etTmdbImageUrl"
-                android:text="@string/net_dpi_off"
-                android:textColor="@color/text_primary"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_proxy_label"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <EditText
-            android:id="@+id/etNetworkProxy"
-            android:layout_width="match_parent"
-            android:layout_height="40dp"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="10dp"
-            android:background="@drawable/bg_input_selector"
-            android:hint="@string/settings_proxy_hint"
-            android:imeOptions="actionDone"
-            android:inputType="textUri"
-            android:nextFocusDown="@+id/btnTorrServeManager"
-            android:nextFocusUp="@+id/btnToggleDoh"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:singleLine="true"
-            android:textColor="@color/text_primary"
-            android:textColorHint="@color/text_muted"
-            android:textSize="14sp" />
-
-        <!-- Maintenance & Backup Row -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/settings_maintenance_label"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="10dp"
-            android:orientation="horizontal">
-
-            <TextView
-                android:id="@+id/btnTorrServeManager"
-                android:layout_width="0dp"
-                android:layout_height="38dp"
-                android:layout_marginEnd="6dp"
-                android:layout_weight="1.15"
-                android:background="@drawable/bg_button_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusDown="@+id/btnCheckMirrors"
-                android:nextFocusLeft="@+id/btnTorrServeManager"
-                android:nextFocusRight="@+id/btnBackupExport"
-                android:nextFocusUp="@+id/etNetworkProxy"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp"
-                android:text="@string/btn_torrserve_manager"
-                android:textColor="@color/text_button_accent_selector"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/btnBackupExport"
-                android:layout_width="0dp"
-                android:layout_height="38dp"
-                android:layout_marginEnd="6dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_button_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusDown="@+id/btnCancelSettings"
-                android:nextFocusLeft="@+id/btnTorrServeManager"
-                android:nextFocusRight="@+id/btnBackupImport"
-                android:nextFocusUp="@+id/etNetworkProxy"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp"
-                android:text="@string/btn_backup_export"
-                android:textColor="@color/text_primary"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/btnBackupImport"
-                android:layout_width="0dp"
-                android:layout_height="38dp"
-                android:layout_marginEnd="6dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_button_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusDown="@+id/btnCancelSettings"
-                android:nextFocusLeft="@+id/btnBackupExport"
-                android:nextFocusRight="@+id/btnExportLogs"
-                android:nextFocusUp="@+id/etNetworkProxy"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp"
-                android:text="@string/btn_backup_import"
-                android:textColor="@color/text_primary"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/btnExportLogs"
-                android:layout_width="0dp"
-                android:layout_height="38dp"
-                android:layout_weight="0.95"
-                android:background="@drawable/bg_button_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusDown="@+id/btnSaveSettings"
-                android:nextFocusLeft="@+id/btnBackupImport"
-                android:nextFocusRight="@+id/btnExportLogs"
-                android:nextFocusUp="@+id/etNetworkProxy"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp"
-                android:text="@string/btn_export_logs"
-                android:textColor="@color/text_primary"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <!-- Mirror Check Results Panel -->
-        <LinearLayout
-            android:id="@+id/layoutMirrorResults"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
-            android:background="@drawable/bg_input_selector"
+            android:layout_height="match_parent"
+            android:gravity="center"
             android:orientation="vertical"
-            android:paddingStart="12dp"
-            android:paddingTop="10dp"
-            android:paddingEnd="12dp"
-            android:paddingBottom="10dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp">
+
+            <!-- Row 1: Player, Network, Catalog -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_marginBottom="12dp"
+                android:layout_weight="1"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:id="@+id/tilePlayer"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginEnd="12dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_settings_tile_selector"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:nextFocusDown="@+id/tileSearch"
+                    android:nextFocusLeft="@+id/tilePlayer"
+                    android:nextFocusRight="@+id/tileNetwork"
+                    android:nextFocusUp="@+id/tilePlayer"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:contentDescription="@string/settings_hub_player"
+                        android:src="@drawable/ic_settings_player" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:text="@string/settings_hub_player"
+                        android:textColor="@color/text_primary"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvTilePlayerStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:ellipsize="end"
+                        android:maxLines="2"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/tileNetwork"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginEnd="12dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_settings_tile_selector"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:nextFocusDown="@+id/tileTorrServe"
+                    android:nextFocusLeft="@+id/tilePlayer"
+                    android:nextFocusRight="@+id/tileCatalog"
+                    android:nextFocusUp="@+id/tileNetwork"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:contentDescription="@string/settings_hub_network"
+                        android:src="@drawable/ic_settings_network" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:text="@string/settings_hub_network"
+                        android:textColor="@color/text_primary"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvTileNetworkStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:ellipsize="end"
+                        android:maxLines="2"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/tileCatalog"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_settings_tile_selector"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:nextFocusDown="@+id/tileSystem"
+                    android:nextFocusLeft="@+id/tileNetwork"
+                    android:nextFocusRight="@+id/tileCatalog"
+                    android:nextFocusUp="@+id/tileCatalog"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:contentDescription="@string/settings_hub_catalog"
+                        android:src="@drawable/ic_settings_catalog" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:text="@string/settings_hub_catalog"
+                        android:textColor="@color/text_primary"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvTileCatalogStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:ellipsize="end"
+                        android:maxLines="2"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Row 2: Search, TorrServe, System -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:id="@+id/tileSearch"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginEnd="12dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_settings_tile_selector"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:nextFocusDown="@+id/btnCancelSettings"
+                    android:nextFocusLeft="@+id/tileSearch"
+                    android:nextFocusRight="@+id/tileTorrServe"
+                    android:nextFocusUp="@+id/tilePlayer"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:contentDescription="@string/settings_hub_search"
+                        android:src="@drawable/ic_settings_search" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:text="@string/settings_hub_search"
+                        android:textColor="@color/text_primary"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvTileSearchStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:ellipsize="end"
+                        android:maxLines="2"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/tileTorrServe"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginEnd="12dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_settings_tile_selector"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:nextFocusDown="@+id/btnCancelSettings"
+                    android:nextFocusLeft="@+id/tileSearch"
+                    android:nextFocusRight="@+id/tileSystem"
+                    android:nextFocusUp="@+id/tileNetwork"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:contentDescription="@string/settings_hub_torrserve"
+                        android:src="@drawable/ic_settings_torrserve" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:text="@string/settings_hub_torrserve"
+                        android:textColor="@color/text_primary"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvTileTorrServeStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:ellipsize="end"
+                        android:maxLines="2"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/tileSystem"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_settings_tile_selector"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:nextFocusDown="@+id/btnSaveSettings"
+                    android:nextFocusLeft="@+id/tileTorrServe"
+                    android:nextFocusRight="@+id/tileSystem"
+                    android:nextFocusUp="@+id/tileCatalog"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <ImageView
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:contentDescription="@string/settings_hub_system"
+                        android:src="@drawable/ic_settings_system" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:text="@string/settings_hub_system"
+                        android:textColor="@color/text_primary"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvTileSystemStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:ellipsize="end"
+                        android:maxLines="2"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- SECTION DETAIL VIEW: Only the active section is visible -->
+        <ScrollView
+            android:id="@+id/scrollSettings"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fadeScrollbars="false"
+            android:fillViewport="true"
             android:visibility="gone">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
+                android:orientation="vertical"
+                android:paddingEnd="4dp"
+                android:paddingBottom="10dp">
 
-                <ProgressBar
-                    android:id="@+id/progressMirrorCheck"
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
-                    android:layout_marginEnd="8dp"
-                    android:indeterminateTint="@color/accent_emerald"
-                    android:visibility="gone" />
-
-                <TextView
-                    android:id="@+id/tvMirrorCheckStatus"
-                    android:layout_width="0dp"
+                <!-- ==================== SECTION 1: PLAYER ==================== -->
+                <LinearLayout
+                    android:id="@+id/sectionPlayer"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/checking_mirrors"
-                    android:textColor="@color/text_primary"
-                    android:textSize="13sp"
-                    android:textStyle="bold" />
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_player_label"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="5dp"
+                        android:layout_marginBottom="12dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/btnPlayerBuiltin"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_chip_selector"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:maxLines="2"
+                            android:nextFocusDown="@+id/btnBufferFast"
+                            android:nextFocusLeft="@+id/btnPlayerBuiltin"
+                            android:nextFocusRight="@+id/btnPlayerVlc"
+                            android:nextFocusUp="@+id/btnSettingsBack"
+                            android:paddingStart="6dp"
+                            android:paddingEnd="6dp"
+                            android:text="@string/player_engine_media3"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btnPlayerVlc"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1.25"
+                            android:background="@drawable/bg_chip_selector"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:maxLines="2"
+                            android:nextFocusDown="@+id/btnBufferStandard"
+                            android:nextFocusLeft="@+id/btnPlayerBuiltin"
+                            android:nextFocusRight="@+id/btnPlayerExternal"
+                            android:nextFocusUp="@+id/btnSettingsBack"
+                            android:paddingStart="6dp"
+                            android:paddingEnd="6dp"
+                            android:text="@string/player_engine_vlc"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btnPlayerExternal"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_weight="0.85"
+                            android:background="@drawable/bg_chip_selector"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:maxLines="2"
+                            android:nextFocusDown="@+id/btnBuffer4k"
+                            android:nextFocusLeft="@+id/btnPlayerVlc"
+                            android:nextFocusRight="@+id/btnPlayerExternal"
+                            android:nextFocusUp="@+id/btnSettingsBack"
+                            android:paddingStart="6dp"
+                            android:paddingEnd="6dp"
+                            android:text="@string/player_engine_external"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_buffer_label"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="5dp"
+                        android:layout_marginBottom="12dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/btnBufferFast"
+                            android:layout_width="0dp"
+                            android:layout_height="38dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_chip_selector"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:nextFocusDown="@+id/btnToggleCornerStats"
+                            android:nextFocusLeft="@+id/btnBufferFast"
+                            android:nextFocusRight="@+id/btnBufferStandard"
+                            android:nextFocusUp="@+id/btnPlayerBuiltin"
+                            android:text="@string/buffer_fast"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btnBufferStandard"
+                            android:layout_width="0dp"
+                            android:layout_height="38dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_chip_selector"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:nextFocusDown="@+id/btnToggleCornerStats"
+                            android:nextFocusLeft="@+id/btnBufferFast"
+                            android:nextFocusRight="@+id/btnBuffer4k"
+                            android:nextFocusUp="@+id/btnPlayerVlc"
+                            android:text="@string/buffer_standard"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btnBuffer4k"
+                            android:layout_width="0dp"
+                            android:layout_height="38dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_chip_selector"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:nextFocusDown="@+id/btnTogglePixelShift"
+                            android:nextFocusLeft="@+id/btnBufferStandard"
+                            android:nextFocusRight="@+id/btnBuffer4k"
+                            android:nextFocusUp="@+id/btnPlayerExternal"
+                            android:text="@string/buffer_4k"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_player_hud_label"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="5dp"
+                        android:layout_marginBottom="12dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/btnToggleCornerStats"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_marginEnd="8dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_chip_selector"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:nextFocusDown="@+id/btnCornerTopRight"
+                            android:nextFocusLeft="@+id/btnToggleCornerStats"
+                            android:nextFocusRight="@+id/btnTogglePixelShift"
+                            android:nextFocusUp="@+id/btnBufferFast"
+                            android:text="@string/player_corner_stats_on"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btnTogglePixelShift"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_chip_selector"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:nextFocusDown="@+id/btnCornerBottomRight"
+                            android:nextFocusLeft="@+id/btnToggleCornerStats"
+                            android:nextFocusRight="@+id/btnTogglePixelShift"
+                            android:nextFocusUp="@+id/btnBuffer4k"
+                            android:text="@string/player_pixel_shift_on"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/player_corner_pos_label"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="5dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/btnCornerTopRight"
+                            android:layout_width="0dp"
+                            android:layout_height="38dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_chip_selector"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:nextFocusDown="@+id/btnCancelSettings"
+                            android:nextFocusLeft="@+id/btnCornerTopRight"
+                            android:nextFocusRight="@+id/btnCornerTopLeft"
+                            android:nextFocusUp="@+id/btnToggleCornerStats"
+                            android:text="@string/player_corner_top_right"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btnCornerTopLeft"
+                            android:layout_width="0dp"
+                            android:layout_height="38dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_chip_selector"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:nextFocusDown="@+id/btnCancelSettings"
+                            android:nextFocusLeft="@+id/btnCornerTopRight"
+                            android:nextFocusRight="@+id/btnCornerBottomRight"
+                            android:nextFocusUp="@+id/btnToggleCornerStats"
+                            android:text="@string/player_corner_top_left"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btnCornerBottomRight"
+                            android:layout_width="0dp"
+                            android:layout_height="38dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_chip_selector"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:nextFocusDown="@+id/btnSaveSettings"
+                            android:nextFocusLeft="@+id/btnCornerTopLeft"
+                            android:nextFocusRight="@+id/btnCornerBottomRight"
+                            android:nextFocusUp="@+id/btnTogglePixelShift"
+                            android:text="@string/player_corner_bottom_right"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- ==================== SECTION 2: NETWORK & BYPASS ==================== -->
+                <LinearLayout
+                    android:id="@+id/sectionNetwork"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_network_bypass_label"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="5dp"
+                        android:layout_marginBottom="12dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/btnToggleDoh"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_marginEnd="8dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_chip_selector"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:nextFocusDown="@+id/etNetworkProxy"
+                            android:nextFocusLeft="@+id/btnToggleDoh"
+                            android:nextFocusRight="@+id/btnToggleDpiBypass"
+                            android:nextFocusUp="@+id/btnSettingsBack"
+                            android:text="@string/net_doh_on"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btnToggleDpiBypass"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_chip_selector"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:nextFocusDown="@+id/etNetworkProxy"
+                            android:nextFocusLeft="@+id/btnToggleDoh"
+                            android:nextFocusRight="@+id/btnToggleDpiBypass"
+                            android:nextFocusUp="@+id/btnSettingsBack"
+                            android:text="@string/net_dpi_off"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_proxy_label"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+
+                    <EditText
+                        android:id="@+id/etNetworkProxy"
+                        android:layout_width="match_parent"
+                        android:layout_height="42dp"
+                        android:layout_marginTop="5dp"
+                        android:layout_marginBottom="12dp"
+                        android:background="@drawable/bg_input_selector"
+                        android:hint="@string/settings_proxy_hint"
+                        android:imeOptions="actionDone"
+                        android:inputType="textUri"
+                        android:nextFocusDown="@+id/btnCheckMirrors"
+                        android:nextFocusUp="@+id/btnToggleDoh"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:singleLine="true"
+                        android:textColor="@color/text_primary"
+                        android:textColorHint="@color/text_muted"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:id="@+id/btnCheckMirrors"
+                        android:layout_width="wrap_content"
+                        android:layout_height="40dp"
+                        android:layout_marginBottom="10dp"
+                        android:background="@drawable/bg_button_selector"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:nextFocusDown="@+id/btnCancelSettings"
+                        android:nextFocusUp="@+id/etNetworkProxy"
+                        android:paddingStart="18dp"
+                        android:paddingEnd="18dp"
+                        android:text="@string/btn_check_mirrors"
+                        android:textColor="@color/text_button_accent_selector"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:id="@+id/layoutMirrorResults"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_input_selector"
+                        android:orientation="vertical"
+                        android:paddingStart="12dp"
+                        android:paddingTop="10dp"
+                        android:paddingEnd="12dp"
+                        android:paddingBottom="10dp"
+                        android:visibility="gone">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <ProgressBar
+                                android:id="@+id/progressMirrorCheck"
+                                android:layout_width="18dp"
+                                android:layout_height="18dp"
+                                android:layout_marginEnd="8dp"
+                                android:indeterminateTint="@color/accent_emerald"
+                                android:visibility="gone" />
+
+                            <TextView
+                                android:id="@+id/tvMirrorCheckStatus"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:textColor="@color/text_primary"
+                                android:textSize="13sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/layoutMirrorList"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:orientation="vertical" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- ==================== SECTION 3: CATALOG ==================== -->
+                <LinearLayout
+                    android:id="@+id/sectionCatalog"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_tmdb_label"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/btnToggleTmdbShowcase"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="5dp"
+                        android:layout_marginBottom="8dp"
+                        android:background="@drawable/bg_chip_selector"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:nextFocusDown="@+id/btnCatalogTorrents"
+                        android:nextFocusUp="@+id/btnSettingsBack"
+                        android:text="@string/tmdb_showcase_on"
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="10dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/btnCatalogTorrents"
+                            android:layout_width="0dp"
+                            android:layout_height="38dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1.25"
+                            android:background="@drawable/bg_chip_selector"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:nextFocusDown="@+id/etKinopoiskApiKey"
+                            android:nextFocusLeft="@+id/btnCatalogTorrents"
+                            android:nextFocusRight="@+id/btnCatalogKinopoisk"
+                            android:nextFocusUp="@+id/btnToggleTmdbShowcase"
+                            android:text="@string/catalog_provider_torrents"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btnCatalogKinopoisk"
+                            android:layout_width="0dp"
+                            android:layout_height="38dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_chip_selector"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:nextFocusDown="@+id/etKinopoiskApiKey"
+                            android:nextFocusLeft="@+id/btnCatalogTorrents"
+                            android:nextFocusRight="@+id/btnCatalogTmdb"
+                            android:nextFocusUp="@+id/btnToggleTmdbShowcase"
+                            android:text="@string/catalog_provider_kinopoisk"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btnCatalogTmdb"
+                            android:layout_width="0dp"
+                            android:layout_height="38dp"
+                            android:layout_weight="0.8"
+                            android:background="@drawable/bg_chip_selector"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:nextFocusDown="@+id/etKinopoiskApiKey"
+                            android:nextFocusLeft="@+id/btnCatalogKinopoisk"
+                            android:nextFocusRight="@+id/btnCatalogTmdb"
+                            android:nextFocusUp="@+id/btnToggleTmdbShowcase"
+                            android:text="@string/catalog_provider_tmdb"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_kp_key_label"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+
+                    <EditText
+                        android:id="@+id/etKinopoiskApiKey"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="4dp"
+                        android:layout_marginBottom="8dp"
+                        android:background="@drawable/bg_input_selector"
+                        android:hint="Ключ X-API-KEY с kinopoiskapiunofficial.tech"
+                        android:imeOptions="actionDone"
+                        android:inputType="text"
+                        android:nextFocusDown="@+id/etTmdbApiKey"
+                        android:nextFocusUp="@+id/btnCatalogKinopoisk"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:singleLine="true"
+                        android:textColor="@color/text_primary"
+                        android:textColorHint="@color/text_muted"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_tmdb_key_label"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+
+                    <EditText
+                        android:id="@+id/etTmdbApiKey"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="4dp"
+                        android:layout_marginBottom="8dp"
+                        android:background="@drawable/bg_input_selector"
+                        android:hint="Бесплатный ключ с themoviedb.org"
+                        android:imeOptions="actionDone"
+                        android:inputType="text"
+                        android:nextFocusDown="@+id/etTmdbApiUrl"
+                        android:nextFocusUp="@+id/etKinopoiskApiKey"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:singleLine="true"
+                        android:textColor="@color/text_primary"
+                        android:textColorHint="@color/text_muted"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_tmdb_api_label"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+
+                    <EditText
+                        android:id="@+id/etTmdbApiUrl"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="4dp"
+                        android:layout_marginBottom="8dp"
+                        android:background="@drawable/bg_input_selector"
+                        android:hint="https://api.themoviedb.org/3"
+                        android:imeOptions="actionDone"
+                        android:inputType="textUri"
+                        android:nextFocusDown="@+id/etTmdbImageUrl"
+                        android:nextFocusUp="@+id/etTmdbApiKey"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:singleLine="true"
+                        android:textColor="@color/text_primary"
+                        android:textColorHint="@color/text_muted"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_tmdb_img_label"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+
+                    <EditText
+                        android:id="@+id/etTmdbImageUrl"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="4dp"
+                        android:background="@drawable/bg_input_selector"
+                        android:hint="https://image.tmdb.org/t/p/w342"
+                        android:imeOptions="actionDone"
+                        android:inputType="textUri"
+                        android:nextFocusDown="@+id/btnSaveSettings"
+                        android:nextFocusUp="@+id/etTmdbApiUrl"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:singleLine="true"
+                        android:textColor="@color/text_primary"
+                        android:textColorHint="@color/text_muted"
+                        android:textSize="14sp" />
+                </LinearLayout>
+
+                <!-- ==================== SECTION 4: SEARCH SOURCES ==================== -->
+                <LinearLayout
+                    android:id="@+id/sectionSearch"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_sources_label"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="5dp"
+                        android:layout_marginBottom="12dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/btnTogglePublicJacRed"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_marginEnd="8dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_chip_selector"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:nextFocusDown="@+id/etCustomParserUrl"
+                            android:nextFocusLeft="@+id/btnTogglePublicJacRed"
+                            android:nextFocusRight="@+id/btnToggleRutorFallback"
+                            android:nextFocusUp="@+id/btnSettingsBack"
+                            android:text="@string/source_jacred_on"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btnToggleRutorFallback"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_chip_selector"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:nextFocusDown="@+id/etCustomParserUrl"
+                            android:nextFocusLeft="@+id/btnTogglePublicJacRed"
+                            android:nextFocusRight="@+id/btnToggleRutorFallback"
+                            android:nextFocusUp="@+id/btnSettingsBack"
+                            android:text="@string/source_rutor_on"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_jacred_label"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+
+                    <EditText
+                        android:id="@+id/etCustomParserUrl"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="4dp"
+                        android:layout_marginBottom="10dp"
+                        android:background="@drawable/bg_input_selector"
+                        android:hint="http://192.168.1.10:9117/api/v2.0/indexers/all/results/torznab/api"
+                        android:imeOptions="actionDone"
+                        android:inputType="textUri"
+                        android:nextFocusDown="@+id/etApiKey"
+                        android:nextFocusUp="@+id/btnTogglePublicJacRed"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:singleLine="true"
+                        android:textColor="@color/text_primary"
+                        android:textColorHint="@color/text_muted"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_apikey_label"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+
+                    <EditText
+                        android:id="@+id/etApiKey"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="4dp"
+                        android:layout_marginBottom="10dp"
+                        android:background="@drawable/bg_input_selector"
+                        android:hint="Оставьте пустым для публичных зеркал"
+                        android:imeOptions="actionDone"
+                        android:inputType="text"
+                        android:nextFocusDown="@+id/etRutorMirror"
+                        android:nextFocusUp="@+id/etCustomParserUrl"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:singleLine="true"
+                        android:textColor="@color/text_primary"
+                        android:textColorHint="@color/text_muted"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_rutor_label"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+
+                    <EditText
+                        android:id="@+id/etRutorMirror"
+                        android:layout_width="match_parent"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="4dp"
+                        android:background="@drawable/bg_input_selector"
+                        android:hint="https://rutor.info"
+                        android:imeOptions="actionDone"
+                        android:inputType="textUri"
+                        android:nextFocusDown="@+id/btnSaveSettings"
+                        android:nextFocusUp="@+id/etApiKey"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:singleLine="true"
+                        android:textColor="@color/text_primary"
+                        android:textColorHint="@color/text_muted"
+                        android:textSize="14sp" />
+                </LinearLayout>
+
+                <!-- ==================== SECTION 5: TORRSERVE ==================== -->
+                <LinearLayout
+                    android:id="@+id/sectionTorrServe"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_torrserve_label"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+
+                    <EditText
+                        android:id="@+id/etTorrServeUrl"
+                        android:layout_width="match_parent"
+                        android:layout_height="42dp"
+                        android:layout_marginTop="5dp"
+                        android:layout_marginBottom="14dp"
+                        android:background="@drawable/bg_input_selector"
+                        android:hint="http://127.0.0.1:8090"
+                        android:imeOptions="actionDone"
+                        android:inputType="textUri"
+                        android:nextFocusDown="@+id/btnTorrServeManager"
+                        android:nextFocusUp="@+id/btnSettingsBack"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:singleLine="true"
+                        android:textColor="@color/text_primary"
+                        android:textColorHint="@color/text_muted"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:id="@+id/btnTorrServeManager"
+                        android:layout_width="wrap_content"
+                        android:layout_height="42dp"
+                        android:background="@drawable/bg_button_selector"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:nextFocusDown="@+id/btnSaveSettings"
+                        android:nextFocusUp="@+id/etTorrServeUrl"
+                        android:paddingStart="20dp"
+                        android:paddingEnd="20dp"
+                        android:text="@string/btn_torrserve_manager"
+                        android:textColor="@color/text_button_accent_selector"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <!-- ==================== SECTION 6: SYSTEM ==================== -->
+                <LinearLayout
+                    android:id="@+id/sectionSystem"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_updates_label"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="5dp"
+                        android:layout_marginBottom="16dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/btnToggleAutoUpdate"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_marginEnd="8dp"
+                            android:layout_weight="1.1"
+                            android:background="@drawable/bg_chip_selector"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:nextFocusDown="@+id/btnBackupExport"
+                            android:nextFocusLeft="@+id/btnToggleAutoUpdate"
+                            android:nextFocusRight="@+id/btnCheckUpdates"
+                            android:nextFocusUp="@+id/btnSettingsBack"
+                            android:text="@string/auto_update_on"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btnCheckUpdates"
+                            android:layout_width="0dp"
+                            android:layout_height="40dp"
+                            android:layout_weight="0.9"
+                            android:background="@drawable/bg_button_selector"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:nextFocusDown="@+id/btnExportLogs"
+                            android:nextFocusLeft="@+id/btnToggleAutoUpdate"
+                            android:nextFocusRight="@+id/btnCheckUpdates"
+                            android:nextFocusUp="@+id/btnSettingsBack"
+                            android:text="@string/btn_check_update_now"
+                            android:textColor="@color/text_button_accent_selector"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/settings_maintenance_label"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="5dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/btnBackupExport"
+                            android:layout_width="0dp"
+                            android:layout_height="42dp"
+                            android:layout_marginEnd="8dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_button_selector"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:nextFocusDown="@+id/btnCancelSettings"
+                            android:nextFocusLeft="@+id/btnBackupExport"
+                            android:nextFocusRight="@+id/btnBackupImport"
+                            android:nextFocusUp="@+id/btnToggleAutoUpdate"
+                            android:paddingStart="8dp"
+                            android:paddingEnd="8dp"
+                            android:text="@string/btn_backup_export"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btnBackupImport"
+                            android:layout_width="0dp"
+                            android:layout_height="42dp"
+                            android:layout_marginEnd="8dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_button_selector"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:nextFocusDown="@+id/btnCancelSettings"
+                            android:nextFocusLeft="@+id/btnBackupExport"
+                            android:nextFocusRight="@+id/btnExportLogs"
+                            android:nextFocusUp="@+id/btnToggleAutoUpdate"
+                            android:paddingStart="8dp"
+                            android:paddingEnd="8dp"
+                            android:text="@string/btn_backup_import"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/btnExportLogs"
+                            android:layout_width="0dp"
+                            android:layout_height="42dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_button_selector"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center"
+                            android:nextFocusDown="@+id/btnSaveSettings"
+                            android:nextFocusLeft="@+id/btnBackupImport"
+                            android:nextFocusRight="@+id/btnExportLogs"
+                            android:nextFocusUp="@+id/btnCheckUpdates"
+                            android:paddingStart="8dp"
+                            android:paddingEnd="8dp"
+                            android:text="@string/btn_export_logs"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </LinearLayout>
             </LinearLayout>
+        </ScrollView>
+    </FrameLayout>
 
-            <LinearLayout
-                android:id="@+id/layoutMirrorList"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:orientation="vertical" />
-        </LinearLayout>
-
-        </LinearLayout>
-    </ScrollView>
-
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:layout_marginTop="8dp"
-        android:layout_marginBottom="10dp"
-        android:background="@color/border_subtle" />
-
-    <!-- Action Buttons Row (pinned outside scroll) -->
+    <!-- Bottom Action Footer -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center_vertical"
+        android:layout_marginTop="14dp"
+        android:gravity="end|center_vertical"
         android:orientation="horizontal">
 
-            <TextView
-                android:id="@+id/btnCheckMirrors"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:background="@drawable/bg_button_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusDown="@+id/btnCheckMirrors"
-                android:nextFocusLeft="@+id/btnCheckMirrors"
-                android:nextFocusRight="@+id/btnCancelSettings"
-                android:nextFocusUp="@+id/btnTorrServeManager"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:text="@string/btn_check_mirrors"
-                android:textColor="@color/text_button_accent_selector"
-                android:textSize="13sp"
-                android:textStyle="bold" />
+        <TextView
+            android:id="@+id/btnCancelSettings"
+            android:layout_width="wrap_content"
+            android:layout_height="42dp"
+            android:layout_marginEnd="10dp"
+            android:background="@drawable/bg_button_selector"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:minWidth="120dp"
+            android:nextFocusDown="@+id/btnCancelSettings"
+            android:nextFocusLeft="@+id/btnCancelSettings"
+            android:nextFocusRight="@+id/btnSaveSettings"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:text="@string/btn_cancel"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp"
+            android:textStyle="bold" />
 
-            <View
-                android:layout_width="0dp"
-                android:layout_height="1dp"
-                android:layout_weight="1" />
-
-            <TextView
-                android:id="@+id/btnCancelSettings"
-                android:layout_width="106dp"
-                android:layout_height="40dp"
-                android:layout_marginEnd="10dp"
-                android:background="@drawable/bg_button_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusDown="@+id/btnCancelSettings"
-                android:nextFocusLeft="@+id/btnCheckMirrors"
-                android:nextFocusRight="@+id/btnSaveSettings"
-                android:nextFocusUp="@+id/btnBackupImport"
-                android:text="@string/btn_cancel"
-                android:textColor="@color/text_primary"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/btnSaveSettings"
-                android:layout_width="124dp"
-                android:layout_height="40dp"
-                android:background="@drawable/bg_button_selector"
-                android:clickable="true"
-                android:focusable="true"
-                android:gravity="center"
-                android:nextFocusDown="@+id/btnSaveSettings"
-                android:nextFocusLeft="@+id/btnCancelSettings"
-                android:nextFocusRight="@+id/btnSaveSettings"
-                android:nextFocusUp="@+id/btnExportLogs"
-                android:text="@string/btn_save"
-                android:textColor="@color/text_primary"
-                android:textSize="14sp"
-                android:textStyle="bold" />
+        <TextView
+            android:id="@+id/btnSaveSettings"
+            android:layout_width="wrap_content"
+            android:layout_height="42dp"
+            android:background="@drawable/bg_button_selector"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:minWidth="140dp"
+            android:nextFocusDown="@+id/btnSaveSettings"
+            android:nextFocusLeft="@+id/btnCancelSettings"
+            android:nextFocusRight="@+id/btnSaveSettings"
+            android:paddingStart="24dp"
+            android:paddingEnd="24dp"
+            android:text="@string/btn_save"
+            android:textColor="@color/text_button_accent_selector"
+            android:textSize="14sp"
+            android:textStyle="bold" />
     </LinearLayout>
 </LinearLayout>
