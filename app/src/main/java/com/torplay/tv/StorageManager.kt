@@ -537,6 +537,71 @@ class StorageManager(context: Context) {
         return 0L
     }
 
+    fun hasWatchHistoryFor(link: String, hash: String = ""): Boolean {
+        val cleanHash = hash.trim().lowercase(Locale.US)
+        val cleanLink = link.trim()
+        if (cleanLink.isNotBlank() || cleanHash.isNotBlank()) {
+            val history = getWatchHistory()
+            if (history.any { entry ->
+                    (cleanLink.isNotBlank() && entry.link == cleanLink) ||
+                        (cleanHash.isNotBlank() && entry.link.contains(cleanHash, ignoreCase = true))
+                }
+            ) {
+                return true
+            }
+        }
+        if (cleanHash.isNotBlank() && getLastEpisodeForTorrent(cleanHash) != null) {
+            return true
+        }
+        return false
+    }
+
+    private fun mediaBoostKey(link: String, hash: String): String {
+        val h = hash.trim().lowercase(Locale.US)
+        if (h.isNotBlank()) return "h:$h"
+        val l = link.trim()
+        if (l.isNotBlank()) return "l:${l.hashCode()}"
+        return ""
+    }
+
+    private fun readTorrentAudioBoostJson(): JSONObject {
+        val raw = prefs.getString(KEY_TORRENT_AUDIO_BOOST_MAP, "{}").orEmpty()
+        return runCatching { JSONObject(raw) }.getOrElse { JSONObject() }
+    }
+
+    fun getAudioBoostForMedia(link: String, hash: String = ""): Int {
+        val key = mediaBoostKey(link, hash)
+        if (key.isBlank()) return 0
+        val map = readTorrentAudioBoostJson()
+        if (map.has(key)) {
+            return map.optInt(key, 0).coerceIn(0, 12)
+        }
+        val altLinkKey = if (link.isNotBlank()) "l:${link.trim().hashCode()}" else ""
+        if (altLinkKey.isNotBlank() && altLinkKey != key && map.has(altLinkKey)) {
+            return map.optInt(altLinkKey, 0).coerceIn(0, 12)
+        }
+        return 0
+    }
+
+    fun setAudioBoostForMedia(link: String, hash: String = "", boostDb: Int) {
+        val key = mediaBoostKey(link, hash)
+        if (key.isBlank()) return
+        val clamped = boostDb.coerceIn(0, 12)
+        val map = readTorrentAudioBoostJson()
+        if (clamped <= 0) {
+            map.remove(key)
+        } else {
+            map.put(key, clamped)
+            val keys = map.keys().asSequence().toList()
+            if (keys.size > 60) {
+                for (oldKey in keys.take(keys.size - 60)) {
+                    if (oldKey != key) map.remove(oldKey)
+                }
+            }
+        }
+        prefs.edit().putString(KEY_TORRENT_AUDIO_BOOST_MAP, map.toString()).apply()
+    }
+
     fun getFavorites(): List<FavoriteQuery> {
         val raw = prefs.getString(KEY_FAVORITES, "[]").orEmpty()
         val list = mutableListOf<FavoriteQuery>()
@@ -783,6 +848,7 @@ class StorageManager(context: Context) {
             put(KEY_WATCHED_EPISODES, watchedArr)
             put(KEY_EPISODE_PROGRESS, readEpisodeProgressJson())
             put(KEY_LAST_EPISODE_MAP, readLastEpisodeJson())
+            put(KEY_TORRENT_AUDIO_BOOST_MAP, readTorrentAudioBoostJson())
             put(KEY_WATCH_HISTORY, JSONArray(prefs.getString(KEY_WATCH_HISTORY, "[]") ?: "[]"))
             put(KEY_FAVORITES, JSONArray(prefs.getString(KEY_FAVORITES, "[]") ?: "[]"))
             put(KEY_FAVORITE_TORRENTS, JSONArray(prefs.getString(KEY_FAVORITE_TORRENTS, "[]") ?: "[]"))
@@ -863,6 +929,9 @@ class StorageManager(context: Context) {
         obj.optJSONObject(KEY_LAST_EPISODE_MAP)?.let { lastMap ->
             editor.putString(KEY_LAST_EPISODE_MAP, lastMap.toString())
         }
+        obj.optJSONObject(KEY_TORRENT_AUDIO_BOOST_MAP)?.let { boostMap ->
+            editor.putString(KEY_TORRENT_AUDIO_BOOST_MAP, boostMap.toString())
+        }
         obj.optJSONArray(KEY_WATCH_HISTORY)?.let { arr ->
             editor.putString(KEY_WATCH_HISTORY, arr.toString())
         }
@@ -895,6 +964,7 @@ class StorageManager(context: Context) {
         private const val KEY_TMDB_API_BASE = "tmdb_api_base"
         private const val KEY_TMDB_IMAGE_BASE = "tmdb_image_base"
         private const val KEY_AUDIO_BOOST_DB = "audio_boost_db"
+        private const val KEY_TORRENT_AUDIO_BOOST_MAP = "torrent_audio_boost_map"
         private const val KEY_USE_DOH_DNS = "use_doh_dns"
         private const val KEY_USE_DPI_BYPASS = "use_dpi_bypass"
         private const val KEY_NETWORK_PROXY_URL = "network_proxy_url"

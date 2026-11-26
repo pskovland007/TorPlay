@@ -13,4 +13,12 @@
     <string name="player_engine_media3">Встроенный (Media3)</string>
     <string name="player_engine_vlc">Встроенный (VLC — все кодеки)</string>
     <string name="player_engine_external">Внешний плеер</string>
+    <string name="player_engine_switch_vlc_hw">VLC (HW)</string>
+    <string name="player_engine_switch_vlc_sw">VLC (SW)</string>
+    <string name="player_engine_switch_media3">Media3</string>
+    <string name="alt_sources_title">Раздача не загружается (нет сидов)</string>
+    <string name="alt_sources_searching">Ищем живые альтернативы…</string>
+    <string name="alt_sources_empty">Живые альтернативы не найдены. Попробуйте «Найти вручную».</string>
+    <string name="alt_sources_btn_wait">Подождать ещё</string>
+    <string name="alt_sources_btn_manual">Найти вручную</string>
 </resources>

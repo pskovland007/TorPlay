@@ -19,7 +19,8 @@ class PlayerController(private val context: Context) {
         link: String,
         fileId: Int,
         startPositionMs: Long,
-        engine: Int = StorageManager.PLAYER_ENGINE_MEDIA3
+        engine: Int = StorageManager.PLAYER_ENGINE_MEDIA3,
+        fromHistory: Boolean = false
     ): LaunchResult {
         val resolvedEngine = if (engine == StorageManager.PLAYER_ENGINE_VLC) {
             StorageManager.PLAYER_ENGINE_VLC
@@ -34,6 +35,7 @@ class PlayerController(private val context: Context) {
             putExtra(BuiltInPlayerActivity.EXTRA_FILE_ID, fileId)
             putExtra(BuiltInPlayerActivity.EXTRA_START_POS_MS, startPositionMs)
             putExtra(BuiltInPlayerActivity.EXTRA_PLAYER_ENGINE, resolvedEngine)
+            putExtra(BuiltInPlayerActivity.EXTRA_FROM_HISTORY, fromHistory)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         val label = if (resolvedEngine == StorageManager.PLAYER_ENGINE_VLC) {

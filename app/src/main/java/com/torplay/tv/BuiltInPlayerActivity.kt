@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Context
+import android.content.Intent
 import android.media.AudioManager
 import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
@@ -67,6 +68,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private lateinit var storage: StorageManager
     private lateinit var playerPrefs: PlayerPrefs
     private lateinit var torrServeClient: TorrServeClient
+    private lateinit var searchEngine: SearchEngine
 
     private enum class TouchGestureMode { NONE, BRIGHTNESS, VOLUME, SEEK }
 
@@ -93,6 +95,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private lateinit var btnAudioBoost: TextView
     private lateinit var btnSubtitles: TextView
     private lateinit var btnResizeMode: TextView
+    private lateinit var btnEngineSwitch: TextView
     private lateinit var btnEpisodes: TextView
     private lateinit var btnNextEpisode: TextView
     private lateinit var btnAutoNext: TextView
@@ -126,6 +129,10 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private var vlcLastBufferProgressAtMs: Long = 0L
     private var vlcRequestedStartTimeMs: Long = 0L
     private var vlcMediaEndedHandled: Boolean = false
+    private var vlcHasStartedPlayback: Boolean = false
+    private val vlcThrashTimestamps = ArrayDeque<Long>()
+    private var vlcThrashLastHandledAtMs: Long = 0L
+    private var lastManualSeekAtMs: Long = 0L
 
     private var streamUrl: String = ""
     private var title: String = ""
@@ -162,6 +169,18 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private var media3StallRecoveryCount: Int = 0
     private var vlcStallRecoveryCount: Int = 0
     private var lastTorrStatsLogSummary: String = "нет данных"
+    private var lastTorrActivePeers: Int = -1
+    private var lastTorrTotalPeers: Int = 0
+    private var lastTorrSpeedBytes: Double = 0.0
+    private var lastTorrPreloadPct: Int = 0
+    private var deadTorrentSinceMs: Long = 0L
+    private var altSourcesDialogShownForHash: String = ""
+    private var altSourcesSnoozeUntilMs: Long = 0L
+    private var altSourcesDialog: Dialog? = null
+    private var altSearchJob: Job? = null
+    private var altSwitchJob: Job? = null
+    private var initialTorrentHash: String = ""
+    private var fromHistoryLaunch: Boolean = false
 
     private var nextCountdownSec: Int = 0
     private var nextCardDismissedForCurrent: Boolean = false
@@ -249,6 +268,8 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private fun seekToPositionMs(targetMs: Long) {
         val safeTarget = targetMs.coerceAtLeast(0L)
         val now = System.currentTimeMillis()
+        lastManualSeekAtMs = now
+        vlcThrashTimestamps.clear()
         lastAdvancePosMs = -1L
         lastAdvanceRealTimeMs = 0L
         smoothAdvanceAccumMs = 0L
@@ -295,6 +316,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         storage = StorageManager(this)
         playerPrefs = PlayerPrefs(this)
         torrServeClient = TorrServeClient(storage)
+        searchEngine = SearchEngine(storage)
 
         streamUrl = intent.getStringExtra(EXTRA_STREAM_URL).orEmpty()
         title = intent.getStringExtra(EXTRA_TITLE).orEmpty().ifBlank { "Видео" }
@@ -302,6 +324,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         link = intent.getStringExtra(EXTRA_LINK).orEmpty()
         fileId = intent.getIntExtra(EXTRA_FILE_ID, 1)
         startPositionMs = intent.getLongExtra(EXTRA_START_POS_MS, 0L)
+        fromHistoryLaunch = intent.getBooleanExtra(EXTRA_FROM_HISTORY, false)
         val requestedEngine = intent.getIntExtra(EXTRA_PLAYER_ENGINE, storage.playerEngine)
         activeEngine = if (requestedEngine == StorageManager.PLAYER_ENGINE_VLC) {
             StorageManager.PLAYER_ENGINE_VLC
@@ -310,19 +333,29 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         }
 
         torrentHash = extractHashFromStreamOrLink(streamUrl, link)
+        initialTorrentHash = torrentHash
         if (torrentHash.isNotBlank()) {
             storage.setLastEpisodeForTorrent(torrentHash, fileId)
         }
 
         resizeModeIndex = playerPrefs.resizeModeIndex
         autoNextEnabled = playerPrefs.autoNextEpisode
-        audioBoostDb = storage.audioBoostDb
+        val isContinuing = fromHistoryLaunch ||
+            startPositionMs > 2_000L ||
+            storage.hasWatchHistoryFor(link, torrentHash)
+        audioBoostDb = if (isContinuing) {
+            storage.getAudioBoostForMedia(link, torrentHash)
+        } else {
+            storage.setAudioBoostForMedia(link, torrentHash, 0)
+            0
+        }
 
         bindViews()
         setupControls()
         setupTouchGestures()
         updateSurfaceVisibility()
         applyResizeMode(showFeedback = false)
+        updateEngineSwitchUi()
         updateAudioBoostUi()
         updateAutoNextUi()
         updateSeriesControlsUi()
@@ -347,6 +380,8 @@ class BuiltInPlayerActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        runCatching { altSourcesDialog?.dismiss() }
+        altSourcesDialog = null
         savePlaybackProgress()
         mainHandler.removeCallbacksAndMessages(null)
         uiScope.cancel()
@@ -462,6 +497,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         btnAudioBoost = findViewById(R.id.btnAudioBoost)
         btnSubtitles = findViewById(R.id.btnSubtitles)
         btnResizeMode = findViewById(R.id.btnResizeMode)
+        btnEngineSwitch = findViewById(R.id.btnEngineSwitch)
         btnEpisodes = findViewById(R.id.btnEpisodes)
         btnNextEpisode = findViewById(R.id.btnNextEpisode)
         btnAutoNext = findViewById(R.id.btnAutoNext)
@@ -537,6 +573,10 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             resizeModeIndex = (resizeModeIndex + 1) % 4
             playerPrefs.resizeModeIndex = resizeModeIndex
             applyResizeMode(showFeedback = true)
+            scheduleOsdAutoHide()
+        }
+        btnEngineSwitch.setOnClickListener {
+            cyclePlayerEngineMode()
             scheduleOsdAutoHide()
         }
         btnEpisodes.setOnClickListener {
@@ -797,7 +837,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private fun cycleAudioBoost() {
         val nextIdx = (BOOST_STEPS_DB.indexOf(audioBoostDb) + 1) % BOOST_STEPS_DB.size
         audioBoostDb = BOOST_STEPS_DB[nextIdx]
-        storage.audioBoostDb = audioBoostDb
+        storage.setAudioBoostForMedia(link, torrentHash, audioBoostDb)
         updateAudioBoostUi()
         if (isVlcEngine()) {
             applyVlcAudioBoost()
@@ -879,7 +919,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         }
 
         // Dynamic single-row left/right focus routing
-        val rowButtons = mutableListOf<TextView>(btnAudioTrack, btnAudioBoost, btnSubtitles, btnResizeMode)
+        val rowButtons = mutableListOf<TextView>(btnAudioTrack, btnAudioBoost, btnSubtitles, btnResizeMode, btnEngineSwitch)
         if (multi) rowButtons.add(btnEpisodes)
         if (hasNext) rowButtons.add(btnNextEpisode)
         if (multi) rowButtons.add(btnAutoNext)
@@ -943,6 +983,66 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         }
     }
 
+    private fun updateEngineSwitchUi() {
+        val labelRes = when {
+            !isVlcEngine() -> R.string.player_engine_switch_media3
+            vlcForceSoftwareDecode -> R.string.player_engine_switch_vlc_sw
+            else -> R.string.player_engine_switch_vlc_hw
+        }
+        btnEngineSwitch.text = getString(labelRes)
+        btnEngineSwitch.isSelected = isVlcEngine() && vlcForceSoftwareDecode
+    }
+
+    private fun cyclePlayerEngineMode() {
+        if (isFinishing || isDestroyed) return
+        val resumeAt = currentPositionMs()
+            .coerceAtLeast(vlcRequestedStartTimeMs)
+            .coerceAtLeast(pendingInitialSeekMs)
+        savePlaybackProgress()
+        vlcThrashTimestamps.clear()
+        media3StallRecoveryCount = 0
+        vlcStallRecoveryCount = 0
+        stallRecoveryCooldownUntilMs = System.currentTimeMillis() + 8_000L
+
+        when {
+            !isVlcEngine() -> {
+                // Media3 -> VLC HW
+                AppLogger.i("Player", "Ручное переключение движка: Media3 -> VLC (HW) с ${resumeAt}мс")
+                releaseMedia3Player()
+                activeEngine = StorageManager.PLAYER_ENGINE_VLC
+                vlcForceSoftwareDecode = false
+                vlcRetriedSoftwareDecode = false
+                updateSurfaceVisibility()
+                updateEngineSwitchUi()
+                initVlcPlayer(resumeAt)
+                showQuickHudMessage("⚙ Движок: VLC (HW)")
+            }
+            !vlcForceSoftwareDecode -> {
+                // VLC HW -> VLC SW
+                AppLogger.i("Player", "Ручное переключение движка: VLC (HW) -> VLC (SW) с ${resumeAt}мс")
+                vlcForceSoftwareDecode = true
+                vlcRetriedSoftwareDecode = true
+                updateEngineSwitchUi()
+                prepareVlcMedia(streamUrl, resumeAt)
+                showQuickHudMessage("⚙ Движок: VLC (SW)")
+            }
+            else -> {
+                // VLC SW -> Media3
+                AppLogger.i("Player", "Ручное переключение движка: VLC (SW) -> Media3 с ${resumeAt}мс")
+                releaseVlcPlayer()
+                activeEngine = StorageManager.PLAYER_ENGINE_MEDIA3
+                vlcForceSoftwareDecode = false
+                hasAutoFallenBackToVlc = false
+                hasRetriedCodecFallback = false
+                forceHevcFallback = false
+                updateSurfaceVisibility()
+                updateEngineSwitchUi()
+                initMedia3Player(resumeAt)
+                showQuickHudMessage("⚙ Движок: Media3")
+            }
+        }
+    }
+
     private fun switchToVlcEngine(resumeAtMs: Long) {
         if (isFinishing || isDestroyed) return
         AppLogger.w("Player", "Автопереключение Media3 -> LibVLC с позиции ${resumeAtMs}мс ($title)")
@@ -951,6 +1051,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         vlcForceSoftwareDecode = false
         vlcRetriedSoftwareDecode = false
         updateSurfaceVisibility()
+        updateEngineSwitchUi()
         initVlcPlayer(resumeAtMs)
         showQuickHudMessage("⚡ Подхвачено встроенным VLC")
     }
@@ -1178,9 +1279,9 @@ class BuiltInPlayerActivity : AppCompatActivity() {
 
     private fun vlcNetworkCachingMs(): Int {
         return when (storage.bufferProfile) {
-            StorageManager.BUFFER_PROFILE_FAST -> 1_500
-            StorageManager.BUFFER_PROFILE_4K -> 4_500
-            else -> 3_000
+            StorageManager.BUFFER_PROFILE_FAST -> 2_000
+            StorageManager.BUFFER_PROFILE_4K -> 7_000
+            else -> 4_000
         }
     }
 
@@ -1193,7 +1294,8 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             add("--live-caching=$cacheMs")
             add("--http-reconnect")
             add("--audio-time-stretch")
-            add("--avcodec-fast")
+            add("--drop-late-frames")
+            add("--skip-frames")
         }
 
         val vlcInstance = runCatching { LibVLC(this, options) }.getOrElse { err ->
@@ -1247,6 +1349,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                             bufferingStartedAtMs = now
                             vlcLastBufferPct = pct
                             vlcLastBufferProgressAtMs = now
+                            recordVlcBufferingReentry(now)
                         } else if (pct > vlcLastBufferPct) {
                             vlcLastBufferPct = pct
                             vlcLastBufferProgressAtMs = now
@@ -1257,6 +1360,8 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                 }
 
                 VlcMediaPlayer.Event.Playing -> {
+                    vlcHasStartedPlayback = true
+                    deadTorrentSinceMs = 0L
                     clearBufferingOverlay()
                     btnPlayPause.text = "❚❚"
 
@@ -1367,6 +1472,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                         if (!vlcRetriedSoftwareDecode) {
                             vlcRetriedSoftwareDecode = true
                             vlcForceSoftwareDecode = true
+                            updateEngineSwitchUi()
                             AppLogger.w("Player", "Повторный запуск LibVLC в программном режиме (pos=$resumeAt)")
                             Toast.makeText(
                                 this@BuiltInPlayerActivity,
@@ -1408,6 +1514,8 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         appliedSavedTracksForItem = false
         nextCardDismissedForCurrent = false
         vlcMediaEndedHandled = false
+        vlcHasStartedPlayback = false
+        vlcThrashTimestamps.clear()
         vlcLastKnownTimeMs = seekPosMs.coerceAtLeast(0L)
         vlcLastKnownLengthMs = 0L
         vlcLastProgressTimeMs = -1L
@@ -1441,6 +1549,8 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         media.addOption(":network-caching=$cacheMs")
         media.addOption(":file-caching=$cacheMs")
         media.addOption(":http-reconnect")
+        media.addOption(":drop-late-frames")
+        media.addOption(":skip-frames")
         if (seekPosMs > 2_000L) {
             val startSec = seekPosMs / 1000L
             media.addOption(":start-time=$startSec")
@@ -1548,7 +1658,26 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             val info = runCatching { torrServeClient.getTorrentInfo(torrentHash) }.getOrNull() ?: return@launch
             val pct = info.preloadPercent()
             val speed = if (info.downloadSpeed > 0.0) info.formattedSpeed() else "0 МБ/с"
+            lastTorrActivePeers = info.activePeers
+            lastTorrTotalPeers = info.totalPeers
+            lastTorrSpeedBytes = info.downloadSpeed
+            lastTorrPreloadPct = pct
             lastTorrStatsLogSummary = "preload=$pct%, speed=$speed, peers=${info.activePeers}/${info.totalPeers}"
+
+            val nowPoll = System.currentTimeMillis()
+            val recentlyPlayed = lastAdvanceRealTimeMs > 0L && (nowPoll - lastAdvanceRealTimeMs) < 10_000L
+            if ((isBufferingNow || !recentlyPlayed) &&
+                info.activePeers == 0 &&
+                info.downloadSpeed < 10_000.0 &&
+                pct < 5
+            ) {
+                if (deadTorrentSinceMs == 0L) {
+                    deadTorrentSinceMs = nowPoll
+                }
+            } else if (info.activePeers > 0 || info.downloadSpeed >= 10_000.0 || pct >= 15) {
+                deadTorrentSinceMs = 0L
+            }
+
             updateTorrentStatsSummary(info)
             updateStreamInfoText()
             if (isBufferingNow) {
@@ -1568,8 +1697,46 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         }
     }
 
+    private fun recordVlcBufferingReentry(now: Long) {
+        if (!vlcHasStartedPlayback) return
+        if (now - lastManualSeekAtMs < 6_000L) return
+        vlcThrashTimestamps.addLast(now)
+        while (vlcThrashTimestamps.isNotEmpty() && now - vlcThrashTimestamps.first() > 35_000L) {
+            vlcThrashTimestamps.removeFirst()
+        }
+        if (vlcThrashTimestamps.size >= 4 && now - vlcThrashLastHandledAtMs >= 30_000L) {
+            val count = vlcThrashTimestamps.size
+            vlcThrashTimestamps.clear()
+            vlcThrashLastHandledAtMs = now
+            val resumeAt = currentPositionMs()
+            AppLogger.w(
+                "Player",
+                "VLC качели буферизации ($count срывов за 35с, buf=${vlcBufferPercent}%, sw=$vlcForceSoftwareDecode, $lastTorrStatsLogSummary)"
+            )
+            if (!vlcForceSoftwareDecode) {
+                vlcForceSoftwareDecode = true
+                vlcRetriedSoftwareDecode = true
+                updateEngineSwitchUi()
+                mainHandler.post {
+                    if (isFinishing || isDestroyed) return@post
+                    Toast.makeText(
+                        this,
+                        "4K/VLC: частая буферизация — переключение декодера…",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    prepareVlcMedia(streamUrl, resumeAt)
+                }
+            } else {
+                mainHandler.post {
+                    if (isFinishing || isDestroyed) return@post
+                    showQuickHudMessage("⚠ Нестабильный поток — попробуйте кнопку «Движок»")
+                }
+            }
+        }
+    }
+
     private fun checkPlaybackStallWatchdog() {
-        if (isFinishing || isDestroyed || isUserSeeking || nextCardActive) return
+        if (isFinishing || isDestroyed || isUserSeeking || nextCardActive || altSourcesDialog?.isShowing == true) return
         val now = System.currentTimeMillis()
         val pos = currentPositionMs()
         val playing = isCurrentlyPlaying()
@@ -1590,6 +1757,30 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             } else if (lastAdvancePosMs < 0L || kotlin.math.abs(delta) > 4_000L) {
                 lastAdvancePosMs = pos
                 smoothAdvanceAccumMs = 0L
+            }
+        }
+
+        // Check dead torrent (no seeds / 0 speed / 0 active peers) BEFORE useless reconnect loops
+        val resumeSnapshot = pos
+            .coerceAtLeast(vlcRequestedStartTimeMs)
+            .coerceAtLeast(pendingInitialSeekMs)
+            .coerceAtLeast(startPositionMs)
+        val isDeadTorrent = lastTorrActivePeers == 0 &&
+            lastTorrSpeedBytes < 10_000.0 &&
+            lastTorrPreloadPct < 5
+        if (isDeadTorrent && deadTorrentSinceMs > 0L) {
+            val deadElapsed = now - deadTorrentSinceMs
+            if (deadElapsed >= 18_000L &&
+                now >= altSourcesSnoozeUntilMs &&
+                altSourcesDialogShownForHash != torrentHash
+            ) {
+                altSourcesDialogShownForHash = torrentHash
+                AppLogger.w(
+                    "Player",
+                    "Раздача без сидов (${deadElapsed / 1000L}с, $lastTorrStatsLogSummary) — предлагаем альтернативы"
+                )
+                showAlternativeSourcesDialog(resumeAtMs = resumeSnapshot)
+                return
             }
         }
 
@@ -1664,6 +1855,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                 if (!vlcForceSoftwareDecode) {
                     vlcStallRecoveryCount++
                     vlcForceSoftwareDecode = true
+                    updateEngineSwitchUi()
                     AppLogger.w(
                         "Player",
                         "VLC decoder_stall (buf=${vlcBufferPercent}%, frozen=${decoderFrozenMs}мс, $lastTorrStatsLogSummary) — переход на программный декодер с ${resumeAt}мс"
@@ -1698,6 +1890,17 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             // Do not interrupt while VLC buffer percentage is actively climbing
             if (stalledMs < 22_000L || noBufGrowthMs < 12_000L) return
 
+            if (isDeadTorrent && altSourcesDialogShownForHash != torrentHash && now >= altSourcesSnoozeUntilMs) {
+                altSourcesDialogShownForHash = torrentHash
+                AppLogger.w("Player", "VLC: раздача без сидов ($lastTorrStatsLogSummary) — открываем альтернативы")
+                showAlternativeSourcesDialog(resumeAtMs = resumeAt)
+                return
+            }
+            if (isDeadTorrent && vlcStallRecoveryCount >= 1) {
+                // Already retried once on a dead torrent; don't hammer TorrServe
+                stallRecoveryCooldownUntilMs = now + 25_000L
+                return
+            }
             stallRecoveryCooldownUntilMs = now + 20_000L
             vlcStallRecoveryCount++
             AppLogger.w(
@@ -2560,6 +2763,261 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         return m?.groupValues?.get(1)?.lowercase(Locale.US).orEmpty()
     }
 
+    private fun cleanMovieQueryFromTitle(rawTitle: String, includeYear: Boolean = true): String {
+        val raw = rawTitle.trim()
+        if (raw.isBlank()) return ""
+
+        // Extract standalone 4-digit release year (avoiding ranges like 2007-2019)
+        val yearMatches = YEAR_REGEX.findAll(raw).map { it.groupValues[1] }.toList()
+        val releaseYear = if (yearMatches.size == 1 && !YEAR_RANGE_REGEX.containsMatchIn(raw)) {
+            yearMatches.first()
+        } else {
+            ""
+        }
+
+        var mainPart = raw
+            .substringBefore(" / ")
+            .substringBefore('/')
+            .substringBefore('[')
+            .substringBefore('(')
+            .substringBefore('|')
+            .trim()
+
+        mainPart = RELEASE_TAGS_REGEX.replace(mainPart, " ")
+            .replace(Regex("[._]+"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim(' ', '-', ':', '—', '–', ',', ';')
+
+        if (mainPart.length < 2) {
+            mainPart = raw.replace(Regex("[\\[\\]()/|]"), " ")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+                .take(40)
+        }
+
+        return if (includeYear && releaseYear.isNotBlank() && !mainPart.contains(releaseYear)) {
+            "$mainPart $releaseYear"
+        } else {
+            mainPart
+        }
+    }
+
+    private fun showAlternativeSourcesDialog(resumeAtMs: Long) {
+        if (isFinishing || isDestroyed) return
+        if (altSourcesDialog?.isShowing == true) return
+
+        pausePlayback()
+        hideOsd()
+        layoutPlayerBuffering.visibility = View.GONE
+
+        val cleanWithYear = cleanMovieQueryFromTitle(title, includeYear = true)
+        val cleanNoYear = cleanMovieQueryFromTitle(title, includeYear = false)
+        val displayQuery = cleanWithYear.ifBlank { cleanNoYear.ifBlank { title.take(36) } }
+
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(R.layout.dialog_alt_sources)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.84).toInt(),
+            (resources.displayMetrics.heightPixels * 0.82).toInt()
+        )
+        altSourcesDialog = dialog
+
+        val tvSubtitle = dialog.findViewById<TextView>(R.id.tvAltSubtitle)
+        val layoutLoading = dialog.findViewById<LinearLayout>(R.id.layoutAltLoading)
+        val tvLoadingText = dialog.findViewById<TextView>(R.id.tvAltLoadingText)
+        val tvEmpty = dialog.findViewById<TextView>(R.id.tvAltEmpty)
+        val rvAlt = dialog.findViewById<RecyclerView>(R.id.rvAltTorrents)
+        val btnWait = dialog.findViewById<TextView>(R.id.btnAltWait)
+        val btnManual = dialog.findViewById<TextView>(R.id.btnAltManualSearch)
+
+        val posText = if (resumeAtMs > 2_000L) " • продолжим с ${formatDuration(resumeAtMs)}" else ""
+        tvSubtitle.text = "Поиск: «$displayQuery» (пиры: $lastTorrActivePeers/$lastTorrTotalPeers)$posText"
+        tvLoadingText.text = "Ищем живые раздачи для «$displayQuery»…"
+
+        val altAdapter = TorrentAdapter(
+            isFavorite = { storage.isFavoriteTorrent(it) },
+            onItemClick = { selected ->
+                dialog.dismiss()
+                switchToAlternativeTorrent(selected, resumeAtMs)
+            },
+            onToggleFavorite = { item ->
+                val added = storage.toggleFavoriteTorrent(item)
+                Toast.makeText(
+                    this,
+                    if (added) "★ Добавлено в избранное" else "Убрано из избранного",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        )
+        rvAlt.layoutManager = LinearLayoutManager(this)
+        rvAlt.adapter = altAdapter
+
+        btnWait.setOnClickListener {
+            altSourcesSnoozeUntilMs = System.currentTimeMillis() + 45_000L
+            deadTorrentSinceMs = 0L
+            altSourcesDialogShownForHash = ""
+            dialog.dismiss()
+            resumePlayback()
+            showQuickHudMessage("⏳ Продолжаем ожидание пиров…")
+        }
+
+        btnManual.setOnClickListener {
+            dialog.dismiss()
+            val intent = Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                putExtra(MainActivity.EXTRA_AUTO_SEARCH_QUERY, displayQuery)
+            }
+            startActivity(intent)
+            finish()
+        }
+
+        dialog.setOnDismissListener {
+            altSearchJob?.cancel()
+            if (altSourcesDialog === dialog) {
+                altSourcesDialog = null
+            }
+        }
+
+        dialog.show()
+        btnManual.requestFocus()
+
+        altSearchJob?.cancel()
+        altSearchJob = uiScope.launch {
+            val currentHashLower = torrentHash.trim().lowercase(Locale.US)
+            val currentLinkTrim = link.trim()
+
+            fun filterLive(items: List<TorrentItem>): List<TorrentItem> {
+                return items
+                    .filter { it.seeds > 0 && it.playableLink.isNotBlank() }
+                    .filterNot { item ->
+                        val sameLink = currentLinkTrim.isNotBlank() && item.playableLink.trim() == currentLinkTrim
+                        val sameHash = currentHashLower.isNotBlank() &&
+                            item.playableLink.contains(currentHashLower, ignoreCase = true)
+                        sameLink || sameHash
+                    }
+                    .sortedByDescending { it.seeds }
+                    .take(25)
+            }
+
+            var live = filterLive(runCatching { searchEngine.search(displayQuery).items }.getOrDefault(emptyList()))
+            if (live.isEmpty() && cleanNoYear.isNotBlank() && !cleanNoYear.equals(displayQuery, ignoreCase = true)) {
+                tvLoadingText.text = "Пробуем запрос «$cleanNoYear»…"
+                live = filterLive(runCatching { searchEngine.search(cleanNoYear).items }.getOrDefault(emptyList()))
+            }
+
+            if (!dialog.isShowing) return@launch
+            layoutLoading.visibility = View.GONE
+            if (live.isNotEmpty()) {
+                tvEmpty.visibility = View.GONE
+                rvAlt.visibility = View.VISIBLE
+                altAdapter.submitList(live)
+                rvAlt.post {
+                    rvAlt.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus()
+                        ?: rvAlt.getChildAt(0)?.requestFocus()
+                }
+            } else {
+                rvAlt.visibility = View.GONE
+                tvEmpty.visibility = View.VISIBLE
+                btnManual.requestFocus()
+            }
+        }
+    }
+
+    private fun switchToAlternativeTorrent(item: TorrentItem, resumeAtMs: Long) {
+        val newLink = item.playableLink
+        if (newLink.isBlank()) {
+            Toast.makeText(this, "У раздачи нет ссылки", Toast.LENGTH_SHORT).show()
+            return
+        }
+        altSwitchJob?.cancel()
+        altSwitchJob = uiScope.launch {
+            isBufferingNow = true
+            bufferingStartedAtMs = System.currentTimeMillis()
+            tvBufferingTitle.text = "Подключение новой раздачи…"
+            tvBufferingStats.text = item.title.take(64)
+            layoutPlayerBuffering.visibility = View.VISIBLE
+            btnStartFromBeginning.visibility = View.GONE
+
+            val oldHash = torrentHash
+            val added = runCatching {
+                withContext(Dispatchers.IO) {
+                    if (oldHash.isNotBlank()) {
+                        runCatching { torrServeClient.stopAndRemoveTorrent(oldHash) }
+                    }
+                    torrServeClient.addTorrent(newLink, item.title)
+                }
+            }.onFailure { err ->
+                AppLogger.e("Player", "Ошибка переключения на альтернативу: ${err.message}", err)
+            }.getOrNull()
+
+            if (added == null || isFinishing || isDestroyed) {
+                layoutPlayerBuffering.visibility = View.GONE
+                Toast.makeText(this@BuiltInPlayerActivity, "Не удалось подключить альтернативную раздачу", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+
+            val newHash = added.hash.ifBlank { extractHashFromStreamOrLink("", newLink) }
+            val files = if (added.files.isNotEmpty()) {
+                val vids = torrServeClient.filterAndSortVideos(added.files)
+                if (vids.isNotEmpty()) vids else added.files
+            } else {
+                torrServeClient.waitForVideoFiles(newHash.ifBlank { newLink }, timeoutMs = 14_000L)
+            }
+
+            val chosenFile = when {
+                files.isEmpty() -> TorrServeFile(id = 1, path = "${item.title}.mkv", length = 0L)
+                files.size == 1 -> files.first()
+                currentEpisodeIndex in files.indices -> files[currentEpisodeIndex]
+                else -> files.maxByOrNull { it.length } ?: files.first()
+            }
+
+            val hashOrLink = newHash.ifBlank { newLink }
+            withContext(Dispatchers.IO) {
+                runCatching { torrServeClient.triggerPreload(hashOrLink, chosenFile.id) }
+            }
+
+            link = newLink
+            torrentHash = newHash
+            title = item.title
+            fileId = chosenFile.id
+            episodes = files
+            currentEpisodeIndex = files.indexOfFirst { it.id == chosenFile.id }
+            episodeLabel = if (files.size > 1) chosenFile.fileName else ""
+            streamUrl = torrServeClient.buildStreamUrl(hashOrLink, chosenFile.id, chosenFile.fileName)
+            startPositionMs = resumeAtMs
+
+            if (newHash.isNotBlank()) {
+                storage.setLastEpisodeForTorrent(newHash, chosenFile.id)
+                if (!newHash.equals(initialTorrentHash, ignoreCase = true)) {
+                    lastSwitchedTorrentHash = newHash
+                }
+            }
+            if (audioBoostDb > 0) {
+                storage.setAudioBoostForMedia(link, torrentHash, audioBoostDb)
+            }
+
+            // Reset stall & dead-torrent trackers for the fresh source
+            deadTorrentSinceMs = 0L
+            altSourcesDialogShownForHash = ""
+            altSourcesSnoozeUntilMs = 0L
+            lastTorrActivePeers = -1
+            lastTorrSpeedBytes = 0.0
+            lastTorrPreloadPct = 0
+            media3StallRecoveryCount = 0
+            vlcStallRecoveryCount = 0
+            hasRetriedCodecFallback = false
+            vlcRetriedSoftwareDecode = false
+            vlcThrashTimestamps.clear()
+
+            updateSeriesControlsUi()
+            showQuickHudMessage("▶ Новая раздача (${item.seeds} сид.)")
+            AppLogger.i("Player", "Переключено на альтернативную раздачу (${item.seeds} сид., pos=${resumeAtMs}мс): ${item.title}")
+            prepareActiveMedia(streamUrl, resumeAtMs)
+        }
+    }
+
     companion object {
         const val EXTRA_STREAM_URL = "extra_stream_url"
         const val EXTRA_TITLE = "extra_title"
@@ -2568,8 +3026,24 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         const val EXTRA_FILE_ID = "extra_file_id"
         const val EXTRA_START_POS_MS = "extra_start_pos_ms"
         const val EXTRA_PLAYER_ENGINE = "extra_player_engine"
+        const val EXTRA_FROM_HISTORY = "extra_from_history"
+
+        @Volatile
+        private var lastSwitchedTorrentHash: String = ""
+
+        fun consumeSwitchedTorrentHash(): String {
+            val h = lastSwitchedTorrentHash
+            lastSwitchedTorrentHash = ""
+            return h
+        }
 
         private val BOOST_STEPS_DB = intArrayOf(0, 3, 6, 9, 12)
         private val BTIH_REGEX = Regex("btih:([a-zA-Z0-9]+)", RegexOption.IGNORE_CASE)
+        private val YEAR_REGEX = Regex("\\b((?:19|20)\\d{2})\\b")
+        private val YEAR_RANGE_REGEX = Regex("(?:19|20)\\d{2}\\s*[-–—]\\s*(?:19|20)\\d{2}")
+        private val RELEASE_TAGS_REGEX = Regex(
+            "\\b(2160p|1080p|720p|480p|4k|uhd|hdr10\\+?|hdr|dv|dolby\\s*vision|hevc|h\\.?265|x265|h\\.?264|x264|av1|10-?bit|web-?dl(?:rip)?|bdrip|bluray|blu-?ray|remux|hdrip|dvdrip|imax|hybrid|dub|mvo|dvo|avo|sub|rus|eng|ukr|ру|ст)\\b",
+            RegexOption.IGNORE_CASE
+        )
     }
 }

@@ -224,6 +224,23 @@ class MainActivity : AppCompatActivity() {
         etSearch.requestFocus()
         refreshTorrServeStatus(autoStart = true, silentOnly = true)
         scheduleAutoUpdateCheck(initialDelayMs = 1_500L)
+        handleAutoSearchIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleAutoSearchIntent(intent)
+    }
+
+    private fun handleAutoSearchIntent(intent: Intent?) {
+        val autoQuery = intent?.getStringExtra(EXTRA_AUTO_SEARCH_QUERY)?.trim().orEmpty()
+        if (autoQuery.isBlank()) return
+        intent?.removeExtra(EXTRA_AUTO_SEARCH_QUERY)
+        etSearch.setText(autoQuery)
+        etSearch.setSelection(autoQuery.length)
+        updateClearSearchButtonUi()
+        performSearch()
     }
 
     override fun onResume() {
@@ -232,9 +249,13 @@ class MainActivity : AppCompatActivity() {
             waitingForPlayerReturn = false
             val hashToStop = lastPlayedHash
             lastPlayedHash = ""
-            if (hashToStop.isNotBlank()) {
-                uiScope.launch {
+            val switchedHash = BuiltInPlayerActivity.consumeSwitchedTorrentHash()
+            uiScope.launch {
+                if (hashToStop.isNotBlank()) {
                     torrServeClient.stopAndRemoveTorrent(hashToStop)
+                }
+                if (switchedHash.isNotBlank() && !switchedHash.equals(hashToStop, ignoreCase = true)) {
+                    torrServeClient.stopAndRemoveTorrent(switchedHash)
                 }
             }
         }
@@ -1845,7 +1866,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun openTorrent(item: TorrentItem, forcedFileId: Int? = null, forcedEpisodeLabel: String = "") {
+    private fun openTorrent(item: TorrentItem, forcedFileId: Int? = null, forcedEpisodeLabel: String = "", fromHistory: Boolean = false) {
         val link = item.playableLink
         if (link.isBlank()) {
             Toast.makeText(this, "У раздачи нет magnet-ссылки", Toast.LENGTH_SHORT).show()
@@ -1908,7 +1929,8 @@ class MainActivity : AppCompatActivity() {
                     link = link,
                     displayTitle = item.title,
                     episodeLabel = forcedEpisodeLabel.ifBlank { matched.fileName },
-                    file = matched
+                    file = matched,
+                    fromHistory = fromHistory
                 )
             } else if (files.size > 1) {
                 hideLoadingOverlay()
@@ -1921,7 +1943,8 @@ class MainActivity : AppCompatActivity() {
                     link = link,
                     displayTitle = item.title,
                     episodeLabel = "",
-                    file = file
+                    file = file,
+                    fromHistory = fromHistory
                 )
             }
         }
@@ -1931,7 +1954,8 @@ class MainActivity : AppCompatActivity() {
         openTorrent(
             item = item,
             forcedFileId = entry.fileId,
-            forcedEpisodeLabel = entry.episodeLabel
+            forcedEpisodeLabel = entry.episodeLabel,
+            fromHistory = true
         )
     }
 
@@ -2029,7 +2053,8 @@ class MainActivity : AppCompatActivity() {
         link: String,
         displayTitle: String,
         episodeLabel: String,
-        file: TorrServeFile
+        file: TorrServeFile,
+        fromHistory: Boolean = false
     ) {
         val fullTitle = if (episodeLabel.isNotBlank()) "$displayTitle — $episodeLabel" else displayTitle
         showLoadingOverlay(fullTitle, "Буферизация потока…", showBuffer = true)
@@ -2063,7 +2088,8 @@ class MainActivity : AppCompatActivity() {
                 link = link,
                 fileId = file.id,
                 startPositionMs = savedPos,
-                engine = selectedEngine
+                engine = selectedEngine,
+                fromHistory = fromHistory
             )
         } else {
             tvLoadingStep.text = "Запуск внешнего плеера…"
@@ -2729,6 +2755,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
+        const val EXTRA_AUTO_SEARCH_QUERY = "extra_auto_search_query"
         private const val AUTO_UPDATE_COOLDOWN_MS = 15L * 60L * 1000L
         private val TRAILING_YEAR_REGEX = Regex("\\s+\\(?((?:19|20)\\d{2})\\)?$")
     }
