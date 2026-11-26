@@ -17,4 +17,11 @@
     <string name="ts_manager_clear_all">Очистить всё</string>
     <string name="ts_manager_close">Закрыть</string>
     <string name="ts_item_hint">OK — остановить и удалить</string>
+    <string name="settings_network_bypass_label">Сеть и обход блокировок (TorrServe всегда напрямую)</string>
+    <string name="net_doh_on">✓ DoH DNS: ВКЛ</string>
+    <string name="net_doh_off">✕ DoH DNS: ВЫКЛ</string>
+    <string name="net_dpi_on">✓ Обход DPI (TLS): ВКЛ</string>
+    <string name="net_dpi_off">✕ Обход DPI (TLS): ВЫКЛ</string>
+    <string name="settings_proxy_label">Прокси для каталога и поиска (необязательно)</string>
+    <string name="settings_proxy_hint">socks5://127.0.0.1:1080 или http://host:port</string>
 </resources>

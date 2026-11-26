@@ -19,15 +19,11 @@ import java.util.concurrent.TimeUnit
 
 class TorrServeClient(private val storage: StorageManager) {
 
-    private val shortClient = OkHttpClient.Builder()
-        .connectTimeout(2, TimeUnit.SECONDS)
-        .readTimeout(3, TimeUnit.SECONDS)
-        .build()
+    private val shortClient: OkHttpClient
+        get() = NetworkHelper.buildLocalApiClient(connectSec = 2L, readSec = 3L)
 
-    private val apiClient = OkHttpClient.Builder()
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .build()
+    private val apiClient: OkHttpClient
+        get() = NetworkHelper.buildLocalApiClient(connectSec = 5L, readSec = 15L)
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 

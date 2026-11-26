@@ -96,6 +96,9 @@ object AppLogger {
             append("Public JacRed: ").append(storage.usePublicJacRed)
                 .append(" | Rutor fallback: ").append(storage.useRutorFallback).append('\n')
             append("Custom parser configured: ").append(storage.customParserUrl.isNotBlank()).append('\n')
+            append("Network bypass: DoH=").append(storage.useDohDns)
+                .append(" | DPI-TLS=").append(storage.useDpiBypass)
+                .append(" | Proxy=").append(if (storage.networkProxyUrl.isNotBlank()) "set" else "none").append('\n')
             append("==============================\n\n")
             if (linesSnapshot.isEmpty()) {
                 append("(Записей пока нет)\n")

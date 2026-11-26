@@ -18,19 +18,12 @@ import javax.net.ssl.SSLException
 
 class KinopoiskClient(private val storage: StorageManager) {
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(12, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .build()
+    private val client: OkHttpClient
+        get() = NetworkHelper.getExternalClient(storage, connectSec = 8L, readSec = 12L)
 
-    private val probeClient = OkHttpClient.Builder()
-        .connectTimeout(6, TimeUnit.SECONDS)
-        .readTimeout(6, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .build()
+    private fun probeClient(overrideConfig: NetworkHelper.NetworkConfig? = null): OkHttpClient {
+        return NetworkHelper.getExternalClient(storage, connectSec = 6L, readSec = 6L, overrideConfig = overrideConfig)
+    }
 
     suspend fun fetchShelves(): CatalogShelves = withContext(Dispatchers.IO) {
         val apiKey = storage.kinopoiskApiKey
@@ -113,7 +106,10 @@ class KinopoiskClient(private val storage: StorageManager) {
         }.getOrNull()
     }
 
-    suspend fun probeConnection(apiKeyInput: String): MirrorCheckResult = withContext(Dispatchers.IO) {
+    suspend fun probeConnection(
+        apiKeyInput: String,
+        networkOverride: NetworkHelper.NetworkConfig? = null
+    ): MirrorCheckResult = withContext(Dispatchers.IO) {
         val key = apiKeyInput.trim()
         val label = "Кинопоиск (API)"
         if (key.isBlank()) {
@@ -125,7 +121,7 @@ class KinopoiskClient(private val storage: StorageManager) {
         val infoReq = buildRequest(key, "/api/v1/api_keys/$encodedKey")
 
         try {
-            probeClient.newCall(infoReq).execute().use { resp ->
+            probeClient(networkOverride).newCall(infoReq).execute().use { resp ->
                 val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(1L)
                 if (resp.code in 200..299) {
                     val raw = resp.body?.string().orEmpty()
@@ -148,7 +144,7 @@ class KinopoiskClient(private val storage: StorageManager) {
         // Fallback probe against collections endpoint if /api/v1/api_keys is unavailable
         val fallbackReq = buildRequest(key, "/api/v2.2/films/collections?type=TOP_POPULAR_MOVIES&page=1")
         try {
-            probeClient.newCall(fallbackReq).execute().use { resp ->
+            probeClient(networkOverride).newCall(fallbackReq).execute().use { resp ->
                 val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(1L)
                 val ok = resp.code in 200..299
                 val detail = when {

@@ -24,19 +24,12 @@ import javax.net.ssl.SSLException
 
 class SearchEngine(private val storage: StorageManager) {
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(7, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .build()
+    private val client: OkHttpClient
+        get() = NetworkHelper.getExternalClient(storage, connectSec = 7L, readSec = 10L)
 
-    private val probeClient = OkHttpClient.Builder()
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .build()
+    private fun probeClient(overrideConfig: NetworkHelper.NetworkConfig? = null): OkHttpClient {
+        return NetworkHelper.getExternalClient(storage, connectSec = 5L, readSec = 5L, overrideConfig = overrideConfig)
+    }
 
     private val publicJacRedMirrors = listOf(
         "https://jacred.xyz",
@@ -136,7 +129,8 @@ class SearchEngine(private val storage: StorageManager) {
     suspend fun checkMirrors(
         customUrl: String,
         apiKey: String,
-        rutorUrl: String
+        rutorUrl: String,
+        networkOverride: NetworkHelper.NetworkConfig? = null
     ): List<MirrorCheckResult> = withContext(Dispatchers.IO) {
         data class ProbeTarget(val name: String, val displayUrl: String, val probeUrl: String)
 
@@ -186,13 +180,18 @@ class SearchEngine(private val storage: StorageManager) {
         coroutineScope {
             targets.map { target ->
                 async {
-                    probeEndpoint(target.name, target.displayUrl, target.probeUrl)
+                    probeEndpoint(target.name, target.displayUrl, target.probeUrl, networkOverride)
                 }
             }.awaitAll()
         }
     }
 
-    private fun probeEndpoint(name: String, displayUrl: String, probeUrl: String): MirrorCheckResult {
+    private fun probeEndpoint(
+        name: String,
+        displayUrl: String,
+        probeUrl: String,
+        networkOverride: NetworkHelper.NetworkConfig? = null
+    ): MirrorCheckResult {
         val started = SystemClock.elapsedRealtime()
         val request = try {
             Request.Builder()
@@ -211,7 +210,7 @@ class SearchEngine(private val storage: StorageManager) {
         }
 
         return try {
-            probeClient.newCall(request).execute().use { response ->
+            probeClient(networkOverride).newCall(request).execute().use { response ->
                 val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(1L)
                 val code = response.code
                 val ok = code in 200..299

@@ -29,12 +29,8 @@ data class TorrentShowcaseShelves(
 
 class TorrentShowcaseClient(private val storage: StorageManager) {
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(7, TimeUnit.SECONDS)
-        .readTimeout(12, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .build()
+    private val client: OkHttpClient
+        get() = NetworkHelper.getExternalClient(storage, connectSec = 7L, readSec = 12L)
 
     private data class TaggedTorrent(
         val item: TorrentItem,

@@ -14,7 +14,7 @@ import okhttp3.Request
 import java.io.File
 import java.util.concurrent.TimeUnit
 
-class PosterLoader(context: Context) {
+class PosterLoader(context: Context, private val storage: StorageManager = StorageManager(context)) {
 
     private val cacheDir = File(context.applicationContext.cacheDir, "posters").apply { mkdirs() }
 
@@ -29,12 +29,8 @@ class PosterLoader(context: Context) {
         }
     }
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(6, TimeUnit.SECONDS)
-        .readTimeout(8, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .build()
+    private val client: OkHttpClient
+        get() = NetworkHelper.getExternalClient(storage, connectSec = 6L, readSec = 8L)
 
     fun load(scope: CoroutineScope, imageView: ImageView, url: String) {
         if (url.isBlank()) {

@@ -131,6 +131,24 @@ class StorageManager(context: Context) {
             prefs.edit().putInt(KEY_AUDIO_BOOST_DB, value.coerceIn(0, 12)).apply()
         }
 
+    var useDohDns: Boolean
+        get() = prefs.getBoolean(KEY_USE_DOH_DNS, true)
+        set(value) {
+            prefs.edit().putBoolean(KEY_USE_DOH_DNS, value).apply()
+        }
+
+    var useDpiBypass: Boolean
+        get() = prefs.getBoolean(KEY_USE_DPI_BYPASS, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_USE_DPI_BYPASS, value).apply()
+        }
+
+    var networkProxyUrl: String
+        get() = prefs.getString(KEY_NETWORK_PROXY_URL, "")?.trim().orEmpty()
+        set(value) {
+            prefs.edit().putString(KEY_NETWORK_PROXY_URL, value.trim()).apply()
+        }
+
     fun activeCatalogRequiresKey(): Boolean {
         return catalogProvider != CATALOG_PROVIDER_TORRENTS
     }
@@ -743,6 +761,9 @@ class StorageManager(context: Context) {
             put(KEY_PLAYER_ENGINE, playerEngine)
             put(KEY_BUFFER_PROFILE, bufferProfile)
             put(KEY_AUDIO_BOOST_DB, audioBoostDb)
+            put(KEY_USE_DOH_DNS, useDohDns)
+            put(KEY_USE_DPI_BYPASS, useDpiBypass)
+            put(KEY_NETWORK_PROXY_URL, networkProxyUrl)
             put(KEY_USE_PUBLIC_JACRED, usePublicJacRed)
             put(KEY_USE_RUTOR_FALLBACK, useRutorFallback)
             put(KEY_AUTO_CHECK_UPDATES, autoCheckUpdates)
@@ -783,6 +804,9 @@ class StorageManager(context: Context) {
         }
         if (obj.has(KEY_BUFFER_PROFILE)) editor.putInt(KEY_BUFFER_PROFILE, obj.optInt(KEY_BUFFER_PROFILE, BUFFER_PROFILE_STANDARD).coerceIn(BUFFER_PROFILE_FAST, BUFFER_PROFILE_4K))
         if (obj.has(KEY_AUDIO_BOOST_DB)) editor.putInt(KEY_AUDIO_BOOST_DB, obj.optInt(KEY_AUDIO_BOOST_DB, 0).coerceIn(0, 12))
+        if (obj.has(KEY_USE_DOH_DNS)) editor.putBoolean(KEY_USE_DOH_DNS, obj.optBoolean(KEY_USE_DOH_DNS, true))
+        if (obj.has(KEY_USE_DPI_BYPASS)) editor.putBoolean(KEY_USE_DPI_BYPASS, obj.optBoolean(KEY_USE_DPI_BYPASS, false))
+        if (obj.has(KEY_NETWORK_PROXY_URL)) editor.putString(KEY_NETWORK_PROXY_URL, obj.optString(KEY_NETWORK_PROXY_URL, "").trim())
         if (obj.has(KEY_USE_PUBLIC_JACRED)) editor.putBoolean(KEY_USE_PUBLIC_JACRED, obj.optBoolean(KEY_USE_PUBLIC_JACRED, true))
         if (obj.has(KEY_USE_RUTOR_FALLBACK)) editor.putBoolean(KEY_USE_RUTOR_FALLBACK, obj.optBoolean(KEY_USE_RUTOR_FALLBACK, true))
         if (obj.has(KEY_AUTO_CHECK_UPDATES)) editor.putBoolean(KEY_AUTO_CHECK_UPDATES, obj.optBoolean(KEY_AUTO_CHECK_UPDATES, true))
@@ -871,6 +895,9 @@ class StorageManager(context: Context) {
         private const val KEY_TMDB_API_BASE = "tmdb_api_base"
         private const val KEY_TMDB_IMAGE_BASE = "tmdb_image_base"
         private const val KEY_AUDIO_BOOST_DB = "audio_boost_db"
+        private const val KEY_USE_DOH_DNS = "use_doh_dns"
+        private const val KEY_USE_DPI_BYPASS = "use_dpi_bypass"
+        private const val KEY_NETWORK_PROXY_URL = "network_proxy_url"
         private const val KEY_DEFAULTS_V106_APPLIED = "defaults_v106_applied"
         private const val KEY_TORRSERVE_URL = "torrserve_url"
         private const val KEY_CUSTOM_PARSER_URL = "custom_parser_url"

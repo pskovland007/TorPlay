@@ -73,19 +73,12 @@ data class CatalogShelves(
 
 class TmdbClient(private val storage: StorageManager) {
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(7, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .build()
+    private val client: OkHttpClient
+        get() = NetworkHelper.getExternalClient(storage, connectSec = 7L, readSec = 10L)
 
-    private val probeClient = OkHttpClient.Builder()
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .build()
+    private fun probeClient(overrideConfig: NetworkHelper.NetworkConfig? = null): OkHttpClient {
+        return NetworkHelper.getExternalClient(storage, connectSec = 5L, readSec = 5L, overrideConfig = overrideConfig)
+    }
 
     fun buildPosterUrl(posterPath: String): String {
         val cleanPath = posterPath.trim()
@@ -161,7 +154,11 @@ class TmdbClient(private val storage: StorageManager) {
         }.getOrDefault(emptyList())
     }
 
-    suspend fun probeConnection(apiKeyInput: String, apiBaseUrlInput: String): MirrorCheckResult =
+    suspend fun probeConnection(
+        apiKeyInput: String,
+        apiBaseUrlInput: String,
+        networkOverride: NetworkHelper.NetworkConfig? = null
+    ): MirrorCheckResult =
         withContext(Dispatchers.IO) {
             val key = apiKeyInput.trim()
             val base = apiBaseUrlInput.trim().trimEnd('/').ifBlank { StorageManager.DEFAULT_TMDB_API_URL }
@@ -178,7 +175,7 @@ class TmdbClient(private val storage: StorageManager) {
             }
 
             try {
-                probeClient.newCall(req).execute().use { resp ->
+                probeClient(networkOverride).newCall(req).execute().use { resp ->
                     val elapsed = (SystemClock.elapsedRealtime() - started).coerceAtLeast(1L)
                     val ok = resp.code in 200..299
                     val detail = when {

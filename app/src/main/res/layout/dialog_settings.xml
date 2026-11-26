@@ -602,11 +602,90 @@
             android:background="@drawable/bg_input_selector"
             android:hint="https://image.tmdb.org/t/p/w342"
             android:inputType="textUri"
-            android:nextFocusDown="@+id/btnTorrServeManager"
+            android:nextFocusDown="@+id/btnToggleDoh"
             android:nextFocusUp="@+id/etTmdbApiUrl"
             android:paddingStart="12dp"
             android:paddingEnd="12dp"
             android:imeOptions="actionDone"
+            android:singleLine="true"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_muted"
+            android:textSize="14sp" />
+
+        <!-- Network & DPI Bypass Row -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_network_bypass_label"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="8dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/btnToggleDoh"
+                android:layout_width="0dp"
+                android:layout_height="38dp"
+                android:layout_marginEnd="8dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_chip_selector"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:nextFocusDown="@+id/etNetworkProxy"
+                android:nextFocusLeft="@+id/btnToggleDoh"
+                android:nextFocusRight="@+id/btnToggleDpiBypass"
+                android:nextFocusUp="@+id/etTmdbImageUrl"
+                android:text="@string/net_doh_on"
+                android:textColor="@color/text_primary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/btnToggleDpiBypass"
+                android:layout_width="0dp"
+                android:layout_height="38dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_chip_selector"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:nextFocusDown="@+id/etNetworkProxy"
+                android:nextFocusLeft="@+id/btnToggleDoh"
+                android:nextFocusRight="@+id/btnToggleDpiBypass"
+                android:nextFocusUp="@+id/etTmdbImageUrl"
+                android:text="@string/net_dpi_off"
+                android:textColor="@color/text_primary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings_proxy_label"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
+        <EditText
+            android:id="@+id/etNetworkProxy"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="10dp"
+            android:background="@drawable/bg_input_selector"
+            android:hint="@string/settings_proxy_hint"
+            android:imeOptions="actionDone"
+            android:inputType="textUri"
+            android:nextFocusDown="@+id/btnTorrServeManager"
+            android:nextFocusUp="@+id/btnToggleDoh"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
             android:singleLine="true"
             android:textColor="@color/text_primary"
             android:textColorHint="@color/text_muted"
@@ -640,7 +719,7 @@
                 android:nextFocusDown="@+id/btnCheckMirrors"
                 android:nextFocusLeft="@+id/btnTorrServeManager"
                 android:nextFocusRight="@+id/btnBackupExport"
-                android:nextFocusUp="@+id/etTmdbImageUrl"
+                android:nextFocusUp="@+id/etNetworkProxy"
                 android:paddingStart="8dp"
                 android:paddingEnd="8dp"
                 android:text="@string/btn_torrserve_manager"
@@ -661,7 +740,7 @@
                 android:nextFocusDown="@+id/btnCancelSettings"
                 android:nextFocusLeft="@+id/btnTorrServeManager"
                 android:nextFocusRight="@+id/btnBackupImport"
-                android:nextFocusUp="@+id/etTmdbImageUrl"
+                android:nextFocusUp="@+id/etNetworkProxy"
                 android:paddingStart="8dp"
                 android:paddingEnd="8dp"
                 android:text="@string/btn_backup_export"
@@ -682,7 +761,7 @@
                 android:nextFocusDown="@+id/btnCancelSettings"
                 android:nextFocusLeft="@+id/btnBackupExport"
                 android:nextFocusRight="@+id/btnExportLogs"
-                android:nextFocusUp="@+id/etTmdbImageUrl"
+                android:nextFocusUp="@+id/etNetworkProxy"
                 android:paddingStart="8dp"
                 android:paddingEnd="8dp"
                 android:text="@string/btn_backup_import"
@@ -702,7 +781,7 @@
                 android:nextFocusDown="@+id/btnSaveSettings"
                 android:nextFocusLeft="@+id/btnBackupImport"
                 android:nextFocusRight="@+id/btnExportLogs"
-                android:nextFocusUp="@+id/etTmdbImageUrl"
+                android:nextFocusUp="@+id/etNetworkProxy"
                 android:paddingStart="8dp"
                 android:paddingEnd="8dp"
                 android:text="@string/btn_export_logs"
