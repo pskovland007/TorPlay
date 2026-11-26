@@ -122,6 +122,9 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private var vlcLastProgressTimeMs: Long = -1L
     private var vlcLastProgressAtMs: Long = 0L
     private var vlcBufferPercent: Int = 0
+    private var vlcLastBufferPct: Int = 0
+    private var vlcLastBufferProgressAtMs: Long = 0L
+    private var vlcRequestedStartTimeMs: Long = 0L
     private var vlcMediaEndedHandled: Boolean = false
 
     private var streamUrl: String = ""
@@ -152,9 +155,13 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private var hasRetriedCodecFallback: Boolean = false
     private var lastAdvancePosMs: Long = -1L
     private var lastAdvanceRealTimeMs: Long = 0L
+    private var smoothAdvanceAccumMs: Long = 0L
+    private var lastMedia3BufferedPosMs: Long = -1L
+    private var lastMedia3BufferProgressAtMs: Long = 0L
     private var stallRecoveryCooldownUntilMs: Long = 0L
     private var media3StallRecoveryCount: Int = 0
     private var vlcStallRecoveryCount: Int = 0
+    private var lastTorrStatsLogSummary: String = "нет данных"
 
     private var nextCountdownSec: Int = 0
     private var nextCardDismissedForCurrent: Boolean = false
@@ -241,8 +248,19 @@ class BuiltInPlayerActivity : AppCompatActivity() {
 
     private fun seekToPositionMs(targetMs: Long) {
         val safeTarget = targetMs.coerceAtLeast(0L)
+        val now = System.currentTimeMillis()
+        lastAdvancePosMs = -1L
+        lastAdvanceRealTimeMs = 0L
+        smoothAdvanceAccumMs = 0L
+        bufferingStartedAtMs = now
+        vlcLastBufferPct = 0
+        vlcLastBufferProgressAtMs = now
+        lastMedia3BufferedPosMs = -1L
+        lastMedia3BufferProgressAtMs = now
+        stallRecoveryCooldownUntilMs = now + 8_000L
         if (isVlcEngine()) {
             val vlc = vlcPlayer ?: return
+            vlcRequestedStartTimeMs = 0L
             vlcLastKnownTimeMs = safeTarget
             vlcLastProgressTimeMs = -1L
             vlcLastProgressAtMs = 0L
@@ -504,6 +522,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         }
         btnStartFromBeginning.setOnClickListener {
             pendingInitialSeekMs = 0L
+            vlcRequestedStartTimeMs = 0L
             pendingResumeSanityCheck = false
             startPositionMs = 0L
             btnStartFromBeginning.visibility = View.GONE
@@ -1159,9 +1178,9 @@ class BuiltInPlayerActivity : AppCompatActivity() {
 
     private fun vlcNetworkCachingMs(): Int {
         return when (storage.bufferProfile) {
-            StorageManager.BUFFER_PROFILE_FAST -> 2_500
-            StorageManager.BUFFER_PROFILE_4K -> 8_000
-            else -> 5_000
+            StorageManager.BUFFER_PROFILE_FAST -> 1_500
+            StorageManager.BUFFER_PROFILE_4K -> 4_500
+            else -> 3_000
         }
     }
 
@@ -1213,16 +1232,24 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                 }
 
                 VlcMediaPlayer.Event.Buffering -> {
+                    val now = System.currentTimeMillis()
                     val raw = event.buffering
                     val pct = kotlin.math.round(raw).toInt().coerceIn(0, 100)
                     vlcBufferPercent = pct
                     if (raw >= 99.0f || pct >= 100) {
                         vlcBufferPercent = 100
+                        vlcLastBufferPct = 100
+                        vlcLastBufferProgressAtMs = now
                         clearBufferingOverlay()
                     } else {
                         if (!isBufferingNow) {
                             isBufferingNow = true
-                            bufferingStartedAtMs = System.currentTimeMillis()
+                            bufferingStartedAtMs = now
+                            vlcLastBufferPct = pct
+                            vlcLastBufferProgressAtMs = now
+                        } else if (pct > vlcLastBufferPct) {
+                            vlcLastBufferPct = pct
+                            vlcLastBufferProgressAtMs = now
                         }
                         maybePollTorrServeStats(forceFast = true)
                         updateBufferingOverlayState()
@@ -1250,12 +1277,32 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                 VlcMediaPlayer.Event.TimeChanged -> {
                     val t = event.timeChanged
                     if (t >= 0L) {
+                        if (vlcRequestedStartTimeMs > 5_000L) {
+                            if (t in 1L..2_500L) {
+                                // Container ignored :start-time — perform single fallback seek
+                                val target = vlcRequestedStartTimeMs
+                                vlcRequestedStartTimeMs = 0L
+                                val dur = currentDurationMs()
+                                if (dur <= 0L || target < dur - 8_000L) {
+                                    pendingResumeSanityCheck = true
+                                    vlcLastKnownTimeMs = target
+                                    bufferingStartedAtMs = System.currentTimeMillis()
+                                    vlcLastBufferPct = 0
+                                    vlcLastBufferProgressAtMs = bufferingStartedAtMs
+                                    runCatching { mp.setTime(target) }
+                                    return@setEventListener
+                                }
+                            } else if (t >= 3_000L) {
+                                vlcRequestedStartTimeMs = 0L
+                            }
+                        }
                         val advanced = vlcLastProgressTimeMs >= 0L && t != vlcLastProgressTimeMs
                         vlcLastKnownTimeMs = t
                         if (advanced) {
                             vlcLastProgressTimeMs = t
                             vlcLastProgressAtMs = System.currentTimeMillis()
                             vlcBufferPercent = 100
+                            vlcLastBufferPct = 100
                             if (isBufferingNow) {
                                 clearBufferingOverlay()
                             }
@@ -1357,6 +1404,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         val lib = libVlc ?: return
         val vlc = vlcPlayer ?: return
 
+        val now = System.currentTimeMillis()
         appliedSavedTracksForItem = false
         nextCardDismissedForCurrent = false
         vlcMediaEndedHandled = false
@@ -1365,16 +1413,21 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         vlcLastProgressTimeMs = -1L
         vlcLastProgressAtMs = 0L
         vlcBufferPercent = 0
+        vlcLastBufferPct = 0
+        vlcLastBufferProgressAtMs = now
         hideNextEpisodeCard(dismissed = false)
 
-        pendingInitialSeekMs = if (seekPosMs > 2_000L) seekPosMs else 0L
-        pendingResumeSanityCheck = false
+        // Use native :start-time to avoid double buffering from 00:00
+        vlcRequestedStartTimeMs = if (seekPosMs > 2_000L) seekPosMs else 0L
+        pendingInitialSeekMs = 0L
+        pendingResumeSanityCheck = seekPosMs > 2_000L
         isBufferingNow = true
-        bufferingStartedAtMs = System.currentTimeMillis()
+        bufferingStartedAtMs = now
         updateBufferingOverlayState()
 
         lastAdvancePosMs = -1L
         lastAdvanceRealTimeMs = 0L
+        smoothAdvanceAccumMs = 0L
 
         runCatching { vlc.stop() }
 
@@ -1388,10 +1441,15 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         media.addOption(":network-caching=$cacheMs")
         media.addOption(":file-caching=$cacheMs")
         media.addOption(":http-reconnect")
+        if (seekPosMs > 2_000L) {
+            val startSec = seekPosMs / 1000L
+            media.addOption(":start-time=$startSec")
+        }
         if (playerPrefs.subtitlesDisabled) {
             media.addOption(":no-spu")
         }
 
+        AppLogger.i("Player", "VLC старт: pos=${seekPosMs}мс, cache=${cacheMs}мс, sw=$vlcForceSoftwareDecode ($title)")
         vlc.setMedia(media)
         media.release()
         vlc.play()
@@ -1445,9 +1503,14 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         bufferingStartedAtMs = System.currentTimeMillis()
         updateBufferingOverlayState()
 
+        val now = System.currentTimeMillis()
         lastAdvancePosMs = -1L
         lastAdvanceRealTimeMs = 0L
+        smoothAdvanceAccumMs = 0L
+        lastMedia3BufferedPosMs = -1L
+        lastMedia3BufferProgressAtMs = now
 
+        AppLogger.i("Player", "Media3 старт: pos=${seekPosMs}мс ($title)")
         exo.stop()
         exo.setMediaItem(mediaItem)
         exo.prepare()
@@ -1483,11 +1546,13 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         lastTorrStatsFetchMs = now
         statsJob = uiScope.launch {
             val info = runCatching { torrServeClient.getTorrentInfo(torrentHash) }.getOrNull() ?: return@launch
+            val pct = info.preloadPercent()
+            val speed = if (info.downloadSpeed > 0.0) info.formattedSpeed() else "0 МБ/с"
+            lastTorrStatsLogSummary = "preload=$pct%, speed=$speed, peers=${info.activePeers}/${info.totalPeers}"
             updateTorrentStatsSummary(info)
             updateStreamInfoText()
             if (isBufferingNow) {
-                val pct = info.preloadPercent()
-                val speed = if (info.downloadSpeed > 0.0) info.formattedSpeed() else "поиск пиров"
+                val speedUi = if (info.downloadSpeed > 0.0) info.formattedSpeed() else "поиск пиров"
                 val engineExtra = if (isVlcEngine()) {
                     if (vlcBufferPercent in 1..99) "VLC $vlcBufferPercent%" else "VLC"
                 } else {
@@ -1497,7 +1562,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                     } else 0L
                     if (aheadSec > 0L) "Media3 (+${aheadSec}с)" else "Media3"
                 }
-                val detail = "$engineExtra • TorrServe: $pct% • $speed • Пиры ${info.activePeers}/${info.totalPeers}"
+                val detail = "$engineExtra • TorrServe: $pct% • $speedUi • Пиры ${info.activePeers}/${info.totalPeers}"
                 tvBufferingStats.text = detail
             }
         }
@@ -1509,39 +1574,65 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         val pos = currentPositionMs()
         val playing = isCurrentlyPlaying()
 
-        if (playing && pos > 0L && pos != lastAdvancePosMs) {
-            if (lastAdvancePosMs >= 0L && (pos - lastAdvancePosMs) >= 3_000L) {
-                media3StallRecoveryCount = 0
-                vlcStallRecoveryCount = 0
+        // Track genuine smooth playback advance (ignore manual seek jumps > 4s)
+        if (playing && pos > 0L) {
+            val delta = if (lastAdvancePosMs >= 0L) pos - lastAdvancePosMs else 0L
+            if (delta in 200L..4_000L) {
+                smoothAdvanceAccumMs += delta
+                lastAdvancePosMs = pos
+                lastAdvanceRealTimeMs = now
+                bufferingStartedAtMs = 0L
+                if (smoothAdvanceAccumMs >= 6_000L) {
+                    media3StallRecoveryCount = 0
+                    vlcStallRecoveryCount = 0
+                    smoothAdvanceAccumMs = 0L
+                }
+            } else if (lastAdvancePosMs < 0L || kotlin.math.abs(delta) > 4_000L) {
+                lastAdvancePosMs = pos
+                smoothAdvanceAccumMs = 0L
             }
-            lastAdvancePosMs = pos
-            lastAdvanceRealTimeMs = now
         }
 
-        val media3StuckBuffering = !isVlcEngine() && player?.playbackState == Player.STATE_BUFFERING
-        val activelyBuffering = isBufferingNow || media3StuckBuffering
-        if (!activelyBuffering) return
-
-        if (bufferingStartedAtMs <= 0L) {
-            bufferingStartedAtMs = now
-            return
-        }
-
-        val stalledMs = now - bufferingStartedAtMs
-        if (stalledMs < 10_000L || now < stallRecoveryCooldownUntilMs) return
-
-        stallRecoveryCooldownUntilMs = now + 10_000L
-        val resumeAt = pos.coerceAtLeast(pendingInitialSeekMs)
+        if (now < stallRecoveryCooldownUntilMs) return
 
         if (!isVlcEngine()) {
+            val exo = player ?: return
+            val stuckBuffering = isBufferingNow || exo.playbackState == Player.STATE_BUFFERING
+            if (!stuckBuffering) return
+
+            val bufPos = exo.bufferedPosition
+            if (bufPos > lastMedia3BufferedPosMs + 500L) {
+                lastMedia3BufferedPosMs = bufPos
+                lastMedia3BufferProgressAtMs = now
+            }
+            if (bufferingStartedAtMs <= 0L) {
+                bufferingStartedAtMs = now
+                return
+            }
+
+            val stalledMs = now - bufferingStartedAtMs
+            val noBufGrowthMs = if (lastMedia3BufferProgressAtMs > 0L) now - lastMedia3BufferProgressAtMs else stalledMs
+            if (stalledMs < 22_000L || noBufGrowthMs < 12_000L) return
+
+            stallRecoveryCooldownUntilMs = now + 20_000L
+            val aheadSec = ((bufPos - exo.currentPosition).coerceAtLeast(0L) / 1000L)
+            val resumeAt = pos.coerceAtLeast(pendingInitialSeekMs)
+            val reason = if (aheadSec >= 4L) "decoder_stall" else "network_stall"
+
             if (media3StallRecoveryCount == 0) {
                 media3StallRecoveryCount++
-                AppLogger.w("Player", "Media3 завис на буферизации (${stalledMs}мс), переподключение с ${resumeAt}мс")
+                AppLogger.w(
+                    "Player",
+                    "Media3 $reason (stalled=${stalledMs}мс, ahead=${aheadSec}с, $lastTorrStatsLogSummary) — переподключение с ${resumeAt}мс"
+                )
                 showQuickHudMessage("↻ Переподключение потока…")
                 prepareMedia3(streamUrl, resumeAt)
             } else if (!hasAutoFallenBackToVlc) {
                 hasAutoFallenBackToVlc = true
-                AppLogger.w("Player", "Повторное зависание Media3 — автоподхват во встроенном VLC с ${resumeAt}мс")
+                AppLogger.w(
+                    "Player",
+                    "Media3 повторный $reason (stalled=${stalledMs}мс, ahead=${aheadSec}с, $lastTorrStatsLogSummary) — автоподхват во встроенном VLC с ${resumeAt}мс"
+                )
                 Toast.makeText(
                     this,
                     "Media3 завис — автоподхват во встроенном VLC…",
@@ -1550,27 +1641,71 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                 switchToVlcEngine(resumeAt)
             } else {
                 media3StallRecoveryCount++
-                AppLogger.w("Player", "Повторная попытка переподключения Media3 с ${resumeAt}мс")
+                AppLogger.w(
+                    "Player",
+                    "Media3 повтор ($reason, stalled=${stalledMs}мс, $lastTorrStatsLogSummary) с ${resumeAt}мс"
+                )
                 showQuickHudMessage("↻ Повтор буферизации…")
                 prepareMedia3(streamUrl, resumeAt)
             }
         } else {
-            if (vlcStallRecoveryCount == 0) {
-                vlcStallRecoveryCount++
-                AppLogger.w("Player", "VLC завис на буферизации (${stalledMs}мс), переподключение с ${resumeAt}мс")
-                showQuickHudMessage("↻ VLC: переподключение потока…")
-                prepareVlcMedia(streamUrl, resumeAt)
-            } else if (vlcStallRecoveryCount == 1 && !vlcForceSoftwareDecode) {
-                vlcStallRecoveryCount++
-                vlcForceSoftwareDecode = true
-                AppLogger.w("Player", "Повторное зависание VLC — переход на программный декодер с ${resumeAt}мс")
-                Toast.makeText(
-                    this,
-                    "VLC: переход на программное декодирование…",
-                    Toast.LENGTH_SHORT
-                ).show()
-                prepareVlcMedia(streamUrl, resumeAt)
+            val vlc = vlcPlayer ?: return
+            val resumeAt = pos.coerceAtLeast(vlcRequestedStartTimeMs).coerceAtLeast(pendingInitialSeekMs)
+
+            // Case 1: Genuine decoder stall (VLC buffer is already >= 95%, yet time stopped moving for 14s)
+            val bufferIsFull = vlcBufferPercent >= 95
+            val decoderFrozenMs = when {
+                bufferIsFull && lastAdvanceRealTimeMs > 0L && playing -> now - lastAdvanceRealTimeMs
+                bufferIsFull && isBufferingNow && bufferingStartedAtMs > 0L -> now - bufferingStartedAtMs
+                else -> 0L
             }
+            if (bufferIsFull && decoderFrozenMs >= 14_000L) {
+                stallRecoveryCooldownUntilMs = now + 20_000L
+                if (!vlcForceSoftwareDecode) {
+                    vlcStallRecoveryCount++
+                    vlcForceSoftwareDecode = true
+                    AppLogger.w(
+                        "Player",
+                        "VLC decoder_stall (buf=${vlcBufferPercent}%, frozen=${decoderFrozenMs}мс, $lastTorrStatsLogSummary) — переход на программный декодер с ${resumeAt}мс"
+                    )
+                    Toast.makeText(
+                        this,
+                        "VLC: переход на программное декодирование…",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    prepareVlcMedia(streamUrl, resumeAt)
+                } else {
+                    vlcStallRecoveryCount++
+                    AppLogger.w(
+                        "Player",
+                        "VLC decoder_stall в SW (buf=${vlcBufferPercent}%, frozen=${decoderFrozenMs}мс, $lastTorrStatsLogSummary) — переподключение с ${resumeAt}мс"
+                    )
+                    showQuickHudMessage("↻ VLC: перезапуск потока…")
+                    prepareVlcMedia(streamUrl, resumeAt)
+                }
+                return
+            }
+
+            // Case 2: Network / TorrServe buffering stall (never downgrade HW decoder on slow network)
+            if (!isBufferingNow) return
+            if (bufferingStartedAtMs <= 0L) {
+                bufferingStartedAtMs = now
+                return
+            }
+
+            val stalledMs = now - bufferingStartedAtMs
+            val noBufGrowthMs = if (vlcLastBufferProgressAtMs > 0L) now - vlcLastBufferProgressAtMs else stalledMs
+            // Do not interrupt while VLC buffer percentage is actively climbing
+            if (stalledMs < 22_000L || noBufGrowthMs < 12_000L) return
+
+            stallRecoveryCooldownUntilMs = now + 20_000L
+            vlcStallRecoveryCount++
+            AppLogger.w(
+                "Player",
+                "VLC network_stall (buf=${vlcBufferPercent}%, stalled=${stalledMs}мс, noGrowth=${noBufGrowthMs}мс, sw=$vlcForceSoftwareDecode, $lastTorrStatsLogSummary) — переподключение с ${resumeAt}мс"
+            )
+            showQuickHudMessage("↻ VLC: переподключение потока…")
+            prepareVlcMedia(streamUrl, resumeAt)
         }
     }
 
@@ -1609,8 +1744,9 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         val elapsed = System.currentTimeMillis() - bufferingStartedAtMs
         if (elapsed >= 900L && layoutOsd.visibility != View.VISIBLE) {
             if (layoutPlayerBuffering.visibility != View.VISIBLE) {
-                tvBufferingTitle.text = if (pendingInitialSeekMs > 2_000L) {
-                    "Подготовка потока (${formatDuration(pendingInitialSeekMs)})…"
+                val resumeTarget = pendingInitialSeekMs.coerceAtLeast(vlcRequestedStartTimeMs)
+                tvBufferingTitle.text = if (resumeTarget > 2_000L) {
+                    "Подготовка потока (${formatDuration(resumeTarget)})…"
                 } else {
                     getString(R.string.player_buffering_title)
                 }
@@ -1620,7 +1756,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                 layoutPlayerBuffering.visibility = View.VISIBLE
             }
         }
-        if (elapsed >= 5_500L && (pendingInitialSeekMs > 2_000L || startPositionMs > 2_000L)) {
+        if (elapsed >= 5_500L && (pendingInitialSeekMs > 2_000L || vlcRequestedStartTimeMs > 2_000L || startPositionMs > 2_000L)) {
             if (btnStartFromBeginning.visibility != View.VISIBLE) {
                 btnStartFromBeginning.visibility = View.VISIBLE
                 btnStartFromBeginning.requestFocus()

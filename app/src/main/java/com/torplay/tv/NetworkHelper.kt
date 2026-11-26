@@ -1,13 +1,19 @@
 package com.torplay.tv
 
 import okhttp3.Dns
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.FilterOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Proxy
@@ -16,10 +22,12 @@ import java.net.Socket
 import java.net.SocketAddress
 import java.net.URI
 import java.net.URLEncoder
+import java.net.UnknownHostException
 import java.nio.channels.SocketChannel
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import javax.net.SocketFactory
 
 object NetworkHelper {
@@ -49,9 +57,10 @@ object NetworkHelper {
         OkHttpClient.Builder()
             .proxy(Proxy.NO_PROXY)
             .dns(Dns.SYSTEM)
-            .connectTimeout(2500, TimeUnit.MILLISECONDS)
-            .readTimeout(2500, TimeUnit.MILLISECONDS)
-            .followRedirects(false)
+            .connectTimeout(3000, TimeUnit.MILLISECONDS)
+            .readTimeout(3000, TimeUnit.MILLISECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
             .build()
     }
 
@@ -135,6 +144,28 @@ object NetworkHelper {
         }
     }
 
+    private fun isSinkholeOrPrivateIpv4(bytes: ByteArray): Boolean {
+        if (bytes.size != 4) return true
+        val b0 = bytes[0].toInt() and 0xFF
+        val b1 = bytes[1].toInt() and 0xFF
+        if (b0 == 0 || b0 == 10 || b0 == 127) return true
+        if (b0 == 169 && b1 == 254) return true
+        if (b0 == 172 && b1 in 16..31) return true
+        if (b0 == 192 && b1 == 168) return true
+        if (b0 >= 224) return true
+        return false
+    }
+
+    private fun isSinkholeAddress(addr: InetAddress): Boolean {
+        if (addr.isAnyLocalAddress || addr.isLoopbackAddress || addr.isLinkLocalAddress || addr.isSiteLocalAddress) {
+            return true
+        }
+        if (addr is Inet4Address) {
+            return isSinkholeOrPrivateIpv4(addr.address)
+        }
+        return false
+    }
+
     fun parseProxy(raw: String): Proxy? {
         val trimmed = raw.trim().trimEnd('/')
         if (trimmed.isBlank()) return null
@@ -178,12 +209,28 @@ object NetworkHelper {
 
     private object DohDns : Dns {
         private data class CacheEntry(val addresses: List<InetAddress>, val expiresAtMs: Long)
+        private data class ResolverTarget(val name: String, val kind: String, val endpoint: String)
 
+        private val dnsMessageMediaType = "application/dns-message".toMediaType()
+        private val txIdCounter = AtomicInteger(0x1234)
         private val cache = ConcurrentHashMap<String, CacheEntry>()
-        private val endpoints = listOf(
-            "https://8.8.8.8/resolve?name=%s&type=A",
-            "https://1.1.1.1/dns-query?name=%s&type=A",
-            "https://9.9.9.9:5053/dns-query?name=%s&type=A"
+        private val loggedHosts = ConcurrentHashMap<String, Long>()
+
+        @Volatile
+        private var preferredTargetName: String? = null
+
+        private val resolverTargets = listOf(
+            ResolverTarget("DoH-AdGuard", "wire", "https://94.140.14.140/dns-query"),
+            ResolverTarget("DoH-Alibaba", "wire", "https://223.5.5.5/dns-query"),
+            ResolverTarget("DoH-Google", "wire", "https://8.8.8.8/dns-query"),
+            ResolverTarget("DoH-Cloudflare", "wire", "https://1.1.1.1/dns-query"),
+            ResolverTarget("DoH-Quad9", "wire", "https://9.9.9.9/dns-query"),
+            ResolverTarget("DoH-Google-JSON", "json", "https://dns.google/resolve?name=%s&type=A"),
+            ResolverTarget("DoH-Alibaba-JSON", "json", "https://223.5.5.5/resolve?name=%s&type=A"),
+            ResolverTarget("UDP-AdGuard", "udp", "94.140.14.140"),
+            ResolverTarget("UDP-Alibaba", "udp", "223.5.5.5"),
+            ResolverTarget("UDP-Google", "udp", "8.8.8.8"),
+            ResolverTarget("UDP-Cloudflare", "udp", "1.1.1.1")
         )
 
         override fun lookup(hostname: String): List<InetAddress> {
@@ -192,55 +239,213 @@ object NetworkHelper {
                 return Dns.SYSTEM.lookup(hostname)
             }
 
+            val lowerHost = cleanHost.lowercase(Locale.US)
             val now = System.currentTimeMillis()
-            val cached = cache[cleanHost.lowercase(Locale.US)]
+            val cached = cache[lowerHost]
             if (cached != null && cached.expiresAtMs > now && cached.addresses.isNotEmpty()) {
                 return cached.addresses
             }
 
-            val resolved = resolveViaDoh(cleanHost)
-            if (resolved.isNotEmpty()) {
-                cache[cleanHost.lowercase(Locale.US)] = CacheEntry(resolved, now + 10 * 60_000L)
-                return resolved
-            }
-
-            return Dns.SYSTEM.lookup(hostname)
-        }
-
-        private fun resolveViaDoh(hostname: String): List<InetAddress> {
-            val encoded = runCatching { URLEncoder.encode(hostname, "UTF-8") }.getOrDefault(hostname)
-            for (tpl in endpoints) {
-                val url = String.format(Locale.US, tpl, encoded)
-                val req = Request.Builder()
-                    .url(url)
-                    .header("Accept", "application/dns-json")
-                    .header("User-Agent", "TorPlay-TV")
-                    .build()
-
-                val found = runCatching {
-                    dohHttpClient.newCall(req).execute().use { resp ->
-                        if (!resp.isSuccessful) return@use emptyList()
-                        val body = resp.body?.string().orEmpty()
-                        if (!body.startsWith("{")) return@use emptyList()
-                        val root = JSONObject(body)
-                        val answers = root.optJSONArray("Answer") ?: return@use emptyList()
-                        val list = mutableListOf<InetAddress>()
-                        for (i in 0 until answers.length()) {
-                            val ans = answers.optJSONObject(i) ?: continue
-                            if (ans.optInt("type", -1) != 1) continue
-                            val ip = ans.optString("data", "").trim()
-                            val bytes = parseIpv4Bytes(ip) ?: continue
-                            list.add(InetAddress.getByAddress(hostname, bytes))
-                        }
-                        list
-                    }
-                }.getOrDefault(emptyList())
-
-                if (found.isNotEmpty()) {
-                    return found
+            val ordered = buildOrderedTargets()
+            for (target in ordered) {
+                val resolved = when (target.kind) {
+                    "wire" -> resolveViaDohWire(cleanHost, target.endpoint)
+                    "json" -> resolveViaDohJson(cleanHost, target.endpoint)
+                    "udp" -> resolveViaUdp(cleanHost, target.endpoint)
+                    else -> emptyList()
+                }
+                if (resolved.isNotEmpty()) {
+                    preferredTargetName = target.name
+                    cache[lowerHost] = CacheEntry(resolved, now + 10 * 60_000L)
+                    logResolutionOnce(lowerHost, resolved.first().hostAddress.orEmpty(), target.name)
+                    return resolved
                 }
             }
-            return emptyList()
+
+            // Last resort: system DNS, strictly filtering out ISP sinkholes (127.0.0.x / 0.0.0.0)
+            val sysAll = runCatching { Dns.SYSTEM.lookup(hostname) }.getOrDefault(emptyList())
+            val sysClean = sysAll.filter { !isSinkholeAddress(it) }
+            if (sysClean.isNotEmpty()) {
+                cache[lowerHost] = CacheEntry(sysClean, now + 3 * 60_000L)
+                logResolutionOnce(lowerHost, sysClean.first().hostAddress.orEmpty(), "SystemDNS")
+                return sysClean
+            }
+            if (sysAll.isNotEmpty()) {
+                val blockedIp = sysAll.first().hostAddress.orEmpty()
+                AppLogger.w("DNS", "Все DoH/UDP серверы недоступны, системный DNS вернул заглушку ($cleanHost -> $blockedIp)")
+                throw UnknownHostException("DNS подмена ($blockedIp) для $cleanHost")
+            }
+            throw UnknownHostException("Не удалось разрешить домен $cleanHost")
+        }
+
+        private fun buildOrderedTargets(): List<ResolverTarget> {
+            val pref = preferredTargetName ?: return resolverTargets
+            val idx = resolverTargets.indexOfFirst { it.name == pref }
+            if (idx <= 0) return resolverTargets
+            val out = ArrayList<ResolverTarget>(resolverTargets.size)
+            out.add(resolverTargets[idx])
+            for (i in resolverTargets.indices) {
+                if (i != idx) out.add(resolverTargets[i])
+            }
+            return out
+        }
+
+        private fun logResolutionOnce(lowerHost: String, ip: String, via: String) {
+            val now = System.currentTimeMillis()
+            val prev = loggedHosts[lowerHost] ?: 0L
+            if (now - prev >= 10 * 60_000L) {
+                loggedHosts[lowerHost] = now
+                AppLogger.i("DNS", "$lowerHost -> $ip ($via)")
+            }
+        }
+
+        private fun resolveViaDohWire(hostname: String, endpointUrl: String): List<InetAddress> {
+            val queryPacket = buildDnsQueryPacket(hostname) ?: return emptyList()
+            val req = Request.Builder()
+                .url(endpointUrl)
+                .post(queryPacket.toRequestBody(dnsMessageMediaType))
+                .header("Accept", "application/dns-message")
+                .header("User-Agent", "TorPlay-TV")
+                .build()
+
+            return runCatching {
+                dohHttpClient.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) return@use emptyList()
+                    val bodyBytes = resp.body?.bytes() ?: return@use emptyList()
+                    parseDnsResponsePacket(hostname, bodyBytes)
+                }
+            }.getOrDefault(emptyList())
+        }
+
+        private fun resolveViaDohJson(hostname: String, urlTemplate: String): List<InetAddress> {
+            val encoded = runCatching { URLEncoder.encode(hostname, "UTF-8") }.getOrDefault(hostname)
+            val url = String.format(Locale.US, urlTemplate, encoded)
+            val req = Request.Builder()
+                .url(url)
+                .header("Accept", "application/dns-json")
+                .header("User-Agent", "TorPlay-TV")
+                .build()
+
+            return runCatching {
+                dohHttpClient.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) return@use emptyList()
+                    val body = resp.body?.string().orEmpty().trim()
+                    if (!body.startsWith("{")) return@use emptyList()
+                    val root = JSONObject(body)
+                    val answers = root.optJSONArray("Answer") ?: return@use emptyList()
+                    val list = mutableListOf<InetAddress>()
+                    for (i in 0 until answers.length()) {
+                        val ans = answers.optJSONObject(i) ?: continue
+                        if (ans.optInt("type", -1) != 1) continue
+                        val ip = ans.optString("data", "").trim()
+                        val bytes = parseIpv4Bytes(ip) ?: continue
+                        if (isSinkholeOrPrivateIpv4(bytes)) continue
+                        list.add(InetAddress.getByAddress(hostname, bytes))
+                    }
+                    list
+                }
+            }.getOrDefault(emptyList())
+        }
+
+        private fun resolveViaUdp(hostname: String, serverIp: String): List<InetAddress> {
+            val queryPacket = buildDnsQueryPacket(hostname) ?: return emptyList()
+            val serverBytes = parseIpv4Bytes(serverIp) ?: return emptyList()
+            return runCatching {
+                DatagramSocket().use { socket ->
+                    socket.soTimeout = 2_200
+                    val targetAddr = InetAddress.getByAddress(serverBytes)
+                    socket.send(DatagramPacket(queryPacket, queryPacket.size, targetAddr, 53))
+                    val buf = ByteArray(1024)
+                    val reply = DatagramPacket(buf, buf.size)
+                    socket.receive(reply)
+                    val respBytes = buf.copyOf(reply.length)
+                    parseDnsResponsePacket(hostname, respBytes)
+                }
+            }.getOrDefault(emptyList())
+        }
+
+        private fun buildDnsQueryPacket(hostname: String): ByteArray? {
+            val labels = hostname.trim().trimEnd('.').split('.').filter { it.isNotEmpty() }
+            if (labels.isEmpty()) return null
+            val out = ByteArrayOutputStream(64)
+            val txId = txIdCounter.incrementAndGet() and 0xFFFF
+            out.write((txId ushr 8) and 0xFF)
+            out.write(txId and 0xFF)
+            // Standard query, Recursion Desired (RD=1)
+            out.write(0x01)
+            out.write(0x00)
+            // QDCOUNT = 1, ANCOUNT = 0, NSCOUNT = 0, ARCOUNT = 0
+            out.write(0x00); out.write(0x01)
+            out.write(0x00); out.write(0x00)
+            out.write(0x00); out.write(0x00)
+            out.write(0x00); out.write(0x00)
+            for (label in labels) {
+                val bytes = label.toByteArray(Charsets.US_ASCII)
+                if (bytes.isEmpty() || bytes.size > 63) return null
+                out.write(bytes.size)
+                out.write(bytes)
+            }
+            out.write(0x00) // root terminator
+            out.write(0x00); out.write(0x01) // QTYPE = A (1)
+            out.write(0x00); out.write(0x01) // QCLASS = IN (1)
+            return out.toByteArray()
+        }
+
+        private fun parseDnsResponsePacket(hostname: String, data: ByteArray): List<InetAddress> {
+            if (data.size < 12) return emptyList()
+            val rcode = data[3].toInt() and 0x0F
+            if (rcode != 0) return emptyList()
+
+            val qdCount = readU16(data, 4)
+            val anCount = readU16(data, 6)
+            if (anCount <= 0) return emptyList()
+
+            var pos = 12
+            for (i in 0 until qdCount) {
+                pos = skipDnsName(data, pos)
+                if (pos < 0 || pos + 4 > data.size) return emptyList()
+                pos += 4
+            }
+
+            val result = mutableListOf<InetAddress>()
+            for (i in 0 until anCount) {
+                pos = skipDnsName(data, pos)
+                if (pos < 0 || pos + 10 > data.size) break
+                val type = readU16(data, pos)
+                val clazz = readU16(data, pos + 2)
+                val rdLen = readU16(data, pos + 8)
+                pos += 10
+                if (pos + rdLen > data.size) break
+                if (type == 1 && clazz == 1 && rdLen == 4) {
+                    val ipBytes = data.copyOfRange(pos, pos + 4)
+                    if (!isSinkholeOrPrivateIpv4(ipBytes)) {
+                        runCatching {
+                            result.add(InetAddress.getByAddress(hostname, ipBytes))
+                        }
+                    }
+                }
+                pos += rdLen
+            }
+            return result
+        }
+
+        private fun readU16(data: ByteArray, offset: Int): Int {
+            return ((data[offset].toInt() and 0xFF) shl 8) or (data[offset + 1].toInt() and 0xFF)
+        }
+
+        private fun skipDnsName(data: ByteArray, start: Int): Int {
+            var pos = start
+            var guard = 0
+            while (pos < data.size && guard < 128) {
+                guard++
+                val len = data[pos].toInt() and 0xFF
+                if (len == 0) return pos + 1
+                if ((len and 0xC0) == 0xC0) {
+                    return if (pos + 2 <= data.size) pos + 2 else -1
+                }
+                pos += 1 + len
+            }
+            return -1
         }
 
         private fun parseIpv4Bytes(ip: String): ByteArray? {
