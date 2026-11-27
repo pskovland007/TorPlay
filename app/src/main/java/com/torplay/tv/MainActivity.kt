@@ -976,18 +976,7 @@ class MainActivity : AppCompatActivity() {
         val btnFindAll = dialog.findViewById<TextView>(R.id.btnShowcaseFindAll)
         val btnCancel = dialog.findViewById<TextView>(R.id.btnShowcaseCancel)
 
-        val cachedMeta = catalogMetaCache[item.stableKey()]
-        val effectiveItem = if (cachedMeta != null) {
-            item.copy(
-                runtimeMinutes = if (item.runtimeMinutes > 0) item.runtimeMinutes else cachedMeta.runtimeMinutes,
-                bestQuality = item.bestQuality.ifBlank { cachedMeta.bestQuality },
-                bestSeeds = if (item.bestSeeds > 0) item.bestSeeds else cachedMeta.bestSeeds,
-                bestPeers = if (item.bestPeers > 0) item.bestPeers else cachedMeta.bestPeers
-            )
-        } else {
-            item
-        }
-        tvTitle.text = effectiveItem.titleWithYear()
+        tvTitle.text = item.title
         val metaParts = mutableListOf<String>()
         if (item.quality.isNotBlank()) metaParts.add(item.quality)
         val sz = item.formattedSize()
@@ -1602,7 +1591,18 @@ class MainActivity : AppCompatActivity() {
         val btnFav = dialog.findViewById<TextView>(R.id.btnDetailsFavorite)
         val btnClose = dialog.findViewById<TextView>(R.id.btnDetailsClose)
 
-        tvTitle.text = item.title
+        val cachedMeta = catalogMetaCache[item.stableKey()]
+        val effectiveItem = if (cachedMeta != null) {
+            item.copy(
+                runtimeMinutes = if (item.runtimeMinutes > 0) item.runtimeMinutes else cachedMeta.runtimeMinutes,
+                bestQuality = item.bestQuality.ifBlank { cachedMeta.bestQuality },
+                bestSeeds = if (item.bestSeeds > 0) item.bestSeeds else cachedMeta.bestSeeds,
+                bestPeers = if (item.bestPeers > 0) item.bestPeers else cachedMeta.bestPeers
+            )
+        } else {
+            item
+        }
+        tvTitle.text = effectiveItem.titleWithYear()
         if (item.originalTitle.isNotBlank() && !item.originalTitle.equals(item.title, ignoreCase = true)) {
             tvOriginal.text = item.originalTitle
             tvOriginal.visibility = View.VISIBLE
