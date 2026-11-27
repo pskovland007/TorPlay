@@ -104,4 +104,6 @@
     <string name="player_next_now">▶ Включить сейчас</string>
     <string name="player_buffering_title">Буферизация потока…</string>
     <string name="player_start_from_zero">Начать с начала</string>
+    <string name="catalog_daily_top_title">🎲 Случайный топ дня (7.5+ с сидами)</string>
+    <string name="catalog_daily_top_refresh">↻ Другие</string>
 </resources>

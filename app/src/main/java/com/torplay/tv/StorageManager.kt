@@ -524,6 +524,86 @@ class StorageManager(context: Context) {
         prefs.edit().putString(KEY_WATCH_HISTORY, "[]").apply()
     }
 
+    fun getDailyTopMovies(dateKey: String): List<CatalogItem> {
+        val savedDate = prefs.getString(KEY_DAILY_TOP_DATE, "").orEmpty()
+        if (savedDate != dateKey) return emptyList()
+        val raw = prefs.getString(KEY_DAILY_TOP_ITEMS, "[]").orEmpty()
+        val list = mutableListOf<CatalogItem>()
+        runCatching {
+            val arr = JSONArray(raw)
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val id = o.optInt("id", 0)
+                val title = o.optString("title").trim()
+                if (title.isBlank()) continue
+                val genres = mutableListOf<String>()
+                val gArr = o.optJSONArray("genres")
+                if (gArr != null) {
+                    for (g in 0 until gArr.length()) {
+                        val gn = gArr.optString(g).trim()
+                        if (gn.isNotBlank()) genres.add(gn)
+                    }
+                }
+                list.add(
+                    CatalogItem(
+                        id = id,
+                        mediaType = o.optString("mediaType", "movie"),
+                        title = title,
+                        originalTitle = o.optString("originalTitle", ""),
+                        year = o.optString("year", ""),
+                        rating = o.optDouble("rating", 0.0),
+                        overview = o.optString("overview", ""),
+                        posterPath = o.optString("posterPath", ""),
+                        genreNames = genres,
+                        source = o.optString("source", "tmdb"),
+                        runtimeMinutes = o.optInt("runtimeMinutes", 0),
+                        bestQuality = o.optString("bestQuality", ""),
+                        bestSeeds = o.optInt("bestSeeds", 0),
+                        bestPeers = o.optInt("bestPeers", 0)
+                    )
+                )
+            }
+        }
+        return list
+    }
+
+    fun saveDailyTopMovies(dateKey: String, items: List<CatalogItem>) {
+        val arr = JSONArray()
+        for (item in items) {
+            val gArr = JSONArray()
+            for (g in item.genreNames) gArr.put(g)
+            arr.put(
+                JSONObject().apply {
+                    put("id", item.id)
+                    put("mediaType", item.mediaType)
+                    put("title", item.title)
+                    put("originalTitle", item.originalTitle)
+                    put("year", item.year)
+                    put("rating", item.rating)
+                    put("overview", item.overview)
+                    put("posterPath", item.posterPath)
+                    put("genres", gArr)
+                    put("source", item.source)
+                    put("runtimeMinutes", item.runtimeMinutes)
+                    put("bestQuality", item.bestQuality)
+                    put("bestSeeds", item.bestSeeds)
+                    put("bestPeers", item.bestPeers)
+                }
+            )
+        }
+        prefs.edit()
+            .putString(KEY_DAILY_TOP_DATE, dateKey)
+            .putString(KEY_DAILY_TOP_ITEMS, arr.toString())
+            .apply()
+    }
+
+    fun clearDailyTopCache() {
+        prefs.edit()
+            .remove(KEY_DAILY_TOP_DATE)
+            .remove(KEY_DAILY_TOP_ITEMS)
+            .apply()
+    }
+
     private fun persistWatchHistory(items: List<WatchHistoryEntry>) {
         val arr = JSONArray()
         for (item in items) {
@@ -1004,6 +1084,8 @@ class StorageManager(context: Context) {
         private const val KEY_SHOW_PLAYER_STATS_HUD = "show_player_stats_hud"
         private const val KEY_PLASMA_PIXEL_SHIFT = "plasma_pixel_shift"
         private const val KEY_PLAYER_STATS_CORNER = "player_stats_corner"
+        private const val KEY_DAILY_TOP_DATE = "daily_top_date"
+        private const val KEY_DAILY_TOP_ITEMS = "daily_top_items"
         private const val KEY_DEFAULTS_V106_APPLIED = "defaults_v106_applied"
         private const val KEY_TORRSERVE_URL = "torrserve_url"
         private const val KEY_CUSTOM_PARSER_URL = "custom_parser_url"

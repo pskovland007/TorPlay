@@ -483,6 +483,61 @@
                         android:textStyle="bold" />
                 </LinearLayout>
 
+                <!-- Daily Random Top 6-8 Shelf (high rating + verified live seeds, rotates daily) -->
+                <LinearLayout
+                    android:id="@+id/layoutDailyTopHeader"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingTop="2dp"
+                    android:paddingBottom="6dp"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/tvTmdbDailyHeader"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:text="@string/catalog_daily_top_title"
+                        android:textColor="@color/text_primary"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+
+                    <ProgressBar
+                        android:id="@+id/progressDailyTop"
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:layout_marginEnd="10dp"
+                        android:indeterminateTint="@color/accent_emerald"
+                        android:visibility="gone" />
+
+                    <TextView
+                        android:id="@+id/btnRefreshDailyTop"
+                        android:layout_width="wrap_content"
+                        android:layout_height="28dp"
+                        android:background="@drawable/bg_chip_selector"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:text="@string/catalog_daily_top_refresh"
+                        android:textColor="@color/text_primary"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rvTmdbDailyTop"
+                    android:layout_width="match_parent"
+                    android:layout_height="272dp"
+                    android:layout_marginBottom="10dp"
+                    android:clipToPadding="false"
+                    android:visibility="gone" />
+
                 <!-- TMDB Shelf 1: Trending Movies -->
                 <TextView
                     android:id="@+id/tvTmdbTrendingHeader"
@@ -499,7 +554,7 @@
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/rvTmdbTrending"
                     android:layout_width="match_parent"
-                    android:layout_height="236dp"
+                    android:layout_height="272dp"
                     android:layout_marginBottom="8dp"
                     android:clipToPadding="false"
                     android:visibility="gone" />
@@ -520,7 +575,7 @@
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/rvTmdbNowPlaying"
                     android:layout_width="match_parent"
-                    android:layout_height="236dp"
+                    android:layout_height="272dp"
                     android:layout_marginBottom="8dp"
                     android:clipToPadding="false"
                     android:visibility="gone" />
@@ -541,7 +596,7 @@
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/rvTmdbSeries"
                     android:layout_width="match_parent"
-                    android:layout_height="236dp"
+                    android:layout_height="272dp"
                     android:layout_marginBottom="8dp"
                     android:clipToPadding="false"
                     android:visibility="gone" />

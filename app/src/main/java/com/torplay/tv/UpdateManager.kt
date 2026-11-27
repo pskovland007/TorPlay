@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.StatFs
 import android.provider.Settings
 import android.view.View
 import android.view.Window
@@ -290,6 +291,7 @@ class UpdateManager(private val context: Context) {
 
         fun tryInstallOrRequestPermission(apkFile: File) {
             if (!canInstallUnknownApps(activityContext)) {
+                tvPermissionHint.text = activityContext.getString(R.string.update_permission_hint)
                 tvPermissionHint.visibility = View.VISIBLE
                 tvProgressText.text = activityContext.getString(R.string.update_ready)
                 tvProgressText.setTextColor(ContextCompat.getColor(activityContext, R.color.status_warn))
@@ -327,10 +329,37 @@ class UpdateManager(private val context: Context) {
                 return@setOnClickListener
             }
 
+            val freedBytes = reclaimCacheBeforeUpdate()
+            val freeBytes = getAvailableInternalBytes()
+            val apkExpected = release.apkSizeBytes.takeIf { it > 0L } ?: (55L * 1024L * 1024L)
+            val minRequiredBytes = apkExpected * 2L + 90L * 1024L * 1024L
+            val recommendedBytes = apkExpected * 3L + 140L * 1024L * 1024L
+            AppLogger.i(
+                "Update",
+                "Проверка памяти: свободно ${formatBytes(freeBytes)}, APK ${formatBytes(apkExpected)}, очищено кэша ${formatBytes(freedBytes)}"
+            )
+            if (freeBytes in 1L until minRequiredBytes) {
+                val needToFree = (minRequiredBytes - freeBytes).coerceAtLeast(32L * 1024L * 1024L)
+                layoutProgress.visibility = View.VISIBLE
+                progressBar.isIndeterminate = false
+                progressBar.progress = 0
+                tvProgressText.setTextColor(ContextCompat.getColor(activityContext, R.color.status_err))
+                tvProgressText.text = "Недостаточно памяти для установки (свободно ${formatBytes(freeBytes)})"
+                tvPermissionHint.text = "Освободите минимум ${formatBytes(needToFree)} в памяти устройства (Настройки → Хранилище) и нажмите ещё раз."
+                tvPermissionHint.visibility = View.VISIBLE
+                return@setOnClickListener
+            }
+
             isDownloading = true
             cancelled.set(false)
             dialog.setCancelable(false)
-            tvPermissionHint.visibility = View.GONE
+            if (freeBytes in 1L until recommendedBytes) {
+                val extraNeed = (recommendedBytes - freeBytes).coerceAtLeast(32L * 1024L * 1024L)
+                tvPermissionHint.text = "Мало памяти (свободно ${formatBytes(freeBytes)}). Если установка не пройдёт, освободите ещё ~${formatBytes(extraNeed)}."
+                tvPermissionHint.visibility = View.VISIBLE
+            } else {
+                tvPermissionHint.visibility = View.GONE
+            }
             layoutProgress.visibility = View.VISIBLE
             progressBar.isIndeterminate = release.apkSizeBytes <= 0L
             progressBar.progress = 0
@@ -456,6 +485,7 @@ class UpdateManager(private val context: Context) {
         }
 
         dialog.show()
+        SystemUiHelper.applyImmersiveToDialog(dialog)
         if (isNewer) {
             btnPrimary.requestFocus()
         } else {
@@ -469,6 +499,34 @@ class UpdateManager(private val context: Context) {
                 runCatching { f.delete() }
             }
         }
+    }
+
+    private fun reclaimCacheBeforeUpdate(): Long {
+        var freed = 0L
+        val dirs = listOfNotNull(
+            File(context.cacheDir, "updates"),
+            File(context.cacheDir, "posters"),
+            context.externalCacheDir?.let { File(it, "updates") }
+        )
+        for (dir in dirs) {
+            if (!dir.exists() || !dir.isDirectory) continue
+            dir.listFiles()?.forEach { f ->
+                if (f.isFile) {
+                    val sz = f.length().coerceAtLeast(0L)
+                    if (runCatching { f.delete() }.getOrDefault(false)) {
+                        freed += sz
+                    }
+                }
+            }
+        }
+        return freed
+    }
+
+    private fun getAvailableInternalBytes(): Long {
+        return runCatching {
+            val stat = StatFs(context.cacheDir.absolutePath)
+            stat.availableBytes
+        }.getOrDefault(0L)
     }
 
     private fun canInstallUnknownApps(ctx: Context): Boolean {

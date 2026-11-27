@@ -224,6 +224,7 @@ class KinopoiskClient(private val storage: StorageManager) {
             }
         }
 
+        val runtimeMinutes = parseFilmLengthMinutes(obj)
         return CatalogItem(
             id = id,
             mediaType = mediaType,
@@ -234,8 +235,23 @@ class KinopoiskClient(private val storage: StorageManager) {
             overview = overview,
             posterPath = posterUrl,
             genreNames = genres.take(3),
-            source = SOURCE_ID
+            source = SOURCE_ID,
+            runtimeMinutes = runtimeMinutes
         )
+    }
+
+    private fun parseFilmLengthMinutes(obj: JSONObject): Int {
+        if (!obj.has("filmLength") || obj.isNull("filmLength")) return 0
+        val asInt = obj.optInt("filmLength", -1)
+        if (asInt > 0) return asInt
+        val raw = obj.optString("filmLength", "").trim()
+        if (raw.contains(':')) {
+            val parts = raw.split(':')
+            val h = parts.getOrNull(0)?.toIntOrNull() ?: 0
+            val m = parts.getOrNull(1)?.toIntOrNull() ?: 0
+            return (h * 60 + m).coerceAtLeast(0)
+        }
+        return raw.toIntOrNull()?.coerceAtLeast(0) ?: 0
     }
 
     private fun parseRating(obj: JSONObject): Double {

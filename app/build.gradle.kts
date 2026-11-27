@@ -11,8 +11,12 @@ android {
         applicationId = "com.torplay.tv"
         minSdk = 23
         targetSdk = 34
-        versionCode = 26
-        versionName = "1.0.14"
+        versionCode = 28
+        versionName = "1.0.16"
+
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+        }
     }
 
     signingConfigs {
@@ -55,6 +59,7 @@ android {
 
     packaging {
         jniLibs {
+            useLegacyPackaging = true
             pickFirsts += listOf("lib/**/libc++_shared.so")
         }
     }

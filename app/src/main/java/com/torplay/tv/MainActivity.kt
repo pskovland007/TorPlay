@@ -44,7 +44,14 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 
 class MainActivity : AppCompatActivity() {
 
@@ -69,6 +76,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var historyAdapter: HistoryAdapter
     private lateinit var favoriteTorrentAdapter: FavoriteTorrentAdapter
     private lateinit var recentSearchAdapter: RecentSearchAdapter
+    private lateinit var tmdbDailyAdapter: CatalogAdapter
     private lateinit var tmdbTrendingAdapter: CatalogAdapter
     private lateinit var tmdbNowPlayingAdapter: CatalogAdapter
     private lateinit var tmdbSeriesAdapter: CatalogAdapter
@@ -103,6 +111,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var layoutTmdbNotice: LinearLayout
     private lateinit var progressTmdb: ProgressBar
     private lateinit var tvTmdbNotice: TextView
+    private lateinit var layoutDailyTopHeader: LinearLayout
+    private lateinit var tvTmdbDailyHeader: TextView
+    private lateinit var progressDailyTop: ProgressBar
+    private lateinit var btnRefreshDailyTop: TextView
+    private lateinit var rvTmdbDailyTop: RecyclerView
     private lateinit var tvTmdbTrendingHeader: TextView
     private lateinit var rvTmdbTrending: RecyclerView
     private lateinit var tvTmdbNowPlayingHeader: TextView
@@ -137,6 +150,13 @@ class MainActivity : AppCompatActivity() {
     private var torrServeManagerJob: Job? = null
     private var tmdbLoadJob: Job? = null
     private var tmdbSearchJob: Job? = null
+    private var dailyTopJob: Job? = null
+    private var focusEnrichJob: Job? = null
+    private var runtimeBatchJob: Job? = null
+    private var dailyTopItems: List<CatalogItem> = emptyList()
+    private var dailyTopLoading: Boolean = false
+    private val catalogMetaCache = ConcurrentHashMap<String, CatalogEnrichedMeta>()
+    private val catalogMetaInFlight = ConcurrentHashMap.newKeySet<String>()
     private var pendingStorageAction: (() -> Unit)? = null
     private var tmdbLoadedOnce: Boolean = false
     private var tmdbShelves: CatalogShelves? = null
@@ -424,6 +444,11 @@ class MainActivity : AppCompatActivity() {
         layoutTmdbNotice = findViewById(R.id.layoutTmdbNotice)
         progressTmdb = findViewById(R.id.progressTmdb)
         tvTmdbNotice = findViewById(R.id.tvTmdbNotice)
+        layoutDailyTopHeader = findViewById(R.id.layoutDailyTopHeader)
+        tvTmdbDailyHeader = findViewById(R.id.tvTmdbDailyHeader)
+        progressDailyTop = findViewById(R.id.progressDailyTop)
+        btnRefreshDailyTop = findViewById(R.id.btnRefreshDailyTop)
+        rvTmdbDailyTop = findViewById(R.id.rvTmdbDailyTop)
         tvTmdbTrendingHeader = findViewById(R.id.tvTmdbTrendingHeader)
         rvTmdbTrending = findViewById(R.id.rvTmdbTrending)
         tvTmdbNowPlayingHeader = findViewById(R.id.tvTmdbNowPlayingHeader)
@@ -562,21 +587,54 @@ class MainActivity : AppCompatActivity() {
         rvFavorites.isNestedScrollingEnabled = false
         rvHistory.isNestedScrollingEnabled = false
 
-        tmdbTrendingAdapter = CatalogAdapter(uiScope, tmdbClient, posterLoader) { item -> showMovieDetailsDialog(item) }
+        tmdbDailyAdapter = CatalogAdapter(
+            scope = uiScope,
+            tmdbClient = tmdbClient,
+            posterLoader = posterLoader,
+            onItemFocused = { item -> scheduleCatalogItemEnrichment(item) },
+            onItemClick = { item -> showMovieDetailsDialog(item) }
+        )
+        rvTmdbDailyTop.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
+        rvTmdbDailyTop.adapter = tmdbDailyAdapter
+
+        tmdbTrendingAdapter = CatalogAdapter(
+            scope = uiScope,
+            tmdbClient = tmdbClient,
+            posterLoader = posterLoader,
+            onItemFocused = { item -> scheduleCatalogItemEnrichment(item) },
+            onItemClick = { item -> showMovieDetailsDialog(item) }
+        )
         rvTmdbTrending.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         rvTmdbTrending.adapter = tmdbTrendingAdapter
 
-        tmdbNowPlayingAdapter = CatalogAdapter(uiScope, tmdbClient, posterLoader) { item -> showMovieDetailsDialog(item) }
+        tmdbNowPlayingAdapter = CatalogAdapter(
+            scope = uiScope,
+            tmdbClient = tmdbClient,
+            posterLoader = posterLoader,
+            onItemFocused = { item -> scheduleCatalogItemEnrichment(item) },
+            onItemClick = { item -> showMovieDetailsDialog(item) }
+        )
         rvTmdbNowPlaying.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         rvTmdbNowPlaying.adapter = tmdbNowPlayingAdapter
 
-        tmdbSeriesAdapter = CatalogAdapter(uiScope, tmdbClient, posterLoader) { item -> showMovieDetailsDialog(item) }
+        tmdbSeriesAdapter = CatalogAdapter(
+            scope = uiScope,
+            tmdbClient = tmdbClient,
+            posterLoader = posterLoader,
+            onItemFocused = { item -> scheduleCatalogItemEnrichment(item) },
+            onItemClick = { item -> showMovieDetailsDialog(item) }
+        )
         rvTmdbSeries.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         rvTmdbSeries.adapter = tmdbSeriesAdapter
 
-        tmdbSearchAdapter = CatalogAdapter(uiScope, tmdbClient, posterLoader, compact = true) { item ->
-            showMovieDetailsDialog(item)
-        }
+        tmdbSearchAdapter = CatalogAdapter(
+            scope = uiScope,
+            tmdbClient = tmdbClient,
+            posterLoader = posterLoader,
+            compact = true,
+            onItemFocused = { item -> scheduleCatalogItemEnrichment(item) },
+            onItemClick = { item -> showMovieDetailsDialog(item) }
+        )
         rvTmdbSearchResults.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
         rvTmdbSearchResults.adapter = tmdbSearchAdapter
 
@@ -647,6 +705,12 @@ class MainActivity : AppCompatActivity() {
                 updateClearSearchButtonUi()
             }
         })
+
+        btnRefreshDailyTop.setOnClickListener {
+            if (dailyTopLoading) return@setOnClickListener
+            Toast.makeText(this, "Подбираем новые фильмы с сидами…", Toast.LENGTH_SHORT).show()
+            loadDailyTopShowcase(forceReroll = true)
+        }
 
         layoutTmdbNotice.setOnClickListener {
             if (storage.activeCatalogRequiresKey() && storage.activeCatalogKey().isBlank()) {
@@ -832,6 +896,10 @@ class MainActivity : AppCompatActivity() {
             if (tmdbSearchVisible) sections.add(rvTmdbSearchResults)
             if (homeVisible) {
                 if (layoutTmdbNotice.visibility == View.VISIBLE) sections.add(layoutTmdbNotice)
+                if (layoutDailyTopHeader.visibility == View.VISIBLE && btnRefreshDailyTop.visibility == View.VISIBLE) {
+                    sections.add(btnRefreshDailyTop)
+                }
+                if (rvTmdbDailyTop.visibility == View.VISIBLE) sections.add(rvTmdbDailyTop)
                 if (rvTmdbTrending.visibility == View.VISIBLE) sections.add(rvTmdbTrending)
                 if (rvTmdbNowPlaying.visibility == View.VISIBLE) sections.add(rvTmdbNowPlaying)
                 if (rvTmdbSeries.visibility == View.VISIBLE) sections.add(rvTmdbSeries)
@@ -908,7 +976,18 @@ class MainActivity : AppCompatActivity() {
         val btnFindAll = dialog.findViewById<TextView>(R.id.btnShowcaseFindAll)
         val btnCancel = dialog.findViewById<TextView>(R.id.btnShowcaseCancel)
 
-        tvTitle.text = item.title
+        val cachedMeta = catalogMetaCache[item.stableKey()]
+        val effectiveItem = if (cachedMeta != null) {
+            item.copy(
+                runtimeMinutes = if (item.runtimeMinutes > 0) item.runtimeMinutes else cachedMeta.runtimeMinutes,
+                bestQuality = item.bestQuality.ifBlank { cachedMeta.bestQuality },
+                bestSeeds = if (item.bestSeeds > 0) item.bestSeeds else cachedMeta.bestSeeds,
+                bestPeers = if (item.bestPeers > 0) item.bestPeers else cachedMeta.bestPeers
+            )
+        } else {
+            item
+        }
+        tvTitle.text = effectiveItem.titleWithYear()
         val metaParts = mutableListOf<String>()
         if (item.quality.isNotBlank()) metaParts.add(item.quality)
         val sz = item.formattedSize()
@@ -1133,7 +1212,11 @@ class MainActivity : AppCompatActivity() {
     private fun loadTmdbShowcase(force: Boolean) {
         if (!storage.showTmdbShowcase) {
             tmdbLoadJob?.cancel()
+            dailyTopJob?.cancel()
+            runtimeBatchJob?.cancel()
             tmdbIsLoading = false
+            dailyTopLoading = false
+            dailyTopItems = emptyList()
             tmdbShelves = null
             torrentShelves = null
             tmdbLoadedOnce = false
@@ -1232,6 +1315,269 @@ class MainActivity : AppCompatActivity() {
             if (layoutFilters.visibility != View.VISIBLE && rvResults.visibility != View.VISIBLE) {
                 refreshHomeShelves()
             }
+            tmdbShelves?.let { loaded ->
+                enrichVisibleCatalogRuntimes(loaded.trending.take(8) + loaded.nowPlaying.take(8) + loaded.popularSeries.take(6))
+            }
+        }
+        loadDailyTopShowcase(forceReroll = false)
+    }
+
+    private data class CatalogEnrichedMeta(
+        val runtimeMinutes: Int = 0,
+        val bestQuality: String = "",
+        val bestSeeds: Int = 0,
+        val bestPeers: Int = 0
+    )
+
+    private fun applyCachedMeta(items: List<CatalogItem>): List<CatalogItem> {
+        if (items.isEmpty() || catalogMetaCache.isEmpty()) return items
+        return items.map { item ->
+            val cached = catalogMetaCache[item.stableKey()]
+            if (cached == null) {
+                item
+            } else {
+                item.copy(
+                    runtimeMinutes = if (item.runtimeMinutes > 0) item.runtimeMinutes else cached.runtimeMinutes,
+                    bestQuality = item.bestQuality.ifBlank { cached.bestQuality },
+                    bestSeeds = if (item.bestSeeds > 0) item.bestSeeds else cached.bestSeeds,
+                    bestPeers = if (item.bestPeers > 0) item.bestPeers else cached.bestPeers
+                )
+            }
+        }
+    }
+
+    private fun broadcastCatalogMetadataUpdate(key: String, meta: CatalogEnrichedMeta) {
+        tmdbDailyAdapter.updateItemMetadata(key, meta.runtimeMinutes, meta.bestQuality, meta.bestSeeds, meta.bestPeers)
+        tmdbTrendingAdapter.updateItemMetadata(key, meta.runtimeMinutes, meta.bestQuality, meta.bestSeeds, meta.bestPeers)
+        tmdbNowPlayingAdapter.updateItemMetadata(key, meta.runtimeMinutes, meta.bestQuality, meta.bestSeeds, meta.bestPeers)
+        tmdbSeriesAdapter.updateItemMetadata(key, meta.runtimeMinutes, meta.bestQuality, meta.bestSeeds, meta.bestPeers)
+        tmdbSearchAdapter.updateItemMetadata(key, meta.runtimeMinutes, meta.bestQuality, meta.bestSeeds, meta.bestPeers)
+    }
+
+    private fun enrichVisibleCatalogRuntimes(items: List<CatalogItem>) {
+        if (items.isEmpty() || storage.tmdbApiKey.isBlank()) return
+        runtimeBatchJob?.cancel()
+        runtimeBatchJob = uiScope.launch {
+            val pending = items
+                .filter { it.source == "tmdb" && it.id > 0 && it.runtimeMinutes <= 0 }
+                .distinctBy { it.stableKey() }
+                .filter { (catalogMetaCache[it.stableKey()]?.runtimeMinutes ?: 0) <= 0 }
+            for (batch in pending.chunked(4)) {
+                coroutineScope {
+                    batch.map { item ->
+                        async(Dispatchers.IO) {
+                            val mins = runCatching {
+                                tmdbClient.fetchRuntimeMinutes(item.id, item.isSeries())
+                            }.getOrDefault(0)
+                            item.stableKey() to mins
+                        }
+                    }.awaitAll()
+                }.forEach { (key, mins) ->
+                    if (mins > 0) {
+                        val prev = catalogMetaCache[key] ?: CatalogEnrichedMeta()
+                        val updated = prev.copy(runtimeMinutes = mins)
+                        catalogMetaCache[key] = updated
+                        broadcastCatalogMetadataUpdate(key, updated)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun scheduleCatalogItemEnrichment(item: CatalogItem) {
+        val key = item.stableKey()
+        val cached = catalogMetaCache[key]
+        val hasRuntime = item.runtimeMinutes > 0 || (cached?.runtimeMinutes ?: 0) > 0
+        val hasStats = item.hasTorrentStats() || ((cached?.bestSeeds ?: 0) > 0)
+        if (hasRuntime && hasStats) return
+        if (catalogMetaInFlight.contains(key)) return
+
+        focusEnrichJob?.cancel()
+        focusEnrichJob = uiScope.launch {
+            delay(380L)
+            if (!catalogMetaInFlight.add(key)) return@launch
+            try {
+                val enriched = withContext(Dispatchers.IO) {
+                    coroutineScope {
+                        val runtimeDef = async {
+                            if (hasRuntime) {
+                                item.runtimeMinutes.takeIf { it > 0 } ?: (cached?.runtimeMinutes ?: 0)
+                            } else if (item.source == "tmdb" && item.id > 0) {
+                                runCatching { tmdbClient.fetchRuntimeMinutes(item.id, item.isSeries()) }.getOrDefault(0)
+                            } else if (item.source == KinopoiskClient.SOURCE_ID && item.id > 0) {
+                                runCatching { kinopoiskClient.fetchFilmDetails(item.id)?.runtimeMinutes ?: 0 }.getOrDefault(0)
+                            } else {
+                                0
+                            }
+                        }
+                        val torrentDef = async {
+                            if (hasStats) {
+                                Triple(
+                                    item.bestQuality.ifBlank { cached?.bestQuality.orEmpty() },
+                                    if (item.bestSeeds > 0) item.bestSeeds else (cached?.bestSeeds ?: 0),
+                                    if (item.bestPeers > 0) item.bestPeers else (cached?.bestPeers ?: 0)
+                                )
+                            } else {
+                                findBestLiveTorrentStats(item)
+                            }
+                        }
+                        val mins = runtimeDef.await()
+                        val (qual, seeds, peers) = torrentDef.await()
+                        CatalogEnrichedMeta(
+                            runtimeMinutes = mins,
+                            bestQuality = qual,
+                            bestSeeds = seeds,
+                            bestPeers = peers
+                        )
+                    }
+                }
+                val prev = catalogMetaCache[key] ?: CatalogEnrichedMeta()
+                val merged = CatalogEnrichedMeta(
+                    runtimeMinutes = if (enriched.runtimeMinutes > 0) enriched.runtimeMinutes else prev.runtimeMinutes,
+                    bestQuality = enriched.bestQuality.ifBlank { prev.bestQuality },
+                    bestSeeds = if (enriched.bestSeeds > 0) enriched.bestSeeds else prev.bestSeeds,
+                    bestPeers = if (enriched.bestPeers > 0) enriched.bestPeers else prev.bestPeers
+                )
+                catalogMetaCache[key] = merged
+                broadcastCatalogMetadataUpdate(key, merged)
+            } finally {
+                catalogMetaInFlight.remove(key)
+            }
+        }
+    }
+
+    private suspend fun findBestLiveTorrentStats(item: CatalogItem): Triple<String, Int, Int> {
+        val resp = runCatching { searchEngine.search(item.torrentSearchQuery()) }.getOrNull()
+        var list = resp?.items.orEmpty()
+        if (list.isEmpty()) {
+            val altQuery = item.title.trim()
+            if (altQuery.isNotBlank() && !altQuery.equals(item.torrentSearchQuery(), ignoreCase = true)) {
+                list = runCatching { searchEngine.search(altQuery).items }.getOrDefault(emptyList())
+            }
+        }
+        val live = list.filter { it.seeds > 0 && it.playableLink.isNotBlank() && !it.isCamRelease() }
+        if (live.isEmpty()) return Triple("", 0, 0)
+
+        val qualityRank: (String) -> Int = { q ->
+            when {
+                q.equals("4K", ignoreCase = true) -> 4
+                q.equals("1080p", ignoreCase = true) -> 3
+                q.equals("720p", ignoreCase = true) -> 2
+                else -> 1
+            }
+        }
+        val best = live.maxWithOrNull(
+            compareBy<TorrentItem> { it.seeds >= 5 }
+                .thenBy { qualityRank(it.quality) }
+                .thenBy { it.seeds }
+        ) ?: return Triple("", 0, 0)
+        val maxSeeds = live.maxOf { it.seeds }
+        val peersVal = maxOf(best.peers, maxSeeds)
+        return Triple(best.quality.ifBlank { "HD" }, maxSeeds, peersVal)
+    }
+
+    private fun todayDateKey(): String {
+        return SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+    }
+
+    private fun loadDailyTopShowcase(forceReroll: Boolean = false) {
+        if (!storage.showTmdbShowcase || storage.tmdbApiKey.isBlank()) {
+            dailyTopJob?.cancel()
+            dailyTopLoading = false
+            dailyTopItems = emptyList()
+            return
+        }
+        val dateKey = todayDateKey()
+        if (!forceReroll) {
+            val cachedToday = storage.getDailyTopMovies(dateKey)
+            if (cachedToday.size >= 6) {
+                dailyTopItems = cachedToday.take(8)
+                for (it in dailyTopItems) {
+                    catalogMetaCache[it.stableKey()] = CatalogEnrichedMeta(
+                        runtimeMinutes = it.runtimeMinutes,
+                        bestQuality = it.bestQuality,
+                        bestSeeds = it.bestSeeds,
+                        bestPeers = it.bestPeers
+                    )
+                }
+                dailyTopLoading = false
+                if (layoutFilters.visibility != View.VISIBLE && rvResults.visibility != View.VISIBLE) {
+                    refreshHomeShelves()
+                }
+                return
+            }
+        }
+
+        dailyTopJob?.cancel()
+        dailyTopLoading = true
+        if (layoutFilters.visibility != View.VISIBLE && rvResults.visibility != View.VISIBLE) {
+            refreshHomeShelves()
+        }
+
+        dailyTopJob = uiScope.launch {
+            val seed = if (forceReroll) {
+                System.currentTimeMillis()
+            } else {
+                dateKey.hashCode().toLong() * 31L + 7919L
+            }
+
+            val candidates = tmdbClient.fetchDailyTopCandidates(seed)
+            val strictVerified = mutableListOf<CatalogItem>()
+            val softVerified = mutableListOf<CatalogItem>()
+
+            for (batch in candidates.chunked(4)) {
+                if (strictVerified.size >= 8) break
+                val batchChecked = coroutineScope {
+                    batch.map { cand ->
+                        async(Dispatchers.IO) {
+                            val (qual, seeds, peers) = findBestLiveTorrentStats(cand)
+                            if (seeds <= 0) return@async null
+                            val mins = runCatching {
+                                tmdbClient.fetchRuntimeMinutes(cand.id, false)
+                            }.getOrDefault(0)
+                            cand.copy(
+                                runtimeMinutes = mins,
+                                bestQuality = qual,
+                                bestSeeds = seeds,
+                                bestPeers = peers
+                            )
+                        }
+                    }.awaitAll().filterNotNull()
+                }
+                for (verified in batchChecked) {
+                    if (verified.bestSeeds >= 3) {
+                        strictVerified.add(verified)
+                    } else {
+                        softVerified.add(verified)
+                    }
+                    if (strictVerified.size >= 8) break
+                }
+            }
+
+            val finalPick = (strictVerified + softVerified)
+                .distinctBy { it.id }
+                .take(8)
+
+            dailyTopLoading = false
+            if (finalPick.isNotEmpty()) {
+                dailyTopItems = finalPick
+                storage.saveDailyTopMovies(dateKey, finalPick)
+                for (it in finalPick) {
+                    catalogMetaCache[it.stableKey()] = CatalogEnrichedMeta(
+                        runtimeMinutes = it.runtimeMinutes,
+                        bestQuality = it.bestQuality,
+                        bestSeeds = it.bestSeeds,
+                        bestPeers = it.bestPeers
+                    )
+                }
+                AppLogger.i("Catalog", "Случайный топ дня ($dateKey): подобрано ${finalPick.size} фильмов с сидами")
+            } else if (forceReroll) {
+                Toast.makeText(this@MainActivity, "Не удалось подобрать фильмы с живыми сидами", Toast.LENGTH_SHORT).show()
+            }
+
+            if (layoutFilters.visibility != View.VISIBLE && rvResults.visibility != View.VISIBLE) {
+                refreshHomeShelves()
+            }
         }
     }
 
@@ -1275,8 +1621,12 @@ class MainActivity : AppCompatActivity() {
         tvType.text = getString(if (item.isSeries()) R.string.catalog_type_series else R.string.catalog_type_movie)
 
         val metaParts = mutableListOf<String>()
-        if (item.year.isNotBlank()) metaParts.add(item.year)
-        if (item.genreNames.isNotEmpty()) metaParts.add(item.genreNames.joinToString(", "))
+        if (effectiveItem.year.isNotBlank()) metaParts.add(effectiveItem.year)
+        val durText = effectiveItem.formattedDuration()
+        if (durText.isNotEmpty()) metaParts.add(durText)
+        if (effectiveItem.genreNames.isNotEmpty()) metaParts.add(effectiveItem.genreNames.joinToString(", "))
+        val statsText = effectiveItem.formattedTorrentStats()
+        if (statsText.isNotEmpty()) metaParts.add(statsText)
         tvMeta.text = metaParts.joinToString(" • ")
 
         var detailsJob: Job? = null
@@ -1557,6 +1907,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun hideAllShowcaseShelves() {
+        layoutDailyTopHeader.visibility = View.GONE
+        rvTmdbDailyTop.visibility = View.GONE
         tvTmdbTrendingHeader.visibility = View.GONE
         rvTmdbTrending.visibility = View.GONE
         tvTmdbNowPlayingHeader.visibility = View.GONE
@@ -1618,6 +1970,17 @@ class MainActivity : AppCompatActivity() {
                 }
                 hasShowcaseContent = true
 
+                if (dailyTopItems.isNotEmpty() || dailyTopLoading) {
+                    layoutDailyTopHeader.visibility = View.VISIBLE
+                    progressDailyTop.visibility = if (dailyTopLoading) View.VISIBLE else View.GONE
+                    btnRefreshDailyTop.visibility = if (dailyTopLoading) View.GONE else View.VISIBLE
+                    if (dailyTopItems.isNotEmpty()) {
+                        rvTmdbDailyTop.visibility = View.VISIBLE
+                        tmdbDailyAdapter.submitList(applyCachedMeta(dailyTopItems))
+                    } else {
+                        rvTmdbDailyTop.visibility = View.GONE
+                    }
+                }
                 if (tShelves.popularMovies.isNotEmpty()) {
                     tvTorrentTrendingHeader.visibility = View.VISIBLE
                     rvTorrentTrending.visibility = View.VISIBLE
@@ -1654,20 +2017,31 @@ class MainActivity : AppCompatActivity() {
                 }
                 hasShowcaseContent = true
 
+                if (dailyTopItems.isNotEmpty() || dailyTopLoading) {
+                    layoutDailyTopHeader.visibility = View.VISIBLE
+                    progressDailyTop.visibility = if (dailyTopLoading) View.VISIBLE else View.GONE
+                    btnRefreshDailyTop.visibility = if (dailyTopLoading) View.GONE else View.VISIBLE
+                    if (dailyTopItems.isNotEmpty()) {
+                        rvTmdbDailyTop.visibility = View.VISIBLE
+                        tmdbDailyAdapter.submitList(applyCachedMeta(dailyTopItems))
+                    } else {
+                        rvTmdbDailyTop.visibility = View.GONE
+                    }
+                }
                 if (shelves.trending.isNotEmpty()) {
                     tvTmdbTrendingHeader.visibility = View.VISIBLE
                     rvTmdbTrending.visibility = View.VISIBLE
-                    tmdbTrendingAdapter.submitList(shelves.trending)
+                    tmdbTrendingAdapter.submitList(applyCachedMeta(shelves.trending))
                 }
                 if (shelves.nowPlaying.isNotEmpty()) {
                     tvTmdbNowPlayingHeader.visibility = View.VISIBLE
                     rvTmdbNowPlaying.visibility = View.VISIBLE
-                    tmdbNowPlayingAdapter.submitList(shelves.nowPlaying)
+                    tmdbNowPlayingAdapter.submitList(applyCachedMeta(shelves.nowPlaying))
                 }
                 if (shelves.popularSeries.isNotEmpty()) {
                     tvTmdbSeriesHeader.visibility = View.VISIBLE
                     rvTmdbSeries.visibility = View.VISIBLE
-                    tmdbSeriesAdapter.submitList(shelves.popularSeries)
+                    tmdbSeriesAdapter.submitList(applyCachedMeta(shelves.popularSeries))
                 }
             } else if (shelves != null && !shelves.error.isNullOrBlank()) {
                 layoutTmdbNotice.visibility = View.VISIBLE
@@ -2964,6 +3338,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 if (tmdbKeyInput.isNotBlank()) {
                     results.add(tmdbClient.probeConnection(tmdbKeyInput, tmdbApiInput, networkOverride = netOverride))
+                    results.add(tmdbClient.probePosterConnection(etTmdbImageUrl.text.toString(), networkOverride = netOverride))
                 }
                 if (!dialog.isShowing) return@launch
 
@@ -3037,6 +3412,7 @@ class MainActivity : AppCompatActivity() {
             persistDraftToStorage()
             dialog.dismiss()
             if (catalogChanged) {
+                PosterLoader.resetSessionMirrorState()
                 tmdbShelves = null
                 torrentShelves = null
                 tmdbLoadedOnce = false
