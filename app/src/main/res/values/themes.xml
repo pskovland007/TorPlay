@@ -2,17 +2,21 @@
 <resources>
     <style name="Theme.TorPlay" parent="Theme.AppCompat.NoActionBar">
         <item name="android:windowBackground">@color/bg_screen</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="colorPrimary">@color/accent_emerald</item>
         <item name="colorPrimaryDark">@color/bg_screen</item>
         <item name="colorAccent">@color/accent_emerald</item>
         <item name="android:textColorPrimary">@color/text_primary</item>
         <item name="android:textColorSecondary">@color/text_secondary</item>
-        <item name="android:windowOverscan">true</item>
     </style>
 
     <style name="Theme.TorPlay.Player" parent="Theme.AppCompat.NoActionBar">
         <item name="android:windowBackground">#000000</item>
         <item name="android:windowFullscreen">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="colorPrimary">@color/accent_emerald</item>
         <item name="colorAccent">@color/accent_emerald</item>
     </style>

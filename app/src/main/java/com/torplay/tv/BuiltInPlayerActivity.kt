@@ -6,6 +6,8 @@ import android.app.Dialog
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
+import android.media.MediaCodecList
+import android.os.Build
 import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
 import android.os.Bundle
@@ -189,6 +191,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private var altSwitchJob: Job? = null
     private var initialTorrentHash: String = ""
     private var fromHistoryLaunch: Boolean = false
+    private var warnedNoHw4kForCurrent: Boolean = false
 
     private var nextCountdownSec: Int = 0
     private var nextCardDismissedForCurrent: Boolean = false
@@ -339,6 +342,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_player)
+        SystemUiHelper.applyImmersiveFullscreen(window)
 
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         storage = StorageManager(this)
@@ -396,6 +400,18 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         if (showCornerStatsHud && torrentHash.isNotBlank()) {
             maybePollTorrServeStats(forceFast = true)
         }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            SystemUiHelper.applyImmersiveFullscreen(window)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        SystemUiHelper.applyImmersiveFullscreen(window)
     }
 
     override fun onStart() {
@@ -991,15 +1007,19 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     }
 
     private fun initActivePlayer(resumePositionMs: Long) {
+        warnedNoHw4kForCurrent = false
         updateSurfaceVisibility()
         if (isVlcEngine()) {
             initVlcPlayer(resumePositionMs)
         } else {
             initMedia3Player(resumePositionMs)
         }
+        maybeWarnUnsupported4k(videoWidth = 0, videoHeight = 0)
     }
 
     private fun prepareActiveMedia(url: String, seekPosMs: Long) {
+        warnedNoHw4kForCurrent = false
+        maybeWarnUnsupported4k(videoWidth = 0, videoHeight = 0)
         if (isVlcEngine()) {
             prepareVlcMedia(url, seekPosMs)
         } else {
@@ -1345,8 +1365,8 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             add("--live-caching=$cacheMs")
             add("--http-reconnect")
             add("--audio-time-stretch")
-            add("--drop-late-frames")
-            add("--skip-frames")
+            add("--avcodec-fast")
+            add("--avcodec-threads=0")
         }
 
         val vlcInstance = runCatching { LibVLC(this, options) }.getOrElse { err ->
@@ -1600,8 +1620,11 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         media.addOption(":network-caching=$cacheMs")
         media.addOption(":file-caching=$cacheMs")
         media.addOption(":http-reconnect")
-        media.addOption(":drop-late-frames")
-        media.addOption(":skip-frames")
+        media.addOption(":avcodec-fast")
+        media.addOption(":avcodec-threads=0")
+        if (vlcForceSoftwareDecode) {
+            media.addOption(":avcodec-skiploopfilter=2")
+        }
         if (seekPosMs > 2_000L) {
             val startSec = seekPosMs / 1000L
             media.addOption(":start-time=$startSec")
@@ -1770,24 +1793,9 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                 "Player",
                 "VLC качели буферизации ($count срывов за 35с, buf=${vlcBufferPercent}%, sw=$vlcForceSoftwareDecode, $lastTorrStatsLogSummary)"
             )
-            if (!vlcForceSoftwareDecode) {
-                vlcForceSoftwareDecode = true
-                vlcRetriedSoftwareDecode = true
-                updateEngineSwitchUi()
-                mainHandler.post {
-                    if (isFinishing || isDestroyed) return@post
-                    Toast.makeText(
-                        this,
-                        "4K/VLC: частая буферизация — переключение декодера…",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    prepareVlcMedia(streamUrl, resumeAt)
-                }
-            } else {
-                mainHandler.post {
-                    if (isFinishing || isDestroyed) return@post
-                    showQuickHudMessage("⚠ Нестабильный поток — попробуйте кнопку «Движок»")
-                }
+            mainHandler.post {
+                if (isFinishing || isDestroyed) return@post
+                showQuickHudMessage("⚠ Нестабильный поток — попробуйте «Раздачи» или «Движок»")
             }
         }
     }
@@ -2308,6 +2316,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         rvEpisodes.layoutManager = lm
         rvEpisodes.adapter = epAdapter
         dialog.show()
+        SystemUiHelper.applyImmersiveToDialog(dialog)
 
         val focusIdx = currentEpisodeIndex.coerceIn(0, episodes.lastIndex)
         val topOffset = (72 * resources.displayMetrics.density).toInt()
@@ -2435,11 +2444,31 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         mainHandler.postDelayed(osdHideRunnable, 6_500L)
     }
 
-    private fun showQuickHudMessage(message: String) {
+    private fun showQuickHudMessage(message: String, durationMs: Long = 2_000L) {
         tvQuickHud.text = message
         tvQuickHud.visibility = View.VISIBLE
         mainHandler.removeCallbacks(quickHudHideRunnable)
-        mainHandler.postDelayed(quickHudHideRunnable, 2_000L)
+        mainHandler.postDelayed(quickHudHideRunnable, durationMs)
+    }
+
+    private fun maybeWarnUnsupported4k(videoWidth: Int, videoHeight: Int) {
+        if (warnedNoHw4kForCurrent) return
+        if (supportsHardware4kDecoding()) return
+        val is4kByDims = videoWidth >= 3000 || videoHeight >= 1800
+        val is4kByTitle = FOUR_K_TITLE_REGEX.containsMatchIn(title) ||
+            FOUR_K_TITLE_REGEX.containsMatchIn(episodeLabel)
+        if (!is4kByDims && !is4kByTitle) return
+
+        warnedNoHw4kForCurrent = true
+        AppLogger.w("Player", "Устройство без аппаратного 4K (dims=${videoWidth}x${videoHeight}): $title")
+        mainHandler.postDelayed({
+            if (!isFinishing && !isDestroyed) {
+                showQuickHudMessage(
+                    "⚠ Нет аппаратного 4K — для плавного видео выберите 1080p в «Раздачи»",
+                    durationMs = 5_000L
+                )
+            }
+        }, 1_200L)
     }
 
     private fun togglePlayPause() {
@@ -2489,6 +2518,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             if (vt != null) {
                 if (vt.width > 0 && vt.height > 0) {
                     parts.add("${vt.width}×${vt.height}")
+                    maybeWarnUnsupported4k(vt.width, vt.height)
                 }
                 val vCodec = formatVlcVideoCodec(vt.codec ?: vt.originalCodec)
                 if (vCodec.isNotBlank()) parts.add(vCodec)
@@ -2544,6 +2574,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             if (vf != null) {
                 if (vf.width > 0 && vf.height > 0) {
                     parts.add("${vf.width}×${vf.height}")
+                    maybeWarnUnsupported4k(vf.width, vf.height)
                 }
                 val vCodec = formatVideoCodec(vf.sampleMimeType, vf.codecs)
                 if (vCodec.isNotBlank()) parts.add(vCodec)
@@ -3004,6 +3035,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         }
 
         dialog.show()
+        SystemUiHelper.applyImmersiveToDialog(dialog)
         btnManual.requestFocus()
 
         altSearchJob?.cancel()
@@ -3172,6 +3204,40 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             0f to -5f
         )
 
+        @Volatile
+        private var cachedHw4kSupport: Boolean? = null
+
+        private fun supportsHardware4kDecoding(): Boolean {
+            cachedHw4kSupport?.let { return it }
+            val supported = runCatching {
+                val list = MediaCodecList(MediaCodecList.REGULAR_CODECS)
+                list.codecInfos.any { info ->
+                    if (info.isEncoder) return@any false
+                    val nameLower = info.name.lowercase(Locale.US)
+                    val isHardware = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        info.isHardwareAccelerated
+                    } else {
+                        !nameLower.startsWith("omx.google.") &&
+                            !nameLower.startsWith("c2.android.") &&
+                            !nameLower.contains(".sw.")
+                    }
+                    if (!isHardware) return@any false
+                    info.supportedTypes.any { mime ->
+                        val isTargetMime = mime.equals("video/hevc", ignoreCase = true) ||
+                            mime.equals("video/avc", ignoreCase = true)
+                        if (!isTargetMime) return@any false
+                        runCatching {
+                            val caps = info.getCapabilitiesForType(mime).videoCapabilities
+                            caps != null && caps.isSizeSupported(3840, 2160)
+                        }.getOrDefault(false)
+                    }
+                }
+            }.getOrDefault(true)
+            cachedHw4kSupport = supported
+            return supported
+        }
+
+        private val FOUR_K_TITLE_REGEX = Regex("\b(2160p|4k|uhd)\b", RegexOption.IGNORE_CASE)
         private val BOOST_STEPS_DB = intArrayOf(0, 3, 6, 9, 12)
         private val BTIH_REGEX = Regex("btih:([a-zA-Z0-9]+)", RegexOption.IGNORE_CASE)
         private val YEAR_REGEX = Regex("\\b((?:19|20)\\d{2})\\b")

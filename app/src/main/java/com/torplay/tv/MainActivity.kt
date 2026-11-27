@@ -195,6 +195,8 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        SystemUiHelper.applyImmersiveFullscreen(window)
+        SystemUiHelper.applySafeSystemBarPadding(findViewById(R.id.layoutMainRoot))
 
         AppLogger.init(this)
         storage = StorageManager(this)
@@ -243,8 +245,16 @@ class MainActivity : AppCompatActivity() {
         performSearch()
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            SystemUiHelper.applyImmersiveFullscreen(window)
+        }
+    }
+
     override fun onResume() {
         super.onResume()
+        SystemUiHelper.applyImmersiveFullscreen(window)
         if (waitingForPlayerReturn) {
             waitingForPlayerReturn = false
             val hashToStop = lastPlayedHash
@@ -774,6 +784,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         dialog.show()
+        SystemUiHelper.applyImmersiveToDialog(dialog)
         if (hasExtra) {
             btnExtra.requestFocus()
         } else {
@@ -928,6 +939,7 @@ class MainActivity : AppCompatActivity() {
         btnCancel.setOnClickListener { dialog.dismiss() }
 
         dialog.show()
+        SystemUiHelper.applyImmersiveToDialog(dialog)
         btnWatch.requestFocus()
     }
 
@@ -998,6 +1010,7 @@ class MainActivity : AppCompatActivity() {
 
         renderModal()
         dialog.show()
+        SystemUiHelper.applyImmersiveToDialog(dialog)
         if (rvList.visibility == View.VISIBLE) {
             rvList.post {
                 rvList.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus()
@@ -1106,6 +1119,7 @@ class MainActivity : AppCompatActivity() {
 
         renderModal()
         dialog.show()
+        SystemUiHelper.applyImmersiveToDialog(dialog)
         if (rvList.visibility == View.VISIBLE) {
             rvList.post {
                 rvList.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus()
@@ -1320,6 +1334,7 @@ class MainActivity : AppCompatActivity() {
         dialog.setOnDismissListener { detailsJob?.cancel() }
 
         dialog.show()
+        SystemUiHelper.applyImmersiveToDialog(dialog)
         btnFind.requestFocus()
     }
 
@@ -1508,6 +1523,7 @@ class MainActivity : AppCompatActivity() {
         dialog.setOnCancelListener { releaseVoiceRecognizer() }
 
         dialog.show()
+        SystemUiHelper.applyImmersiveToDialog(dialog)
         btnCancel.requestFocus()
         beginListening()
     }
@@ -2079,6 +2095,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         dialog.show()
+        SystemUiHelper.applyImmersiveToDialog(dialog)
 
         val targetIdx = storage.resolveResumeEpisodeIndex(hash, files).coerceIn(0, files.lastIndex)
         val topOffset = (72 * resources.displayMetrics.density).toInt()
@@ -2306,6 +2323,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         dialog.show()
+        SystemUiHelper.applyImmersiveToDialog(dialog)
         btnRefresh.requestFocus()
         loadList()
     }
@@ -3029,6 +3047,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         dialog.show()
+        SystemUiHelper.applyImmersiveToDialog(dialog)
         if (focusCatalogKey) {
             val keyTarget = when (selectedCatalogProvider) {
                 StorageManager.CATALOG_PROVIDER_TORRENTS -> btnCatalogTorrents
