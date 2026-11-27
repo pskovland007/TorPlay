@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bg_dialog"
+    android:orientation="vertical"
+    android:padding="22dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingBottom="10dp">
+
+        <TextView
+            android:id="@+id/tvChangelogTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/changelog_dialog_title"
+            android:textColor="@color/text_primary"
+            android:textSize="19sp"
+            android:textStyle="bold" />
+
+        <ProgressBar
+            android:id="@+id/progressChangelog"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_marginEnd="10dp"
+            android:indeterminateTint="@color/accent_emerald"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/btnChangelogClose"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_button_selector"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:nextFocusLeft="@+id/btnChangelogClose"
+            android:nextFocusRight="@+id/btnChangelogClose"
+            android:nextFocusUp="@+id/btnChangelogClose"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="@string/saved_btn_close"
+            android:textColor="@color/text_button_accent_selector"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <ScrollView
+        android:id="@+id/scrollChangelog"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@drawable/bg_input_selector"
+        android:fadeScrollbars="false"
+        android:padding="14dp">
+
+        <LinearLayout
+            android:id="@+id/layoutChangelogEntries"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </ScrollView>
+</LinearLayout>

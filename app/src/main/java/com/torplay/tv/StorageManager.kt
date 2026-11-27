@@ -104,6 +104,12 @@ class StorageManager(context: Context) {
             prefs.edit().putBoolean(KEY_ONLY_LIVE_SEEDS, value).apply()
         }
 
+    var onlyDubReleases: Boolean
+        get() = prefs.getBoolean(KEY_ONLY_DUB_RELEASES, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_ONLY_DUB_RELEASES, value).apply()
+        }
+
     var showTmdbShowcase: Boolean
         get() = prefs.getBoolean(KEY_SHOW_TMDB_SHOWCASE, true)
         set(value) {
@@ -703,6 +709,142 @@ class StorageManager(context: Context) {
         prefs.edit().putString(KEY_TORRENT_AUDIO_BOOST_MAP, map.toString()).apply()
     }
 
+    private fun readTorrentResizeModeJson(): JSONObject {
+        val raw = prefs.getString(KEY_TORRENT_RESIZE_MODE_MAP, "{}").orEmpty()
+        return runCatching { JSONObject(raw) }.getOrElse { JSONObject() }
+    }
+
+    fun getResizeModeForMedia(link: String, hash: String = ""): Int {
+        val key = mediaBoostKey(link, hash)
+        if (key.isBlank()) return 0
+        val map = readTorrentResizeModeJson()
+        if (map.has(key)) {
+            return map.optInt(key, 0).coerceIn(0, 3)
+        }
+        val altLinkKey = if (link.isNotBlank()) "l:${link.trim().hashCode()}" else ""
+        if (altLinkKey.isNotBlank() && altLinkKey != key && map.has(altLinkKey)) {
+            return map.optInt(altLinkKey, 0).coerceIn(0, 3)
+        }
+        return 0
+    }
+
+    fun setResizeModeForMedia(link: String, hash: String = "", resizeMode: Int) {
+        val key = mediaBoostKey(link, hash)
+        if (key.isBlank()) return
+        val clamped = resizeMode.coerceIn(0, 3)
+        val map = readTorrentResizeModeJson()
+        if (clamped <= 0) {
+            map.remove(key)
+        } else {
+            map.put(key, clamped)
+            val keys = map.keys().asSequence().toList()
+            if (keys.size > 60) {
+                for (oldKey in keys.take(keys.size - 60)) {
+                    if (oldKey != key) map.remove(oldKey)
+                }
+            }
+        }
+        prefs.edit().putString(KEY_TORRENT_RESIZE_MODE_MAP, map.toString()).apply()
+    }
+
+    fun getWatchlist(): List<CatalogItem> {
+        val raw = prefs.getString(KEY_WATCHLIST, "[]").orEmpty()
+        val list = mutableListOf<CatalogItem>()
+        runCatching {
+            val arr = JSONArray(raw)
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val title = o.optString("title").trim()
+                if (title.isBlank()) continue
+                val genres = mutableListOf<String>()
+                val gArr = o.optJSONArray("genres")
+                if (gArr != null) {
+                    for (g in 0 until gArr.length()) {
+                        val gn = gArr.optString(g).trim()
+                        if (gn.isNotBlank()) genres.add(gn)
+                    }
+                }
+                list.add(
+                    CatalogItem(
+                        id = o.optInt("id", 0),
+                        mediaType = o.optString("mediaType", "movie"),
+                        title = title,
+                        originalTitle = o.optString("originalTitle", ""),
+                        year = o.optString("year", ""),
+                        rating = o.optDouble("rating", 0.0),
+                        overview = o.optString("overview", ""),
+                        posterPath = o.optString("posterPath", ""),
+                        genreNames = genres,
+                        source = o.optString("source", "tmdb"),
+                        runtimeMinutes = o.optInt("runtimeMinutes", 0)
+                    )
+                )
+            }
+        }
+        return list.take(50)
+    }
+
+    private fun watchlistMatches(a: CatalogItem, b: CatalogItem): Boolean {
+        if (a.stableKey() == b.stableKey()) return true
+        if (a.id > 0 && b.id > 0 && a.id == b.id && a.mediaType.equals(b.mediaType, ignoreCase = true) && a.source == b.source) {
+            return true
+        }
+        return a.title.trim().equals(b.title.trim(), ignoreCase = true) &&
+            a.year.trim() == b.year.trim() &&
+            a.isSeries() == b.isSeries()
+    }
+
+    fun isInWatchlist(item: CatalogItem): Boolean {
+        return getWatchlist().any { watchlistMatches(it, item) }
+    }
+
+    fun toggleWatchlist(item: CatalogItem): Boolean {
+        val current = getWatchlist().toMutableList()
+        val existingIdx = current.indexOfFirst { watchlistMatches(it, item) }
+        return if (existingIdx >= 0) {
+            current.removeAt(existingIdx)
+            persistWatchlist(current)
+            false
+        } else {
+            current.add(0, item)
+            persistWatchlist(current.take(50))
+            true
+        }
+    }
+
+    fun removeFromWatchlist(item: CatalogItem) {
+        val updated = getWatchlist().filterNot { watchlistMatches(it, item) }
+        persistWatchlist(updated)
+    }
+
+    fun clearWatchlist() {
+        prefs.edit().putString(KEY_WATCHLIST, "[]").apply()
+    }
+
+    private fun persistWatchlist(items: List<CatalogItem>) {
+        val arr = JSONArray()
+        for (item in items) {
+            val gArr = JSONArray()
+            for (g in item.genreNames) gArr.put(g)
+            arr.put(
+                JSONObject().apply {
+                    put("id", item.id)
+                    put("mediaType", item.mediaType)
+                    put("title", item.title)
+                    put("originalTitle", item.originalTitle)
+                    put("year", item.year)
+                    put("rating", item.rating)
+                    put("overview", item.overview)
+                    put("posterPath", item.posterPath)
+                    put("genres", gArr)
+                    put("source", item.source)
+                    put("runtimeMinutes", item.runtimeMinutes)
+                }
+            )
+        }
+        prefs.edit().putString(KEY_WATCHLIST, arr.toString()).apply()
+    }
+
     fun getFavorites(): List<FavoriteQuery> {
         val raw = prefs.getString(KEY_FAVORITES, "[]").orEmpty()
         val list = mutableListOf<FavoriteQuery>()
@@ -938,6 +1080,7 @@ class StorageManager(context: Context) {
             put(KEY_AUTO_CHECK_UPDATES, autoCheckUpdates)
             put(KEY_HIDE_CAM_RELEASES, hideCamReleases)
             put(KEY_ONLY_LIVE_SEEDS, onlyLiveSeeds)
+            put(KEY_ONLY_DUB_RELEASES, onlyDubReleases)
             put(KEY_SHOW_TMDB_SHOWCASE, showTmdbShowcase)
             put(KEY_CATALOG_PROVIDER, catalogProvider)
             put(KEY_KINOPOISK_API_KEY, kinopoiskApiKey)
@@ -953,6 +1096,8 @@ class StorageManager(context: Context) {
             put(KEY_EPISODE_PROGRESS, readEpisodeProgressJson())
             put(KEY_LAST_EPISODE_MAP, readLastEpisodeJson())
             put(KEY_TORRENT_AUDIO_BOOST_MAP, readTorrentAudioBoostJson())
+            put(KEY_TORRENT_RESIZE_MODE_MAP, readTorrentResizeModeJson())
+            put(KEY_WATCHLIST, JSONArray(prefs.getString(KEY_WATCHLIST, "[]").orEmpty()))
             put(KEY_WATCH_HISTORY, JSONArray(prefs.getString(KEY_WATCH_HISTORY, "[]") ?: "[]"))
             put(KEY_FAVORITES, JSONArray(prefs.getString(KEY_FAVORITES, "[]") ?: "[]"))
             put(KEY_FAVORITE_TORRENTS, JSONArray(prefs.getString(KEY_FAVORITE_TORRENTS, "[]") ?: "[]"))
@@ -991,6 +1136,7 @@ class StorageManager(context: Context) {
         if (obj.has(KEY_AUTO_CHECK_UPDATES)) editor.putBoolean(KEY_AUTO_CHECK_UPDATES, obj.optBoolean(KEY_AUTO_CHECK_UPDATES, true))
         if (obj.has(KEY_HIDE_CAM_RELEASES)) editor.putBoolean(KEY_HIDE_CAM_RELEASES, obj.optBoolean(KEY_HIDE_CAM_RELEASES, false))
         if (obj.has(KEY_ONLY_LIVE_SEEDS)) editor.putBoolean(KEY_ONLY_LIVE_SEEDS, obj.optBoolean(KEY_ONLY_LIVE_SEEDS, false))
+        if (obj.has(KEY_ONLY_DUB_RELEASES)) editor.putBoolean(KEY_ONLY_DUB_RELEASES, obj.optBoolean(KEY_ONLY_DUB_RELEASES, false))
         if (obj.has(KEY_SHOW_TMDB_SHOWCASE)) editor.putBoolean(KEY_SHOW_TMDB_SHOWCASE, obj.optBoolean(KEY_SHOW_TMDB_SHOWCASE, true))
         if (obj.has(KEY_CATALOG_PROVIDER)) {
             editor.putInt(
@@ -1045,6 +1191,12 @@ class StorageManager(context: Context) {
         obj.optJSONObject(KEY_TORRENT_AUDIO_BOOST_MAP)?.let { boostMap ->
             editor.putString(KEY_TORRENT_AUDIO_BOOST_MAP, boostMap.toString())
         }
+        obj.optJSONObject(KEY_TORRENT_RESIZE_MODE_MAP)?.let { resizeMap ->
+            editor.putString(KEY_TORRENT_RESIZE_MODE_MAP, resizeMap.toString())
+        }
+        obj.optJSONArray(KEY_WATCHLIST)?.let { wl ->
+            editor.putString(KEY_WATCHLIST, wl.toString())
+        }
         obj.optJSONArray(KEY_WATCH_HISTORY)?.let { arr ->
             editor.putString(KEY_WATCH_HISTORY, arr.toString())
         }
@@ -1078,6 +1230,9 @@ class StorageManager(context: Context) {
         private const val KEY_TMDB_IMAGE_BASE = "tmdb_image_base"
         private const val KEY_AUDIO_BOOST_DB = "audio_boost_db"
         private const val KEY_TORRENT_AUDIO_BOOST_MAP = "torrent_audio_boost_map"
+        private const val KEY_TORRENT_RESIZE_MODE_MAP = "torrent_resize_mode_map"
+        private const val KEY_ONLY_DUB_RELEASES = "only_dub_releases"
+        private const val KEY_WATCHLIST = "movie_watchlist"
         private const val KEY_USE_DOH_DNS = "use_doh_dns"
         private const val KEY_USE_DPI_BYPASS = "use_dpi_bypass"
         private const val KEY_NETWORK_PROXY_URL = "network_proxy_url"

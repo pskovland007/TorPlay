@@ -266,6 +266,9 @@ class TmdbClient(private val storage: StorageManager) {
                     if (found <= 0) {
                         found = obj.optJSONObject("last_episode_to_air")?.optInt("runtime", 0) ?: 0
                     }
+                    if (found <= 0) {
+                        found = obj.optJSONObject("next_episode_to_air")?.optInt("runtime", 0) ?: 0
+                    }
                     found.coerceAtLeast(0)
                 }
             }

@@ -4,16 +4,16 @@
     android:layout_height="wrap_content"
     android:background="@drawable/bg_dialog"
     android:orientation="vertical"
-    android:padding="24dp">
+    android:padding="22dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
-        android:orientation="horizontal">
+        android:orientation="horizontal"
+        android:paddingBottom="8dp">
 
         <TextView
-            android:id="@+id/tvUpdateTitle"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
@@ -31,9 +31,8 @@
             android:paddingTop="3dp"
             android:paddingEnd="10dp"
             android:paddingBottom="3dp"
-            android:text="@string/update_badge_new"
             android:textColor="#FFFFFF"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:textStyle="bold" />
     </LinearLayout>
 
@@ -41,7 +40,6 @@
         android:id="@+id/tvUpdateVersions"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
         android:textColor="@color/text_primary"
         android:textSize="14sp"
         android:textStyle="bold" />
@@ -50,25 +48,29 @@
         android:id="@+id/tvUpdateSize"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="3dp"
+        android:layout_marginTop="2dp"
+        android:layout_marginBottom="10dp"
         android:textColor="@color/text_secondary"
         android:textSize="12sp" />
 
     <ScrollView
-        android:id="@+id/scrollUpdateNotes"
         android:layout_width="match_parent"
-        android:layout_height="130dp"
-        android:layout_marginTop="12dp"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="10dp"
         android:background="@drawable/bg_input_selector"
         android:fadeScrollbars="false"
-        android:padding="12dp">
+        android:maxHeight="200dp"
+        android:paddingStart="12dp"
+        android:paddingTop="10dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="10dp">
 
         <TextView
             android:id="@+id/tvUpdateNotes"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:lineSpacingMultiplier="1.25"
-            android:textColor="@color/text_secondary"
+            android:lineSpacingExtra="3dp"
+            android:textColor="@color/text_primary"
             android:textSize="13sp" />
     </ScrollView>
 
@@ -76,7 +78,7 @@
         android:id="@+id/layoutUpdateProgress"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="14dp"
+        android:layout_marginBottom="10dp"
         android:orientation="vertical"
         android:visibility="gone">
 
@@ -84,9 +86,9 @@
             android:id="@+id/tvUpdateProgressText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/update_downloading"
+            android:layout_marginBottom="5dp"
             android:textColor="@color/accent_emerald"
-            android:textSize="13sp"
+            android:textSize="12sp"
             android:textStyle="bold" />
 
         <ProgressBar
@@ -94,9 +96,7 @@
             style="?android:attr/progressBarStyleHorizontal"
             android:layout_width="match_parent"
             android:layout_height="8dp"
-            android:layout_marginTop="8dp"
             android:max="100"
-            android:progress="0"
             android:progressTint="@color/accent_emerald" />
     </LinearLayout>
 
@@ -104,57 +104,82 @@
         android:id="@+id/tvUpdatePermissionHint"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:lineSpacingMultiplier="1.2"
+        android:layout_marginBottom="10dp"
         android:text="@string/update_permission_hint"
         android:textColor="@color/status_warn"
-        android:textSize="13sp"
+        android:textSize="12sp"
         android:visibility="gone" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="18dp"
-        android:gravity="end"
+        android:gravity="end|center_vertical"
         android:orientation="horizontal">
 
         <TextView
-            android:id="@+id/btnUpdateSecondary"
+            android:id="@+id/btnUpdateChangelog"
             android:layout_width="wrap_content"
-            android:layout_height="42dp"
-            android:layout_marginEnd="10dp"
+            android:layout_height="40dp"
+            android:layout_marginEnd="8dp"
             android:background="@drawable/bg_button_selector"
             android:clickable="true"
             android:focusable="true"
             android:gravity="center"
+            android:nextFocusDown="@+id/btnUpdateChangelog"
+            android:nextFocusLeft="@+id/btnUpdateChangelog"
+            android:nextFocusRight="@+id/btnUpdateSecondary"
+            android:nextFocusUp="@+id/btnUpdateChangelog"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:text="@string/update_btn_changelog"
+            android:textColor="@color/text_primary"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/btnUpdateSecondary"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/bg_button_selector"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:minWidth="92dp"
             android:nextFocusDown="@+id/btnUpdateSecondary"
-            android:nextFocusLeft="@+id/btnUpdateSecondary"
+            android:nextFocusLeft="@+id/btnUpdateChangelog"
             android:nextFocusRight="@+id/btnUpdatePrimary"
             android:nextFocusUp="@+id/btnUpdateSecondary"
-            android:paddingStart="18dp"
-            android:paddingEnd="18dp"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
             android:text="@string/update_btn_later"
-            android:textColor="@color/text_primary"
-            android:textSize="14sp"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
             android:textStyle="bold" />
 
         <TextView
             android:id="@+id/btnUpdatePrimary"
             android:layout_width="wrap_content"
-            android:layout_height="42dp"
+            android:layout_height="40dp"
             android:background="@drawable/bg_button_selector"
             android:clickable="true"
             android:focusable="true"
             android:gravity="center"
+            android:minWidth="148dp"
             android:nextFocusDown="@+id/btnUpdatePrimary"
             android:nextFocusLeft="@+id/btnUpdateSecondary"
             android:nextFocusRight="@+id/btnUpdatePrimary"
             android:nextFocusUp="@+id/btnUpdatePrimary"
-            android:paddingStart="20dp"
-            android:paddingEnd="20dp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
             android:text="@string/update_btn_download"
             android:textColor="@color/text_button_accent_selector"
-            android:textSize="14sp"
+            android:textSize="13sp"
             android:textStyle="bold" />
     </LinearLayout>
 </LinearLayout>

@@ -370,7 +370,6 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             storage.setLastEpisodeForTorrent(torrentHash, fileId)
         }
 
-        resizeModeIndex = playerPrefs.resizeModeIndex
         autoNextEnabled = playerPrefs.autoNextEpisode
         showCornerStatsHud = storage.showPlayerStatsHud
         plasmaPixelShiftEnabled = storage.plasmaPixelShift
@@ -378,6 +377,12 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         val isContinuing = fromHistoryLaunch ||
             startPositionMs > 2_000L ||
             storage.hasWatchHistoryFor(link, torrentHash)
+        resizeModeIndex = if (isContinuing) {
+            storage.getResizeModeForMedia(link, torrentHash)
+        } else {
+            storage.setResizeModeForMedia(link, torrentHash, 0)
+            0
+        }
         audioBoostDb = if (isContinuing) {
             storage.getAudioBoostForMedia(link, torrentHash)
         } else {
@@ -632,7 +637,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         }
         btnResizeMode.setOnClickListener {
             resizeModeIndex = (resizeModeIndex + 1) % 4
-            playerPrefs.resizeModeIndex = resizeModeIndex
+            storage.setResizeModeForMedia(link, torrentHash, resizeModeIndex)
             applyResizeMode(showFeedback = true)
             scheduleOsdAutoHide()
         }
@@ -2969,6 +2974,12 @@ class BuiltInPlayerActivity : AppCompatActivity() {
 
         val tvAltTitle = dialog.findViewById<TextView>(R.id.tvAltTitle)
         val tvSubtitle = dialog.findViewById<TextView>(R.id.tvAltSubtitle)
+        val layoutAltFilters = dialog.findViewById<LinearLayout>(R.id.layoutAltFilters)
+        val btnAltFilterAll = dialog.findViewById<TextView>(R.id.btnAltFilterAll)
+        val btnAltFilter4k = dialog.findViewById<TextView>(R.id.btnAltFilter4k)
+        val btnAltFilter1080 = dialog.findViewById<TextView>(R.id.btnAltFilter1080)
+        val btnAltFilter720 = dialog.findViewById<TextView>(R.id.btnAltFilter720)
+        val btnAltFilterDub = dialog.findViewById<TextView>(R.id.btnAltFilterDub)
         val layoutLoading = dialog.findViewById<LinearLayout>(R.id.layoutAltLoading)
         val tvLoadingText = dialog.findViewById<TextView>(R.id.tvAltLoadingText)
         val tvEmpty = dialog.findViewById<TextView>(R.id.tvAltEmpty)
@@ -3065,15 +3076,50 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             if (!dialog.isShowing) return@launch
             layoutLoading.visibility = View.GONE
             if (live.isNotEmpty()) {
-                tvEmpty.visibility = View.GONE
-                rvAlt.visibility = View.VISIBLE
-                altAdapter.submitList(live)
-                rvAlt.post {
-                    rvAlt.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus()
-                        ?: rvAlt.getChildAt(0)?.requestFocus()
+                var altQuality = ""
+                var altOnlyDub = false
+
+                fun renderAltFiltered(focusFirst: Boolean) {
+                    btnAltFilterAll.isSelected = altQuality.isEmpty()
+                    btnAltFilter4k.isSelected = altQuality == "4K"
+                    btnAltFilter1080.isSelected = altQuality == "1080p"
+                    btnAltFilter720.isSelected = altQuality == "720p"
+                    btnAltFilterDub.isSelected = altOnlyDub
+
+                    val shown = live.filter { item ->
+                        val qOk = altQuality.isEmpty() || item.quality.equals(altQuality, ignoreCase = true)
+                        val dOk = !altOnlyDub || MainActivity.isDubbedTorrent(item)
+                        qOk && dOk
+                    }
+                    altAdapter.submitList(shown)
+                    if (shown.isNotEmpty()) {
+                        tvEmpty.visibility = View.GONE
+                        rvAlt.visibility = View.VISIBLE
+                        if (focusFirst) {
+                            rvAlt.post {
+                                rvAlt.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus()
+                                    ?: rvAlt.getChildAt(0)?.requestFocus()
+                            }
+                        }
+                    } else {
+                        rvAlt.visibility = View.GONE
+                        tvEmpty.text = getString(R.string.no_filtered_results)
+                        tvEmpty.visibility = View.VISIBLE
+                    }
                 }
+
+                btnAltFilterAll.setOnClickListener { altQuality = ""; renderAltFiltered(false) }
+                btnAltFilter4k.setOnClickListener { altQuality = "4K"; renderAltFiltered(false) }
+                btnAltFilter1080.setOnClickListener { altQuality = "1080p"; renderAltFiltered(false) }
+                btnAltFilter720.setOnClickListener { altQuality = "720p"; renderAltFiltered(false) }
+                btnAltFilterDub.setOnClickListener { altOnlyDub = !altOnlyDub; renderAltFiltered(false) }
+
+                layoutAltFilters.visibility = View.VISIBLE
+                renderAltFiltered(focusFirst = true)
             } else {
+                layoutAltFilters.visibility = View.GONE
                 rvAlt.visibility = View.GONE
+                tvEmpty.text = getString(R.string.alt_sources_empty)
                 tvEmpty.visibility = View.VISIBLE
                 btnManual.requestFocus()
             }
@@ -3151,6 +3197,9 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             }
             if (audioBoostDb > 0) {
                 storage.setAudioBoostForMedia(link, torrentHash, audioBoostDb)
+            }
+            if (resizeModeIndex > 0) {
+                storage.setResizeModeForMedia(link, torrentHash, resizeModeIndex)
             }
 
             // Reset stall & dead-torrent trackers for the fresh source

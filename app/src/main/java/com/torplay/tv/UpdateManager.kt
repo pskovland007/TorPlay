@@ -10,7 +10,9 @@ import android.os.Handler
 import android.os.Looper
 import android.os.StatFs
 import android.provider.Settings
+import android.graphics.Typeface
 import android.view.View
+import android.widget.ScrollView
 import android.view.Window
 import android.view.WindowManager
 import android.widget.LinearLayout
@@ -264,6 +266,7 @@ class UpdateManager(private val context: Context) {
         val tvProgressText = dialog.findViewById<TextView>(R.id.tvUpdateProgressText)
         val progressBar = dialog.findViewById<ProgressBar>(R.id.progressUpdateBar)
         val tvPermissionHint = dialog.findViewById<TextView>(R.id.tvUpdatePermissionHint)
+        val btnChangelog = dialog.findViewById<TextView>(R.id.btnUpdateChangelog)
         val btnSecondary = dialog.findViewById<TextView>(R.id.btnUpdateSecondary)
         val btnPrimary = dialog.findViewById<TextView>(R.id.btnUpdatePrimary)
 
@@ -282,7 +285,7 @@ class UpdateManager(private val context: Context) {
         tvVersions.text = "Установлена: $currentVersionName  →  GitHub: ${release.versionLabel}"
         val sizePart = if (release.apkSizeBytes > 0L) " • ${formatBytes(release.apkSizeBytes)}" else ""
         tvSize.text = "${release.apkName}$sizePart (${release.tagName})"
-        tvNotes.text = release.body.ifBlank { "Описание изменений не указано." }
+        tvNotes.text = resolvePatchNotes(release.versionLabel, release.body)
 
         var activeCall: Call? = null
         val cancelled = AtomicBoolean(false)
@@ -304,6 +307,10 @@ class UpdateManager(private val context: Context) {
             }
             tvPermissionHint.visibility = View.GONE
             launchPackageInstaller(activityContext, apkFile)
+        }
+
+        btnChangelog.setOnClickListener {
+            showChangelogDialog(activityContext)
         }
 
         btnSecondary.setOnClickListener {
@@ -576,11 +583,248 @@ class UpdateManager(private val context: Context) {
         }
     }
 
+    fun showChangelogDialog(activityContext: Context) {
+        if (activityContext is Activity && (activityContext.isFinishing || activityContext.isDestroyed)) {
+            return
+        }
+        val dialog = Dialog(activityContext)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(R.layout.dialog_changelog)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout(
+            (activityContext.resources.displayMetrics.widthPixels * 0.78).toInt(),
+            (activityContext.resources.displayMetrics.heightPixels * 0.84).toInt()
+        )
+
+        val progress = dialog.findViewById<ProgressBar>(R.id.progressChangelog)
+        val btnClose = dialog.findViewById<TextView>(R.id.btnChangelogClose)
+        val container = dialog.findViewById<LinearLayout>(R.id.layoutChangelogEntries)
+
+        fun renderEntries(entries: List<ChangelogEntry>) {
+            container.removeAllViews()
+            val density = activityContext.resources.displayMetrics.density
+            val dp6 = (6 * density).toInt()
+            val dp12 = (12 * density).toInt()
+            val dp14 = (14 * density).toInt()
+
+            entries.forEachIndexed { idx, entry ->
+                val titleView = TextView(activityContext).apply {
+                    text = if (entry.dateLabel.isNotBlank()) {
+                        "v${entry.version}  •  ${entry.dateLabel}"
+                    } else {
+                        "v${entry.version}"
+                    }
+                    textSize = 15f
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(
+                        ContextCompat.getColor(
+                            activityContext,
+                            if (idx == 0) R.color.accent_emerald else R.color.text_primary
+                        )
+                    )
+                    setPadding(0, if (idx == 0) 0 else dp12, 0, dp6)
+                }
+                val bodyView = TextView(activityContext).apply {
+                    text = entry.notes
+                    textSize = 13f
+                    setLineSpacing(4f, 1.0f)
+                    setTextColor(ContextCompat.getColor(activityContext, R.color.text_secondary))
+                    setPadding(0, 0, 0, dp14)
+                }
+                container.addView(titleView)
+                container.addView(bodyView)
+
+                if (idx < entries.lastIndex) {
+                    val divider = View(activityContext).apply {
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            (1 * density).toInt().coerceAtLeast(1)
+                        )
+                        setBackgroundColor(ContextCompat.getColor(activityContext, R.color.border_subtle))
+                    }
+                    container.addView(divider)
+                }
+            }
+        }
+
+        renderEntries(BUILT_IN_CHANGELOG)
+        btnClose.setOnClickListener { dialog.dismiss() }
+
+        dialog.show()
+        SystemUiHelper.applyImmersiveToDialog(dialog)
+        btnClose.requestFocus()
+
+        // Background refresh from GitHub to include any newer releases published after this build
+        progress.visibility = View.VISIBLE
+        Thread {
+            val merged = buildMergedChangelogFromGitHub()
+            mainHandler.post {
+                if (!dialog.isShowing) return@post
+                progress.visibility = View.GONE
+                if (merged.isNotEmpty()) {
+                    renderEntries(merged)
+                }
+            }
+        }.start()
+    }
+
+    private fun buildMergedChangelogFromGitHub(): List<ChangelogEntry> {
+        val byVersion = LinkedHashMap<String, ChangelogEntry>()
+        for (local in BUILT_IN_CHANGELOG) {
+            byVersion[local.version] = local
+        }
+
+        runCatching {
+            val req = Request.Builder()
+                .url(CHANGELOG_RELEASES_URL)
+                .header("Accept", "application/vnd.github+json")
+                .header("User-Agent", "TorPlay-TV")
+                .build()
+            apiClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use
+                val raw = resp.body?.string().orEmpty().trim()
+                if (!raw.startsWith("[")) return@use
+                val arr = JSONArray(raw)
+                for (i in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(i) ?: continue
+                    if (obj.optBoolean("draft", false)) continue
+                    val rel = parseReleaseJson(obj) ?: continue
+                    val ver = rel.versionLabel.trim()
+                    if (ver.isBlank()) continue
+                    val published = obj.optString("published_at", "").take(10)
+                    val existing = byVersion[ver]
+                    val resolvedNotes = resolvePatchNotes(ver, rel.body)
+                    if (existing == null) {
+                        byVersion[ver] = ChangelogEntry(ver, published, resolvedNotes)
+                    } else if (isMeaningfulReleaseBody(rel.body)) {
+                        byVersion[ver] = existing.copy(
+                            dateLabel = existing.dateLabel.ifBlank { published },
+                            notes = rel.body.trim()
+                        )
+                    }
+                }
+            }
+        }
+
+        return byVersion.values.sortedWith { a, b -> compareVersions(b.version, a.version) }
+    }
+
+    private fun isMeaningfulReleaseBody(rawBody: String): Boolean {
+        val clean = rawBody.trim()
+        if (clean.length < 18) return false
+        val lower = clean.lowercase(Locale.ROOT)
+        if (lower.startsWith("релиз ") && lower.contains("на github")) return false
+        if (lower.startsWith("auto-built") || lower.startsWith("automated build") || lower.startsWith("автосборка")) {
+            return false
+        }
+        return true
+    }
+
+    private fun resolvePatchNotes(versionLabel: String, githubBody: String): String {
+        if (isMeaningfulReleaseBody(githubBody)) {
+            return githubBody.trim()
+        }
+        val cleanVer = versionLabel.trim().removePrefix("v").removePrefix("V")
+        val exact = BUILT_IN_CHANGELOG.firstOrNull { it.version.equals(cleanVer, ignoreCase = true) }
+        if (exact != null) {
+            return "Что нового в v${exact.version}:\n${exact.notes}"
+        }
+        val latest = BUILT_IN_CHANGELOG.first()
+        return if (compareVersions(cleanVer, latest.version) > 0) {
+            "Доступна новая сборка v$cleanVer на GitHub.\n\nПоследний известный патч (v${latest.version}):\n${latest.notes}"
+        } else {
+            "Изменения последнего патча (v${latest.version}):\n${latest.notes}"
+        }
+    }
+
+    data class ChangelogEntry(
+        val version: String,
+        val dateLabel: String,
+        val notes: String
+    )
+
     companion object {
         private const val LATEST_RELEASE_URL =
             "https://api.github.com/repos/pskovland007/TorPlay/releases/latest"
         private const val ALL_RELEASES_URL =
             "https://api.github.com/repos/pskovland007/TorPlay/releases?per_page=5"
+        private const val CHANGELOG_RELEASES_URL =
+            "https://api.github.com/repos/pskovland007/TorPlay/releases?per_page=15"
+
+        private val BUILT_IN_CHANGELOG: List<ChangelogEntry> = listOf(
+            ChangelogEntry(
+                version = "1.0.17",
+                dateLabel = "Последний патч",
+                notes = "• Окно обновлений теперь показывает список изменений патча и кнопку «История изменений».
+" +
+                    "• Добавлен фильтр «Дубляж» и улучшена верхняя панель фильтров (4K / 1080p / 720p / Дубляж) в поиске и в окне «Раздачи» плеера.
+" +
+                    "• Умное соотношение сторон экрана: для нового фильма сбрасывается на стандарт, а при продолжении просмотра запоминается.
+" +
+                    "• В карточке фильма теперь всегда подгружается длительность.
+" +
+                    "• Добавлен список фильмов «Буду смотреть» — кнопка в карточке фильма и рядом с «Избранным» и «Историей»."
+            ),
+            ChangelogEntry(
+                version = "1.0.16",
+                dateLabel = "Витрина и постеры",
+                notes = "• Исправлена загрузка обложек TMDB через автоматическую цепочку резервных зеркал.
+" +
+                    "• На плитках фильмов добавлены год в скобках, главный жанр, цветной рейтинг, длительность и сиды/качество.
+" +
+                    "• Новая полка «Случайный топ дня (7.5+ с сидами)» — 6–8 проверенных фильмов, обновляются каждый день."
+            ),
+            ChangelogEntry(
+                version = "1.0.15",
+                dateLabel = "Облегчённый APK",
+                notes = "• Вес APK уменьшен примерно в 3 раза (ARM-only сборка со сжатием библиотек для Mi Box).
+" +
+                    "• Добавлена автоочистка кэша и проверка свободной памяти перед обновлением."
+            ),
+            ChangelogEntry(
+                version = "1.0.14",
+                dateLabel = "Плеер и шторка Android",
+                notes = "• Исправлено перекрытие интерфейса верхней шторкой Android (полноэкранный режим).
+" +
+                    "• Оптимизированы флаги VLC (убрано рассыпание картинки, возвращён быстрый многопоточный декодер).
+" +
+                    "• Добавлена подсказка при запуске 4K на устройствах без аппаратного 4K."
+            ),
+            ChangelogEntry(
+                version = "1.0.13",
+                dateLabel = "Иконки и избранное",
+                notes = "• Новые полноразмерный ТВ-баннер Android TV без текста и адаптивные иконки для телефонов/планшетов.
+" +
+                    "• Плашка скорости/пиров сделана более прозрачной.
+" +
+                    "• Добавление в избранное прямо из истории просмотров."
+            ),
+            ChangelogEntry(
+                version = "1.0.11",
+                dateLabel = "Хаб настроек и плашка",
+                notes = "• Новое меню настроек в виде 6 крупных плиток (2×3) со статусами.
+" +
+                    "• Постоянная плашка скорости и пиров в углу плеера со сдвигом пикселей для плазмы/OLED.
+" +
+                    "• Кнопка «Раздачи» прямо в плеере для быстрой смены потока с той же секунды."
+            ),
+            ChangelogEntry(
+                version = "1.0.10",
+                dateLabel = "Буст звука и мёртвые раздачи",
+                notes = "• Умный буст звука: сброс на новом фильме, запоминание при продолжении из истории.
+" +
+                    "• Окно альтернативных источников при запуске раздачи без сидов.
+" +
+                    "• Кнопка быстрого переключения движка (VLC HW / VLC SW / Media3) в плеере."
+            ),
+            ChangelogEntry(
+                version = "1.0.9",
+                dateLabel = "Сеть и DoH DNS",
+                notes = "• Встроенный DoH DNS (AdGuard / Google / Cloudflare / Quad9), обход DPI и поддержка прокси.
+" +
+                    "• Инструмент «Проверить зеркала» и авто-резерв витрины."
+            )
+        )
         private const val WEB_LATEST_RELEASE_URL =
             "https://github.com/pskovland007/TorPlay/releases/latest"
         private const val WEB_EXPANDED_ASSETS_PREFIX =

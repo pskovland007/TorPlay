@@ -106,4 +106,17 @@
     <string name="player_start_from_zero">Начать с начала</string>
     <string name="catalog_daily_top_title">🎲 Случайный топ дня (7.5+ с сидами)</string>
     <string name="catalog_daily_top_refresh">↻ Другие</string>
+    <string name="filter_dub">Дубляж</string>
+    <string name="btn_watchlist_header">Буду смотреть</string>
+    <string name="details_btn_watchlist_add">+ Буду смотреть</string>
+    <string name="details_btn_watchlist_saved">✓ Буду смотреть</string>
+    <string name="saved_watchlist_title">Буду смотреть</string>
+    <string name="saved_watchlist_empty">Список «Буду смотреть» пока пуст.\nОткройте любой фильм на витрине или в поиске и нажмите «+ Буду смотреть».</string>
+    <string name="action_watchlist_title">Буду смотреть</string>
+    <string name="action_watchlist_delete_one">Убрать из списка</string>
+    <string name="action_watchlist_clear_all">Очистить «Буду смотреть»</string>
+    <string name="update_btn_changelog">История изменений</string>
+    <string name="changelog_dialog_title">История изменений TorPlay</string>
+    <string name="changelog_loading_remote">Загружаем список релизов GitHub…</string>
+    <string name="btn_show_changelog">История изменений</string>
 </resources>

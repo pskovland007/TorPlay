@@ -22,11 +22,116 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
-        android:layout_marginBottom="12dp"
+        android:layout_marginBottom="10dp"
         android:ellipsize="end"
         android:maxLines="2"
         android:textColor="@color/text_secondary"
         android:textSize="13sp" />
+
+    <!-- Quick Quality & Dub Filter Chips above Alternative Sources list -->
+    <LinearLayout
+        android:id="@+id/layoutAltFilters"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="10dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/btnAltFilterAll"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:layout_marginEnd="6dp"
+            android:background="@drawable/bg_chip_selector"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:nextFocusDown="@+id/rvAltTorrents"
+            android:nextFocusLeft="@+id/btnAltFilterAll"
+            android:nextFocusRight="@+id/btnAltFilter4k"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:text="@string/filter_all"
+            android:textColor="@color/text_primary"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btnAltFilter4k"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:layout_marginEnd="6dp"
+            android:background="@drawable/bg_chip_selector"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:nextFocusDown="@+id/rvAltTorrents"
+            android:nextFocusLeft="@+id/btnAltFilterAll"
+            android:nextFocusRight="@+id/btnAltFilter1080"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:text="@string/filter_4k"
+            android:textColor="@color/text_primary"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btnAltFilter1080"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:layout_marginEnd="6dp"
+            android:background="@drawable/bg_chip_selector"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:nextFocusDown="@+id/rvAltTorrents"
+            android:nextFocusLeft="@+id/btnAltFilter4k"
+            android:nextFocusRight="@+id/btnAltFilter720"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:text="@string/filter_1080"
+            android:textColor="@color/text_primary"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btnAltFilter720"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:layout_marginEnd="6dp"
+            android:background="@drawable/bg_chip_selector"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:nextFocusDown="@+id/rvAltTorrents"
+            android:nextFocusLeft="@+id/btnAltFilter1080"
+            android:nextFocusRight="@+id/btnAltFilterDub"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:text="@string/filter_720"
+            android:textColor="@color/text_primary"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btnAltFilterDub"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:background="@drawable/bg_chip_selector"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:nextFocusDown="@+id/rvAltTorrents"
+            android:nextFocusLeft="@+id/btnAltFilter720"
+            android:nextFocusRight="@+id/btnAltFilterDub"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:text="@string/filter_dub"
+            android:textColor="@color/text_primary"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+    </LinearLayout>
 
     <LinearLayout
         android:id="@+id/layoutAltLoading"

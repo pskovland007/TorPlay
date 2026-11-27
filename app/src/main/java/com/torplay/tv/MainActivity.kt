@@ -89,6 +89,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var viewStatusDot: View
     private lateinit var tvTorrServeStatus: TextView
     private lateinit var btnFavorites: TextView
+    private lateinit var btnWatchlist: TextView
     private lateinit var btnHistory: TextView
     private lateinit var btnSettings: TextView
     private lateinit var etSearch: EditText
@@ -102,6 +103,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnFilter1080: TextView
     private lateinit var btnFilter720: TextView
     private lateinit var btnFilterHdr: TextView
+    private lateinit var btnFilterDub: TextView
     private lateinit var btnFilterNoCam: TextView
     private lateinit var btnFilterLiveSeeds: TextView
     private lateinit var btnSort: TextView
@@ -177,6 +179,7 @@ class MainActivity : AppCompatActivity() {
     private var currentSort: SortMode = SortMode.SEEDS
     private var hideCamReleases: Boolean = false
     private var onlyLiveSeeds: Boolean = false
+    private var onlyDubReleases: Boolean = false
 
     private var speechRecognizer: SpeechRecognizer? = null
     private var voiceDialog: Dialog? = null
@@ -234,11 +237,13 @@ class MainActivity : AppCompatActivity() {
 
         hideCamReleases = storage.hideCamReleases
         onlyLiveSeeds = storage.onlyLiveSeeds
+        onlyDubReleases = storage.onlyDubReleases
 
         bindViews()
         setupListeners()
         updateFilterChipsUi()
         updateFavoriteButtonUi()
+        updateWatchlistButtonUi()
 
         updateClearSearchButtonUi()
         refreshHomeShelves()
@@ -422,6 +427,7 @@ class MainActivity : AppCompatActivity() {
         viewStatusDot = findViewById(R.id.viewStatusDot)
         tvTorrServeStatus = findViewById(R.id.tvTorrServeStatus)
         btnFavorites = findViewById(R.id.btnFavorites)
+        btnWatchlist = findViewById(R.id.btnWatchlist)
         btnHistory = findViewById(R.id.btnHistory)
         btnSettings = findViewById(R.id.btnSettings)
         etSearch = findViewById(R.id.etSearch)
@@ -435,6 +441,7 @@ class MainActivity : AppCompatActivity() {
         btnFilter1080 = findViewById(R.id.btnFilter1080)
         btnFilter720 = findViewById(R.id.btnFilter720)
         btnFilterHdr = findViewById(R.id.btnFilterHdr)
+        btnFilterDub = findViewById(R.id.btnFilterDub)
         btnFilterNoCam = findViewById(R.id.btnFilterNoCam)
         btnFilterLiveSeeds = findViewById(R.id.btnFilterLiveSeeds)
         btnSort = findViewById(R.id.btnSort)
@@ -684,6 +691,10 @@ class MainActivity : AppCompatActivity() {
             showFavoritesDialog()
         }
 
+        btnWatchlist.setOnClickListener {
+            showWatchlistDialog()
+        }
+
         btnHistory.setOnClickListener {
             showHistoryDialog()
         }
@@ -745,6 +756,13 @@ class MainActivity : AppCompatActivity() {
         btnFilter1080.setOnClickListener { applyFilter(QualityFilter.FHD_1080) }
         btnFilter720.setOnClickListener { applyFilter(QualityFilter.HD_720) }
         btnFilterHdr.setOnClickListener { applyFilter(QualityFilter.HDR) }
+
+        btnFilterDub.setOnClickListener {
+            onlyDubReleases = !onlyDubReleases
+            storage.onlyDubReleases = onlyDubReleases
+            updateFilterChipsUi()
+            renderFilteredResults(focusFirst = false)
+        }
 
         btnFilterNoCam.setOnClickListener {
             hideCamReleases = !hideCamReleases
@@ -879,6 +897,7 @@ class MainActivity : AppCompatActivity() {
             btnFilter1080.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnFilter1080
             btnFilter720.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnFilter720
             btnFilterHdr.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnFilterHdr
+            btnFilterDub.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnFilterDub
             btnFilterNoCam.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnFilterNoCam
             btnFilterLiveSeeds.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnFilterLiveSeeds
             btnSort.nextFocusDownId = if (filterDown != View.NO_ID) filterDown else R.id.btnSort
@@ -1072,6 +1091,111 @@ class MainActivity : AppCompatActivity() {
             storage.clearFavoriteTorrents()
             refreshFavoritesAcrossUi()
             Toast.makeText(this, "Избранное очищено", Toast.LENGTH_SHORT).show()
+            if (dialog.isShowing) renderModal()
+        }
+        btnClose.setOnClickListener { dialog.dismiss() }
+
+        renderModal()
+        dialog.show()
+        SystemUiHelper.applyImmersiveToDialog(dialog)
+        if (rvList.visibility == View.VISIBLE) {
+            rvList.post {
+                rvList.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus()
+                    ?: rvList.getChildAt(0)?.requestFocus()
+            }
+        } else {
+            btnClose.requestFocus()
+        }
+    }
+
+    private fun updateWatchlistButtonUi() {
+        val count = storage.getWatchlist().size
+        btnWatchlist.text = if (count > 0) {
+            "${getString(R.string.btn_watchlist_header)} ($count)"
+        } else {
+            getString(R.string.btn_watchlist_header)
+        }
+    }
+
+    private fun showWatchlistDialog() {
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(R.layout.dialog_saved_list)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.80).toInt(),
+            (resources.displayMetrics.heightPixels * 0.82).toInt()
+        )
+
+        val tvTitle = dialog.findViewById<TextView>(R.id.tvSavedDialogTitle)
+        val tvSubtitle = dialog.findViewById<TextView>(R.id.tvSavedDialogSubtitle)
+        val btnClearAll = dialog.findViewById<TextView>(R.id.btnSavedClearAll)
+        val btnClose = dialog.findViewById<TextView>(R.id.btnSavedClose)
+        val rvList = dialog.findViewById<RecyclerView>(R.id.rvSavedList)
+        val tvEmpty = dialog.findViewById<TextView>(R.id.tvSavedEmpty)
+
+        tvTitle.text = getString(R.string.saved_watchlist_title)
+        tvEmpty.text = getString(R.string.saved_watchlist_empty)
+
+        lateinit var modalAdapter: WatchlistAdapter
+
+        fun renderModal() {
+            val items = applyCachedMeta(storage.getWatchlist())
+            modalAdapter.submitList(items)
+            updateWatchlistButtonUi()
+            if (items.isNotEmpty()) {
+                tvSubtitle.text = "Запланировано фильмов: ${items.size} • OK — карточка, удерж. OK — убрать"
+                rvList.visibility = View.VISIBLE
+                tvEmpty.visibility = View.GONE
+                btnClearAll.visibility = View.VISIBLE
+                btnClearAll.nextFocusDownId = R.id.rvSavedList
+                btnClose.nextFocusDownId = R.id.rvSavedList
+            } else {
+                tvSubtitle.text = "Запланировано фильмов: 0"
+                rvList.visibility = View.GONE
+                tvEmpty.visibility = View.VISIBLE
+                btnClearAll.visibility = View.GONE
+                btnClose.nextFocusDownId = R.id.btnSavedClose
+                btnClose.requestFocus()
+            }
+        }
+
+        modalAdapter = WatchlistAdapter(
+            scope = uiScope,
+            tmdbClient = tmdbClient,
+            posterLoader = posterLoader,
+            onItemClick = { movie ->
+                dialog.dismiss()
+                showMovieDetailsDialog(movie)
+            },
+            onItemRemove = { movie ->
+                showShelfActionDialog(
+                    title = getString(R.string.action_watchlist_title),
+                    subtitle = movie.titleWithYear(),
+                    deleteOneLabel = getString(R.string.action_watchlist_delete_one),
+                    clearAllLabel = getString(R.string.action_watchlist_clear_all),
+                    onDeleteOne = {
+                        storage.removeFromWatchlist(movie)
+                        updateWatchlistButtonUi()
+                        Toast.makeText(this, "Убрано из «Буду смотреть»", Toast.LENGTH_SHORT).show()
+                        if (dialog.isShowing) renderModal()
+                    },
+                    onClearAll = {
+                        storage.clearWatchlist()
+                        updateWatchlistButtonUi()
+                        Toast.makeText(this, "Список «Буду смотреть» очищен", Toast.LENGTH_SHORT).show()
+                        if (dialog.isShowing) renderModal()
+                    }
+                )
+            }
+        )
+        rvList.layoutManager = LinearLayoutManager(this)
+        rvList.adapter = modalAdapter
+
+        btnClearAll.setOnClickListener {
+            storage.clearWatchlist()
+            updateWatchlistButtonUi()
+            Toast.makeText(this, "Список «Буду смотреть» очищен", Toast.LENGTH_SHORT).show()
             if (dialog.isShowing) renderModal()
         }
         btnClose.setOnClickListener { dialog.dismiss() }
@@ -1620,54 +1744,113 @@ class MainActivity : AppCompatActivity() {
 
         tvType.text = getString(if (item.isSeries()) R.string.catalog_type_series else R.string.catalog_type_movie)
 
-        val metaParts = mutableListOf<String>()
-        if (effectiveItem.year.isNotBlank()) metaParts.add(effectiveItem.year)
-        val durText = effectiveItem.formattedDuration()
-        if (durText.isNotEmpty()) metaParts.add(durText)
-        if (effectiveItem.genreNames.isNotEmpty()) metaParts.add(effectiveItem.genreNames.joinToString(", "))
-        val statsText = effectiveItem.formattedTorrentStats()
-        if (statsText.isNotEmpty()) metaParts.add(statsText)
-        tvMeta.text = metaParts.joinToString(" • ")
+        var currentItem = effectiveItem
+
+        fun renderDetailsMeta(target: CatalogItem) {
+            val parts = mutableListOf<String>()
+            if (target.year.isNotBlank()) parts.add(target.year)
+            val durText = target.formattedDuration()
+            if (durText.isNotEmpty()) parts.add(durText)
+            if (target.genreNames.isNotEmpty()) parts.add(target.genreNames.joinToString(", "))
+            val statsText = target.formattedTorrentStats()
+            if (statsText.isNotEmpty()) parts.add(statsText)
+            tvMeta.text = parts.joinToString(" • ")
+        }
+        renderDetailsMeta(currentItem)
 
         var detailsJob: Job? = null
-        val needsKpDetails = item.source == KinopoiskClient.SOURCE_ID && item.overview.isBlank() && item.id > 0
-        tvOverview.text = if (needsKpDetails) {
+        val needsKpDetails = currentItem.source == KinopoiskClient.SOURCE_ID &&
+            (currentItem.overview.isBlank() || currentItem.runtimeMinutes <= 0) &&
+            currentItem.id > 0
+        val needsTmdbRuntime = currentItem.source == "tmdb" &&
+            currentItem.runtimeMinutes <= 0 &&
+            currentItem.id > 0
+
+        tvOverview.text = if (currentItem.source == KinopoiskClient.SOURCE_ID && currentItem.overview.isBlank() && currentItem.id > 0) {
             getString(R.string.catalog_loading_overview)
         } else {
-            item.overview.ifBlank { getString(R.string.catalog_no_overview) }
+            currentItem.overview.ifBlank { getString(R.string.catalog_no_overview) }
         }
 
-        val posterUrl = tmdbClient.buildPosterUrl(item.posterPath)
+        val posterUrl = tmdbClient.buildPosterUrl(currentItem.posterPath)
         posterLoader.load(uiScope, ivPoster, posterUrl)
 
         if (needsKpDetails) {
             detailsJob = uiScope.launch {
-                val full = kinopoiskClient.fetchFilmDetails(item.id)
+                val full = kinopoiskClient.fetchFilmDetails(currentItem.id)
                 if (!dialog.isShowing) return@launch
                 if (full != null) {
-                    tvOverview.text = full.overview.ifBlank { getString(R.string.catalog_no_overview) }
+                    val mergedGenres = if (full.genreNames.isNotEmpty()) full.genreNames else currentItem.genreNames
+                    val mergedYear = currentItem.year.ifBlank { full.year }
+                    val mergedRuntime = if (full.runtimeMinutes > 0) full.runtimeMinutes else currentItem.runtimeMinutes
+                    val mergedOverview = full.overview.ifBlank { currentItem.overview }
+                    currentItem = currentItem.copy(
+                        year = mergedYear,
+                        genreNames = mergedGenres,
+                        runtimeMinutes = mergedRuntime,
+                        overview = mergedOverview,
+                        rating = if (currentItem.rating > 0.05) currentItem.rating else full.rating
+                    )
+                    tvOverview.text = currentItem.overview.ifBlank { getString(R.string.catalog_no_overview) }
                     if (ratingStr.isEmpty()) {
-                        val newRating = full.formattedRating()
+                        val newRating = currentItem.formattedRating()
                         if (newRating.isNotEmpty()) {
                             tvRating.text = newRating
                             tvRating.visibility = View.VISIBLE
                         }
                     }
-                    if (metaParts.isEmpty() || (item.genreNames.isEmpty() && full.genreNames.isNotEmpty())) {
-                        val updatedMeta = mutableListOf<String>()
-                        val yr = item.year.ifBlank { full.year }
-                        if (yr.isNotBlank()) updatedMeta.add(yr)
-                        val gList = if (full.genreNames.isNotEmpty()) full.genreNames else item.genreNames
-                        if (gList.isNotEmpty()) updatedMeta.add(gList.joinToString(", "))
-                        tvMeta.text = updatedMeta.joinToString(" • ")
+                    renderDetailsMeta(currentItem)
+                    if (mergedRuntime > 0) {
+                        val key = currentItem.stableKey()
+                        val prev = catalogMetaCache[key] ?: CatalogEnrichedMeta()
+                        val updated = prev.copy(runtimeMinutes = mergedRuntime)
+                        catalogMetaCache[key] = updated
+                        broadcastCatalogMetadataUpdate(key, updated)
                     }
                 } else {
-                    tvOverview.text = getString(R.string.catalog_no_overview)
+                    tvOverview.text = currentItem.overview.ifBlank { getString(R.string.catalog_no_overview) }
                 }
+            }
+        } else if (needsTmdbRuntime) {
+            detailsJob = uiScope.launch {
+                val mins = runCatching {
+                    tmdbClient.fetchRuntimeMinutes(currentItem.id, currentItem.isSeries())
+                }.getOrDefault(0)
+                if (!dialog.isShowing || mins <= 0) return@launch
+                currentItem = currentItem.copy(runtimeMinutes = mins)
+                renderDetailsMeta(currentItem)
+                val key = currentItem.stableKey()
+                val prev = catalogMetaCache[key] ?: CatalogEnrichedMeta()
+                val updated = prev.copy(runtimeMinutes = mins)
+                catalogMetaCache[key] = updated
+                broadcastCatalogMetadataUpdate(key, updated)
             }
         }
 
-        btnFav.visibility = View.GONE
+        // Watchlist ("Буду смотреть") button right inside the Movie Details dialog
+        fun renderWatchlistBtn() {
+            val saved = storage.isInWatchlist(currentItem)
+            btnFav.isSelected = saved
+            btnFav.text = getString(
+                if (saved) R.string.details_btn_watchlist_saved else R.string.details_btn_watchlist_add
+            )
+        }
+        btnFav.visibility = View.VISIBLE
+        btnFind.nextFocusRightId = R.id.btnDetailsFavorite
+        btnFav.nextFocusLeftId = R.id.btnDetailsFindTorrents
+        btnFav.nextFocusRightId = R.id.btnDetailsClose
+        btnClose.nextFocusLeftId = R.id.btnDetailsFavorite
+        renderWatchlistBtn()
+        btnFav.setOnClickListener {
+            val added = storage.toggleWatchlist(currentItem)
+            renderWatchlistBtn()
+            updateWatchlistButtonUi()
+            Toast.makeText(
+                this,
+                if (added) "Добавлено в «Буду смотреть»" else "Убрано из «Буду смотреть»",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
 
         btnFind.setOnClickListener {
             dialog.dismiss()
@@ -2093,6 +2276,7 @@ class MainActivity : AppCompatActivity() {
         btnFilter1080.isSelected = currentFilter == QualityFilter.FHD_1080
         btnFilter720.isSelected = currentFilter == QualityFilter.HD_720
         btnFilterHdr.isSelected = currentFilter == QualityFilter.HDR
+        btnFilterDub.isSelected = onlyDubReleases
         btnFilterNoCam.isSelected = hideCamReleases
         btnFilterLiveSeeds.isSelected = onlyLiveSeeds
     }
@@ -2106,9 +2290,10 @@ class MainActivity : AppCompatActivity() {
                 QualityFilter.HD_720 -> item.quality == "720p"
                 QualityFilter.HDR -> item.isHdr
             }
+            val dubOk = !onlyDubReleases || isDubbedTorrent(item)
             val camOk = !hideCamReleases || !item.isCamRelease()
             val seedsOk = !onlyLiveSeeds || item.seeds > 0
-            qualityOk && camOk && seedsOk
+            qualityOk && dubOk && camOk && seedsOk
         }
 
         val sorted = when (currentSort) {
@@ -2795,6 +2980,7 @@ class MainActivity : AppCompatActivity() {
         // Section 6: System controls
         val btnToggleAutoUpdate = dialog.findViewById<TextView>(R.id.btnToggleAutoUpdate)
         val btnCheckUpdates = dialog.findViewById<TextView>(R.id.btnCheckUpdates)
+        val btnShowChangelog = dialog.findViewById<TextView>(R.id.btnShowChangelog)
         val btnBackupExport = dialog.findViewById<TextView>(R.id.btnBackupExport)
         val btnBackupImport = dialog.findViewById<TextView>(R.id.btnBackupImport)
         val btnExportLogs = dialog.findViewById<TextView>(R.id.btnExportLogs)
@@ -3259,8 +3445,10 @@ class MainActivity : AppCompatActivity() {
                 if (res.ok) {
                     hideCamReleases = storage.hideCamReleases
                     onlyLiveSeeds = storage.onlyLiveSeeds
+                    onlyDubReleases = storage.onlyDubReleases
                     updateFilterChipsUi()
                     updateFavoriteButtonUi()
+                    updateWatchlistButtonUi()
                     if (layoutFilters.visibility != View.VISIBLE && rvResults.visibility != View.VISIBLE) {
                         refreshHomeShelves()
                     }
@@ -3279,6 +3467,11 @@ class MainActivity : AppCompatActivity() {
                 val res = maintenanceManager.exportLogs(storage)
                 Toast.makeText(this@MainActivity, res.message, Toast.LENGTH_LONG).show()
             }
+        }
+
+        btnShowChangelog.setOnClickListener {
+            hideDialogKeyboard()
+            updateManager.showChangelogDialog(this@MainActivity)
         }
 
         btnCheckUpdates.setOnClickListener {
@@ -3445,5 +3638,20 @@ class MainActivity : AppCompatActivity() {
         const val EXTRA_AUTO_SEARCH_QUERY = "extra_auto_search_query"
         private const val AUTO_UPDATE_COOLDOWN_MS = 15L * 60L * 1000L
         private val TRAILING_YEAR_REGEX = Regex("\\s+\\(?((?:19|20)\\d{2})\\)?$")
+        private val DUB_MARKER_REGEX = Regex(
+            "(?:^|[^\\p{L}\\p{N}])(dub|дб|дубляж|дублирован(?:ный|ная|ное|ая|ый)?|дублир\\.?|продубляж|дуб|пд)(?:$|[^\\p{L}\\p{N}])",
+            RegexOption.IGNORE_CASE
+        )
+
+        fun isDubbedTorrent(item: TorrentItem): Boolean {
+            if (DUB_MARKER_REGEX.containsMatchIn(item.title)) return true
+            return item.voices.any { v ->
+                val lower = v.lowercase(Locale.ROOT)
+                lower.contains("дубляж") ||
+                    lower.contains("дублир") ||
+                    lower.contains("dub") ||
+                    DUB_MARKER_REGEX.containsMatchIn(v)
+            }
+        }
     }
 }
