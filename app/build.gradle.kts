@@ -11,8 +11,8 @@ android {
         applicationId = "com.torplay.tv"
         minSdk = 23
         targetSdk = 34
-        versionCode = 32
-        versionName = "1.0.20"
+        versionCode = 33
+        versionName = "1.0.21"
 
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")

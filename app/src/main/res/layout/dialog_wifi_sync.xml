@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bg_dialog"
+    android:orientation="vertical"
+    android:paddingStart="24dp"
+    android:paddingTop="18dp"
+    android:paddingEnd="24dp"
+    android:paddingBottom="18dp">
+
+    <!-- Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingBottom="6dp">
+
+        <View
+            android:layout_width="10dp"
+            android:layout_height="10dp"
+            android:layout_marginEnd="10dp"
+            android:background="@drawable/bg_corner_dot" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/wifi_sync_title"
+            android:textColor="@color/text_primary"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btnWifiSyncScan"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/bg_button_selector"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:nextFocusDown="@+id/rvWifiPeers"
+            android:nextFocusLeft="@+id/btnWifiSyncScan"
+            android:nextFocusRight="@+id/btnWifiSyncClose"
+            android:nextFocusUp="@+id/btnWifiSyncScan"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="@string/wifi_sync_btn_scan"
+            android:textColor="@color/text_button_accent_selector"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btnWifiSyncClose"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_button_selector"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:nextFocusDown="@+id/rvWifiPeers"
+            android:nextFocusLeft="@+id/btnWifiSyncScan"
+            android:nextFocusRight="@+id/btnWifiSyncClose"
+            android:nextFocusUp="@+id/btnWifiSyncClose"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="@string/wifi_sync_btn_close"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvWifiSyncLocalInfo"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="@color/accent_emerald"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:layout_marginBottom="10dp"
+        android:text="@string/wifi_sync_subtitle"
+        android:textColor="@color/text_secondary"
+        android:textSize="12sp" />
+
+    <!-- Discovered devices list / status area -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@drawable/bg_input_selector"
+        android:padding="10dp">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rvWifiPeers"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:nextFocusDown="@+id/etWifiSyncIp"
+            android:nextFocusUp="@+id/btnWifiSyncScan"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:id="@+id/layoutWifiSyncStatus"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="14dp">
+
+            <ProgressBar
+                android:id="@+id/progressWifiSync"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_marginBottom="10dp"
+                android:indeterminateTint="@color/accent_emerald" />
+
+            <TextView
+                android:id="@+id/tvWifiSyncStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:lineSpacingExtra="3dp"
+                android:text="@string/wifi_sync_scanning"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+        </LinearLayout>
+    </FrameLayout>
+
+    <!-- Result banner -->
+    <TextView
+        android:id="@+id/tvWifiSyncResult"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:textColor="@color/status_ok"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <!-- Manual IP fallback row -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:text="@string/wifi_sync_manual_label"
+        android:textColor="@color/text_secondary"
+        android:textSize="12sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="5dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <EditText
+            android:id="@+id/etWifiSyncIp"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_marginEnd="8dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_input_selector"
+            android:hint="@string/wifi_sync_manual_hint"
+            android:imeOptions="actionDone"
+            android:inputType="textUri"
+            android:nextFocusDown="@+id/etWifiSyncIp"
+            android:nextFocusLeft="@+id/etWifiSyncIp"
+            android:nextFocusRight="@+id/btnWifiSyncManual"
+            android:nextFocusUp="@+id/btnWifiSyncScan"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:singleLine="true"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_muted"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/btnWifiSyncManual"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:background="@drawable/bg_button_selector"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:minWidth="128dp"
+            android:nextFocusDown="@+id/btnWifiSyncManual"
+            android:nextFocusLeft="@+id/etWifiSyncIp"
+            android:nextFocusRight="@+id/btnWifiSyncManual"
+            android:nextFocusUp="@+id/btnWifiSyncClose"
+            android:paddingStart="18dp"
+            android:paddingEnd="18dp"
+            android:text="@string/wifi_sync_btn_manual"
+            android:textColor="@color/text_button_accent_selector"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+</LinearLayout>

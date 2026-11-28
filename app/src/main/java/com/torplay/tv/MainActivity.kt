@@ -75,6 +75,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var posterLoader: PosterLoader
     private lateinit var savedListsDialogHelper: SavedListsDialogHelper
     private lateinit var movieDetailsDialogHelper: MovieDetailsDialogHelper
+    private lateinit var wifiSyncManager: WifiSyncManager
+    private lateinit var wifiSyncDialogHelper: WifiSyncDialogHelper
     private lateinit var adapter: TorrentAdapter
     private lateinit var historyAdapter: HistoryAdapter
     private lateinit var favoriteTorrentAdapter: FavoriteTorrentAdapter
@@ -301,6 +303,13 @@ class MainActivity : AppCompatActivity() {
             onUpdateWatchlistButtonUi = { updateWatchlistButtonUi() },
             onRefreshHomeShelves = { refreshHomeShelves() }
         )
+        wifiSyncManager = WifiSyncManager(this, storage)
+        wifiSyncDialogHelper = WifiSyncDialogHelper(
+            activity = this,
+            storage = storage,
+            wifiSyncManager = wifiSyncManager,
+            onSyncCompleted = { refreshUiAfterWifiSync() }
+        )
 
         hideCamReleases = storage.hideCamReleases
         onlyLiveSeeds = storage.onlyLiveSeeds
@@ -371,10 +380,43 @@ class MainActivity : AppCompatActivity() {
         scheduleAutoUpdateCheck(initialDelayMs = 1_200L)
     }
 
+    override fun onStart() {
+        super.onStart()
+        wifiSyncManager.startServer { peerName, stats ->
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                refreshUiAfterWifiSync()
+                Toast.makeText(
+                    this,
+                    "⇄ Синхронизация от $peerName: ${stats.summaryText()}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        wifiSyncManager.stopServer()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        wifiSyncManager.stopServer()
         releaseVoiceRecognizer()
         uiScope.cancel()
+    }
+
+    private fun refreshUiAfterWifiSync() {
+        updateFavoriteButtonUi()
+        updateWatchlistButtonUi()
+        adapter.notifyDataSetChanged()
+        torrentTrendingAdapter.notifyDataSetChanged()
+        torrentNewAdapter.notifyDataSetChanged()
+        torrentSeriesAdapter.notifyDataSetChanged()
+        if (layoutFilters.visibility != View.VISIBLE && rvResults.visibility != View.VISIBLE) {
+            refreshHomeShelves()
+        }
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -2682,6 +2724,7 @@ class MainActivity : AppCompatActivity() {
         val btnToggleAutoUpdate = dialog.findViewById<TextView>(R.id.btnToggleAutoUpdate)
         val btnCheckUpdates = dialog.findViewById<TextView>(R.id.btnCheckUpdates)
         val btnShowChangelog = dialog.findViewById<TextView>(R.id.btnShowChangelog)
+        val btnWifiSync = dialog.findViewById<TextView>(R.id.btnWifiSync)
         val btnBackupExport = dialog.findViewById<TextView>(R.id.btnBackupExport)
         val btnBackupImport = dialog.findViewById<TextView>(R.id.btnBackupImport)
         val btnExportLogs = dialog.findViewById<TextView>(R.id.btnExportLogs)
@@ -2752,7 +2795,7 @@ class MainActivity : AppCompatActivity() {
                 .ifBlank { "127.0.0.1:8090" }
             tvTileTorrServeStatus.text = "$tsClean • Менеджер"
 
-            tvTileSystemStatus.text = "v${BuildConfig.VERSION_NAME} • Бэкап • Логи"
+            tvTileSystemStatus.text = "v${BuildConfig.VERSION_NAME} • Wi-Fi • Бэкап"
         }
 
         fun refreshPlayerChips() {
@@ -3204,6 +3247,11 @@ class MainActivity : AppCompatActivity() {
         btnShowChangelog.setOnClickListener {
             hideDialogKeyboard()
             updateManager.showChangelogDialog(this@MainActivity)
+        }
+
+        btnWifiSync.setOnClickListener {
+            hideDialogKeyboard()
+            wifiSyncDialogHelper.showWifiSyncDialog()
         }
 
         btnCheckUpdates.setOnClickListener {

@@ -24,4 +24,17 @@
     <string name="net_dpi_off">✕ Обход DPI (TLS): ВЫКЛ</string>
     <string name="settings_proxy_label">Прокси для каталога и поиска (необязательно)</string>
     <string name="settings_proxy_hint">socks5://127.0.0.1:1080 или http://host:port</string>
+    <string name="settings_wifi_sync_label">Синхронизация между устройствами по домашнему Wi-Fi</string>
+    <string name="btn_wifi_sync">Синхронизация по Wi-Fi (1 клик)</string>
+    <string name="wifi_sync_title">Синхронизация по Wi-Fi</string>
+    <string name="wifi_sync_subtitle">Откройте TorPlay на втором устройстве в той же сети Wi-Fi и нажмите на него в списке</string>
+    <string name="wifi_sync_btn_scan">Найти</string>
+    <string name="wifi_sync_btn_close">Закрыть</string>
+    <string name="wifi_sync_scanning">Ищем устройства TorPlay в домашнем Wi-Fi…</string>
+    <string name="wifi_sync_empty">Устройства не найдены. Откройте TorPlay на ТВ или планшете в той же сети Wi-Fi либо введите IP вручную ниже.</string>
+    <string name="wifi_sync_manual_label">Или введите IP второго устройства вручную</string>
+    <string name="wifi_sync_manual_hint">Например: 192.168.1.45</string>
+    <string name="wifi_sync_btn_manual">Синхр. ⇄</string>
+    <string name="wifi_sync_peer_action">Синхр. ⇄</string>
+    <string name="wifi_sync_progress">Синхронизация и умное слияние данных…</string>
 </resources>

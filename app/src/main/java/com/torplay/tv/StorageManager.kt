@@ -282,6 +282,12 @@ class StorageManager(context: Context) {
             prefs.edit().putString(KEY_LAST_QUERY, value.trim()).apply()
         }
 
+    var lastWifiSyncIp: String
+        get() = prefs.getString(KEY_LAST_WIFI_SYNC_IP, "")?.trim().orEmpty()
+        set(value) {
+            prefs.edit().putString(KEY_LAST_WIFI_SYNC_IP, value.trim()).apply()
+        }
+
     fun isEpisodeWatched(hash: String, fileId: Int): Boolean {
         if (hash.isBlank()) return false
         val set = prefs.getStringSet(KEY_WATCHED_EPISODES, emptySet()) ?: emptySet()
@@ -1365,6 +1371,407 @@ class StorageManager(context: Context) {
         }
     }
 
+
+    data class SyncMergeStats(
+        val watchlistTotal: Int,
+        val watchlistAdded: Int,
+        val favoritesTotal: Int,
+        val favoritesAdded: Int,
+        val historyTotal: Int,
+        val historyUpdated: Int,
+        val episodesUpdated: Int
+    ) {
+        fun summaryText(): String {
+            val parts = mutableListOf<String>()
+            if (watchlistAdded > 0) parts.add("Буду смотреть +$watchlistAdded")
+            if (favoritesAdded > 0) parts.add("Избранное +$favoritesAdded")
+            if (historyUpdated > 0) parts.add("История ~$historyUpdated")
+            if (episodesUpdated > 0) parts.add("Серии ~$episodesUpdated")
+            return if (parts.isEmpty()) {
+                "Всё уже синхронизировано (Буду смотреть: $watchlistTotal, Избранное: $favoritesTotal, История: $historyTotal)"
+            } else {
+                "Обновлено: ${parts.joinToString(", ")}"
+            }
+        }
+    }
+
+    fun exportSyncPayloadJson(): JSONObject {
+        val watchedArr = JSONArray()
+        val watchedSet = prefs.getStringSet(KEY_WATCHED_EPISODES, emptySet()) ?: emptySet()
+        for (w in watchedSet) {
+            watchedArr.put(w)
+        }
+        return JSONObject().apply {
+            put("syncSchema", 1)
+            put("generatedAt", System.currentTimeMillis())
+            put(KEY_WATCHLIST, safeJsonArray(KEY_WATCHLIST))
+            put(KEY_FAVORITE_TORRENTS, safeJsonArray(KEY_FAVORITE_TORRENTS))
+            put(KEY_FAVORITES, safeJsonArray(KEY_FAVORITES))
+            put(KEY_WATCH_HISTORY, safeJsonArray(KEY_WATCH_HISTORY))
+            put(KEY_WATCHED_EPISODES, watchedArr)
+            put(KEY_EPISODE_PROGRESS, readEpisodeProgressJson())
+            put(KEY_LAST_EPISODE_MAP, readLastEpisodeJson())
+        }
+    }
+
+    fun mergeSyncPayloadJson(remote: JSONObject): SyncMergeStats {
+        synchronized(listCacheLock) {
+            // 1. Merge Watchlist (deduplicated + enrich missing metadata)
+            val localWatchlist = getWatchlist()
+            val remoteWatchlist = parseWatchlistArray(remote.optJSONArray(KEY_WATCHLIST))
+            val mergedWatchlist = localWatchlist.toMutableList()
+            var watchlistAdded = 0
+            for (rItem in remoteWatchlist) {
+                val idx = mergedWatchlist.indexOfFirst { watchlistMatches(it, rItem) }
+                if (idx < 0) {
+                    mergedWatchlist.add(rItem)
+                    watchlistAdded++
+                } else {
+                    val cur = mergedWatchlist[idx]
+                    val enriched = cur.copy(
+                        originalTitle = cur.originalTitle.ifBlank { rItem.originalTitle },
+                        year = cur.year.ifBlank { rItem.year },
+                        rating = if (cur.rating > 0.05) cur.rating else rItem.rating,
+                        overview = cur.overview.ifBlank { rItem.overview },
+                        posterPath = cur.posterPath.ifBlank { rItem.posterPath },
+                        genreNames = if (cur.genreNames.isNotEmpty()) cur.genreNames else rItem.genreNames,
+                        runtimeMinutes = if (cur.runtimeMinutes > 0) cur.runtimeMinutes else rItem.runtimeMinutes
+                    )
+                    mergedWatchlist[idx] = enriched
+                }
+            }
+            val finalWatchlist = mergedWatchlist.take(50)
+
+            // 2. Merge Favorite Torrents
+            val localFavTorrents = getFavoriteTorrents()
+            val remoteFavTorrents = parseFavoriteTorrentsArray(remote.optJSONArray(KEY_FAVORITE_TORRENTS))
+            val favTorrentMap = LinkedHashMap<String, FavoriteTorrent>()
+            for (item in localFavTorrents) {
+                favTorrentMap[item.id] = item
+            }
+            var favTorrentsAdded = 0
+            for (rItem in remoteFavTorrents) {
+                val existing = favTorrentMap[rItem.id]
+                if (existing == null) {
+                    favTorrentMap[rItem.id] = rItem
+                    favTorrentsAdded++
+                } else {
+                    val newer = if (rItem.addedAt > existing.addedAt) rItem else existing
+                    val older = if (newer === rItem) existing else rItem
+                    favTorrentMap[rItem.id] = newer.copy(
+                        magnet = newer.magnet.ifBlank { older.magnet },
+                        torrentUrl = newer.torrentUrl.ifBlank { older.torrentUrl },
+                        sizeBytes = if (newer.sizeBytes > 0L) newer.sizeBytes else older.sizeBytes,
+                        sizeText = newer.sizeText.ifBlank { older.sizeText },
+                        quality = newer.quality.ifBlank { older.quality },
+                        isHdr = newer.isHdr || older.isHdr,
+                        tracker = newer.tracker.ifBlank { older.tracker },
+                        voices = if (newer.voices.isNotEmpty()) newer.voices else older.voices
+                    )
+                }
+            }
+            val finalFavTorrents = favTorrentMap.values.sortedByDescending { it.addedAt }.take(40)
+
+            // 3. Merge Favorite Queries
+            val localFavQueries = getFavorites()
+            val remoteFavQueries = parseFavoriteQueriesArray(remote.optJSONArray(KEY_FAVORITES))
+            val favQueryMap = LinkedHashMap<String, FavoriteQuery>()
+            for (fq in localFavQueries) {
+                favQueryMap[fq.query.trim().lowercase(Locale.ROOT)] = fq
+            }
+            for (rfq in remoteFavQueries) {
+                val key = rfq.query.trim().lowercase(Locale.ROOT)
+                val existing = favQueryMap[key]
+                if (existing == null || rfq.addedAt > existing.addedAt) {
+                    favQueryMap[key] = rfq
+                }
+            }
+            val finalFavQueries = favQueryMap.values.sortedByDescending { it.addedAt }.take(20)
+
+            // 4. Merge Watch History (keep freshest updatedAt; on close timestamps keep further position)
+            val localHistory = getWatchHistory()
+            val remoteHistory = parseWatchHistoryArray(remote.optJSONArray(KEY_WATCH_HISTORY))
+            val historyMap = LinkedHashMap<String, WatchHistoryEntry>()
+            for (h in localHistory) {
+                historyMap[h.id] = h
+            }
+            var historyUpdated = 0
+            for (rh in remoteHistory) {
+                val existingKey = if (historyMap.containsKey(rh.id)) {
+                    rh.id
+                } else {
+                    historyMap.entries.firstOrNull { (_, v) ->
+                        v.link.equals(rh.link, ignoreCase = true) && v.fileId == rh.fileId
+                    }?.key
+                }
+                val existing = existingKey?.let { historyMap[it] }
+                if (existing == null) {
+                    historyMap[rh.id] = rh
+                    historyUpdated++
+                } else {
+                    val timeDiff = kotlin.math.abs(rh.updatedAt - existing.updatedAt)
+                    val remoteWins = when {
+                        timeDiff <= 5_000L -> rh.positionMs > existing.positionMs
+                        else -> rh.updatedAt > existing.updatedAt
+                    }
+                    if (remoteWins) {
+                        val mergedEntry = rh.copy(
+                            episodeLabel = rh.episodeLabel.ifBlank { existing.episodeLabel },
+                            durationMs = if (rh.durationMs > 0L) rh.durationMs else existing.durationMs
+                        )
+                        if (existingKey != null && existingKey != rh.id) {
+                            historyMap.remove(existingKey)
+                        }
+                        historyMap[rh.id] = mergedEntry
+                        historyUpdated++
+                    }
+                }
+            }
+            val finalHistory = historyMap.values.sortedByDescending { it.updatedAt }.take(15)
+
+            // 5. Merge Episode Progress & Watched Episodes & Last Episode Map
+            val mergedProgress = readEpisodeProgressJson()
+            val remoteProgress = remote.optJSONObject(KEY_EPISODE_PROGRESS)
+            var episodesUpdated = 0
+            val hashLatestTs = HashMap<String, Pair<Int, Long>>()
+
+            // Index local progress timestamps by torrent hash
+            val localKeys = mergedProgress.keys()
+            while (localKeys.hasNext()) {
+                val k = localKeys.next()
+                val obj = mergedProgress.optJSONObject(k) ?: continue
+                val hashPart = k.substringBeforeLast('_', "").lowercase(Locale.US)
+                val fId = obj.optInt("fileId", 0)
+                val ts = obj.optLong("ts", 0L)
+                if (hashPart.isNotBlank() && fId > 0) {
+                    val prev = hashLatestTs[hashPart]
+                    if (prev == null || ts > prev.second) {
+                        hashLatestTs[hashPart] = fId to ts
+                    }
+                }
+            }
+
+            if (remoteProgress != null) {
+                val rKeys = remoteProgress.keys()
+                while (rKeys.hasNext()) {
+                    val k = rKeys.next()
+                    val rObj = remoteProgress.optJSONObject(k) ?: continue
+                    val lObj = mergedProgress.optJSONObject(k)
+                    val rTs = rObj.optLong("ts", 0L)
+                    val rPos = rObj.optLong("pos", 0L)
+                    val rDur = rObj.optLong("dur", 0L)
+                    val rDone = rObj.optBoolean("done", false)
+                    val rFileId = rObj.optInt("fileId", 0)
+
+                    val takeRemote = if (lObj == null) {
+                        true
+                    } else {
+                        val lTs = lObj.optLong("ts", 0L)
+                        val lPos = lObj.optLong("pos", 0L)
+                        val lDone = lObj.optBoolean("done", false)
+                        when {
+                            kotlin.math.abs(rTs - lTs) <= 5_000L -> (rDone && !lDone) || (rPos > lPos)
+                            else -> rTs > lTs
+                        }
+                    }
+
+                    if (takeRemote) {
+                        val mergedDur = if (rDur > 0L) rDur else (lObj?.optLong("dur", 0L) ?: 0L)
+                        val mergedDone = rDone || (lObj?.optBoolean("done", false) == true && rTs <= (lObj.optLong("ts", 0L) + 5_000L))
+                        val copyObj = JSONObject().apply {
+                            put("fileId", rFileId)
+                            put("pos", if (mergedDone && mergedDur > 0L) mergedDur else rPos)
+                            put("dur", mergedDur)
+                            put("done", mergedDone)
+                            put("ts", rTs)
+                        }
+                        mergedProgress.put(k, copyObj)
+                        episodesUpdated++
+                    }
+
+                    val hashPart = k.substringBeforeLast('_', "").lowercase(Locale.US)
+                    if (hashPart.isNotBlank() && rFileId > 0) {
+                        val prev = hashLatestTs[hashPart]
+                        if (prev == null || rTs > prev.second) {
+                            hashLatestTs[hashPart] = rFileId to rTs
+                        }
+                    }
+                }
+                trimEpisodeProgressIfNeeded(mergedProgress, maxEntries = 350)
+            }
+
+            val mergedWatched = (prefs.getStringSet(KEY_WATCHED_EPISODES, emptySet()) ?: emptySet()).toMutableSet()
+            val prevWatchedSize = mergedWatched.size
+            remote.optJSONArray(KEY_WATCHED_EPISODES)?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val s = arr.optString(i).trim()
+                    if (s.isNotBlank()) mergedWatched.add(s)
+                }
+            }
+            val pKeys = mergedProgress.keys()
+            while (pKeys.hasNext()) {
+                val k = pKeys.next()
+                val pObj = mergedProgress.optJSONObject(k) ?: continue
+                if (pObj.optBoolean("done", false)) {
+                    mergedWatched.add(k)
+                }
+            }
+            if (mergedWatched.size > prevWatchedSize && episodesUpdated == 0) {
+                episodesUpdated += (mergedWatched.size - prevWatchedSize)
+            }
+
+            val mergedLastMap = readLastEpisodeJson()
+            val remoteLastMap = remote.optJSONObject(KEY_LAST_EPISODE_MAP)
+            if (remoteLastMap != null) {
+                val lmKeys = remoteLastMap.keys()
+                while (lmKeys.hasNext()) {
+                    val h = lmKeys.next().trim().lowercase(Locale.US)
+                    val fId = remoteLastMap.optInt(h, -1)
+                    if (h.isNotBlank() && fId > 0 && !mergedLastMap.has(h)) {
+                        mergedLastMap.put(h, fId)
+                    }
+                }
+            }
+            for ((hashKey, pair) in hashLatestTs) {
+                if (pair.first > 0) {
+                    mergedLastMap.put(hashKey, pair.first)
+                }
+            }
+
+            // Persist all merged library sections atomically & refresh caches
+            persistWatchlist(finalWatchlist)
+            persistFavoriteTorrents(finalFavTorrents)
+            persistFavorites(finalFavQueries)
+            persistWatchHistory(finalHistory)
+            prefs.edit()
+                .putString(KEY_EPISODE_PROGRESS, mergedProgress.toString())
+                .putString(KEY_LAST_EPISODE_MAP, mergedLastMap.toString())
+                .putStringSet(KEY_WATCHED_EPISODES, mergedWatched)
+                .apply()
+
+            SyncMergeStats(
+                watchlistTotal = finalWatchlist.size,
+                watchlistAdded = watchlistAdded,
+                favoritesTotal = finalFavTorrents.size,
+                favoritesAdded = favTorrentsAdded,
+                historyTotal = finalHistory.size,
+                historyUpdated = historyUpdated,
+                episodesUpdated = episodesUpdated
+            )
+        }
+    }
+
+    private fun parseWatchlistArray(arr: JSONArray?): List<CatalogItem> {
+        if (arr == null) return emptyList()
+        val list = mutableListOf<CatalogItem>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val title = o.optString("title").trim()
+            if (title.isBlank()) continue
+            val genres = mutableListOf<String>()
+            val gArr = o.optJSONArray("genres")
+            if (gArr != null) {
+                for (g in 0 until gArr.length()) {
+                    val gn = gArr.optString(g).trim()
+                    if (gn.isNotBlank()) genres.add(gn)
+                }
+            }
+            list.add(
+                CatalogItem(
+                    id = o.optInt("id", 0),
+                    mediaType = o.optString("mediaType", "movie"),
+                    title = title,
+                    originalTitle = o.optString("originalTitle", ""),
+                    year = o.optString("year", ""),
+                    rating = o.optDouble("rating", 0.0),
+                    overview = o.optString("overview", ""),
+                    posterPath = o.optString("posterPath", ""),
+                    genreNames = genres,
+                    source = o.optString("source", "tmdb"),
+                    runtimeMinutes = o.optInt("runtimeMinutes", 0)
+                )
+            )
+        }
+        return list.take(50)
+    }
+
+    private fun parseFavoriteTorrentsArray(arr: JSONArray?): List<FavoriteTorrent> {
+        if (arr == null) return emptyList()
+        val list = mutableListOf<FavoriteTorrent>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val id = o.optString("id").trim()
+            val title = o.optString("title").trim()
+            val magnet = o.optString("magnet").trim()
+            val torrentUrl = o.optString("torrentUrl").trim()
+            if (id.isNotBlank() && title.isNotBlank() && (magnet.isNotBlank() || torrentUrl.isNotBlank())) {
+                val voices = mutableListOf<String>()
+                val vArr = o.optJSONArray("voices")
+                if (vArr != null) {
+                    for (v in 0 until vArr.length()) {
+                        val vs = vArr.optString(v).trim()
+                        if (vs.isNotBlank()) voices.add(vs)
+                    }
+                }
+                list.add(
+                    FavoriteTorrent(
+                        id = id,
+                        title = title,
+                        magnet = magnet,
+                        torrentUrl = torrentUrl,
+                        sizeBytes = o.optLong("sizeBytes", 0L),
+                        sizeText = o.optString("sizeText", ""),
+                        quality = o.optString("quality", ""),
+                        isHdr = o.optBoolean("isHdr", false),
+                        tracker = o.optString("tracker", ""),
+                        voices = voices,
+                        addedAt = o.optLong("addedAt", 0L)
+                    )
+                )
+            }
+        }
+        return list
+    }
+
+    private fun parseFavoriteQueriesArray(arr: JSONArray?): List<FavoriteQuery> {
+        if (arr == null) return emptyList()
+        val list = mutableListOf<FavoriteQuery>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val q = o.optString("query").trim()
+            if (q.isNotBlank()) {
+                list.add(FavoriteQuery(query = q, addedAt = o.optLong("addedAt", 0L)))
+            }
+        }
+        return list
+    }
+
+    private fun parseWatchHistoryArray(arr: JSONArray?): List<WatchHistoryEntry> {
+        if (arr == null) return emptyList()
+        val list = mutableListOf<WatchHistoryEntry>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val id = o.optString("id").trim()
+            val title = o.optString("title").trim()
+            val link = o.optString("link").trim()
+            if (id.isNotBlank() && title.isNotBlank() && link.isNotBlank()) {
+                list.add(
+                    WatchHistoryEntry(
+                        id = id,
+                        title = title,
+                        link = link,
+                        fileId = o.optInt("fileId", 1),
+                        episodeLabel = o.optString("episodeLabel", ""),
+                        positionMs = o.optLong("positionMs", 0L),
+                        durationMs = o.optLong("durationMs", 0L),
+                        updatedAt = o.optLong("updatedAt", 0L)
+                    )
+                )
+            }
+        }
+        return list
+    }
+
     companion object {
         private val listCacheLock = Any()
 
@@ -1438,6 +1845,7 @@ class StorageManager(context: Context) {
         private const val KEY_PARSER_API_KEY = "parser_api_key"
         private const val KEY_RUTOR_MIRROR = "rutor_mirror"
         private const val KEY_LAST_QUERY = "last_query"
+        private const val KEY_LAST_WIFI_SYNC_IP = "last_wifi_sync_ip"
         private const val KEY_WATCHED_EPISODES = "watched_episodes"
         private const val KEY_EPISODE_PROGRESS = "episode_progress"
         private const val KEY_LAST_EPISODE_MAP = "last_episode_map"
