@@ -3,8 +3,12 @@ package com.torplay.tv
 import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.app.Dialog
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaCodecList
 import android.os.Build
@@ -189,6 +193,13 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private var altSourcesDialog: Dialog? = null
     private var altSearchJob: Job? = null
     private var altSwitchJob: Job? = null
+    private var episodeSwitchJob: Job? = null
+
+    private var audioFocusRequestObj: Any? = null
+    private var hasAudioFocus: Boolean = false
+    private var resumeOnAudioFocusGain: Boolean = false
+    private var isAudioDucked: Boolean = false
+    private var isNoisyReceiverRegistered: Boolean = false
     private var initialTorrentHash: String = ""
     private var fromHistoryLaunch: Boolean = false
     private var warnedNoHw4kForCurrent: Boolean = false
@@ -322,6 +333,133 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         }
     }
 
+    private val becomingNoisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != AudioManager.ACTION_AUDIO_BECOMING_NOISY) return
+            if (isCurrentlyPlaying()) {
+                resumeOnAudioFocusGain = false
+                pausePlayback()
+                updateOsdProgress()
+                showQuickHudMessage("⏸ Пауза: аудиоустройство отключено")
+            }
+        }
+    }
+
+    private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                hasAudioFocus = true
+                if (isAudioDucked) {
+                    isAudioDucked = false
+                    if (isVlcEngine()) {
+                        applyVlcAudioBoost()
+                    } else {
+                        player?.volume = 1.0f
+                    }
+                }
+                if (resumeOnAudioFocusGain) {
+                    resumeOnAudioFocusGain = false
+                    if (!isCurrentlyPlaying()) {
+                        resumePlayback()
+                        updateOsdProgress()
+                    }
+                }
+            }
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                hasAudioFocus = false
+                resumeOnAudioFocusGain = false
+                isAudioDucked = false
+                if (isCurrentlyPlaying()) {
+                    pausePlayback()
+                    updateOsdProgress()
+                }
+                abandonAudioFocus()
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                hasAudioFocus = false
+                resumeOnAudioFocusGain = isCurrentlyPlaying()
+                if (resumeOnAudioFocusGain) {
+                    pausePlayback()
+                    updateOsdProgress()
+                }
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                if (isCurrentlyPlaying()) {
+                    isAudioDucked = true
+                    if (isVlcEngine()) {
+                        runCatching { vlcPlayer?.volume = 30 }
+                    } else {
+                        player?.volume = 0.25f
+                    }
+                }
+            }
+        }
+    }
+
+    private fun requestAudioFocus(): Boolean {
+        if (hasAudioFocus) return true
+        val res = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val attrs = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+                    .build()
+                val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                    .setAudioAttributes(attrs)
+                    .setAcceptsDelayedFocusGain(true)
+                    .setOnAudioFocusChangeListener(audioFocusChangeListener, mainHandler)
+                    .build()
+                audioFocusRequestObj = req
+                audioManager.requestAudioFocus(req)
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager.requestAudioFocus(
+                    audioFocusChangeListener,
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN
+                )
+            }
+        }.getOrDefault(AudioManager.AUDIOFOCUS_REQUEST_FAILED)
+        hasAudioFocus = (res == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+        return hasAudioFocus
+    }
+
+    private fun abandonAudioFocus() {
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                (audioFocusRequestObj as? AudioFocusRequest)?.let { req ->
+                    audioManager.abandonAudioFocusRequest(req)
+                }
+                audioFocusRequestObj = null
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager.abandonAudioFocus(audioFocusChangeListener)
+            }
+        }
+        hasAudioFocus = false
+        isAudioDucked = false
+    }
+
+    private fun registerBecomingNoisyReceiver() {
+        if (isNoisyReceiverRegistered) return
+        runCatching {
+            val filter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+            ContextCompat.registerReceiver(
+                this,
+                becomingNoisyReceiver,
+                filter,
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+            isNoisyReceiverRegistered = true
+        }
+    }
+
+    private fun unregisterBecomingNoisyReceiver() {
+        if (!isNoisyReceiverRegistered) return
+        runCatching { unregisterReceiver(becomingNoisyReceiver) }
+        isNoisyReceiverRegistered = false
+    }
+
     private fun pausePlayback() {
         if (isVlcEngine()) {
             runCatching { vlcPlayer?.pause() }
@@ -331,6 +469,15 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     }
 
     private fun resumePlayback() {
+        requestAudioFocus()
+        if (isAudioDucked) {
+            isAudioDucked = false
+            if (isVlcEngine()) {
+                applyVlcAudioBoost()
+            } else {
+                player?.volume = 1.0f
+            }
+        }
         if (isVlcEngine()) {
             runCatching { vlcPlayer?.play() }
         } else {
@@ -421,6 +568,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        registerBecomingNoisyReceiver()
         mainHandler.post(progressUpdateRunnable)
         if (showCornerStatsHud && plasmaPixelShiftEnabled) {
             mainHandler.removeCallbacks(pixelShiftRunnable)
@@ -430,17 +578,22 @@ class BuiltInPlayerActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        unregisterBecomingNoisyReceiver()
         mainHandler.removeCallbacks(progressUpdateRunnable)
         mainHandler.removeCallbacks(osdHideRunnable)
         mainHandler.removeCallbacks(quickHudHideRunnable)
         mainHandler.removeCallbacks(nextCountdownRunnable)
         mainHandler.removeCallbacks(pixelShiftRunnable)
         savePlaybackProgress()
+        resumeOnAudioFocusGain = false
         pausePlayback()
+        abandonAudioFocus()
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        unregisterBecomingNoisyReceiver()
+        abandonAudioFocus()
         runCatching { altSourcesDialog?.dismiss() }
         altSourcesDialog = null
         savePlaybackProgress()
@@ -1639,6 +1792,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         }
 
         AppLogger.i("Player", "VLC старт: pos=${seekPosMs}мс, cache=${cacheMs}мс, sw=$vlcForceSoftwareDecode ($title)")
+        requestAudioFocus()
         vlc.setMedia(media)
         media.release()
         vlc.play()
@@ -1700,6 +1854,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         lastMedia3BufferProgressAtMs = now
 
         AppLogger.i("Player", "Media3 старт: pos=${seekPosMs}мс ($title)")
+        requestAudioFocus()
         exo.stop()
         exo.setMediaItem(mediaItem)
         exo.prepare()
@@ -2221,12 +2376,46 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private fun switchToEpisode(targetIndex: Int) {
         if (targetIndex !in episodes.indices) return
         savePlaybackProgress()
+        episodeSwitchJob?.cancel()
 
+        // Reset per-episode temporary states before switching
+        hideNextEpisodeCard(dismissed = false)
+        nextCardDismissedForCurrent = false
+        appliedSavedTracksForItem = false
+        warnedNoHw4kForCurrent = false
         hasRetriedCodecFallback = false
         vlcRetriedSoftwareDecode = false
         media3StallRecoveryCount = 0
         vlcStallRecoveryCount = 0
         stallRecoveryCooldownUntilMs = 0L
+        pendingInitialSeekMs = 0L
+        pendingResumeSanityCheck = false
+        isBufferingNow = false
+        bufferingStartedAtMs = 0L
+        lastAdvancePosMs = -1L
+        lastAdvanceRealTimeMs = 0L
+        smoothAdvanceAccumMs = 0L
+        lastMedia3BufferedPosMs = -1L
+        lastMedia3BufferProgressAtMs = 0L
+        deadTorrentSinceMs = 0L
+        altSourcesSnoozeUntilMs = 0L
+        lastManualSeekAtMs = 0L
+        vlcThrashTimestamps.clear()
+        vlcThrashLastHandledAtMs = 0L
+        vlcMediaEndedHandled = false
+        vlcHasStartedPlayback = false
+        vlcLastKnownTimeMs = 0L
+        vlcLastKnownLengthMs = 0L
+        vlcLastProgressTimeMs = -1L
+        vlcLastProgressAtMs = 0L
+        vlcBufferPercent = 0
+        vlcLastBufferPct = 0
+        vlcLastBufferProgressAtMs = 0L
+        vlcRequestedStartTimeMs = 0L
+        isUserSeeking = false
+        pendingSwipeSeekMs = -1L
+        resumeOnAudioFocusGain = false
+
         val nextFile = episodes[targetIndex]
         currentEpisodeIndex = targetIndex
         fileId = nextFile.id
@@ -2244,7 +2433,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         hideOsd()
         showQuickHudMessage("▶ ${nextFile.fileName}")
 
-        uiScope.launch {
+        episodeSwitchJob = uiScope.launch {
             withContext(Dispatchers.IO) {
                 if (hashOrLink.isNotBlank()) {
                     torrServeClient.triggerPreload(hashOrLink, nextFile.id)

@@ -465,32 +465,38 @@ class StorageManager(context: Context) {
     }
 
     fun getWatchHistory(): List<WatchHistoryEntry> {
-        val raw = prefs.getString(KEY_WATCH_HISTORY, "[]").orEmpty()
-        val list = mutableListOf<WatchHistoryEntry>()
-        runCatching {
-            val arr = JSONArray(raw)
-            for (i in 0 until arr.length()) {
-                val o = arr.optJSONObject(i) ?: continue
-                val id = o.optString("id")
-                val title = o.optString("title")
-                val link = o.optString("link")
-                if (id.isNotBlank() && title.isNotBlank() && link.isNotBlank()) {
-                    list.add(
-                        WatchHistoryEntry(
-                            id = id,
-                            title = title,
-                            link = link,
-                            fileId = o.optInt("fileId", 1),
-                            episodeLabel = o.optString("episodeLabel", ""),
-                            positionMs = o.optLong("positionMs", 0L),
-                            durationMs = o.optLong("durationMs", 0L),
-                            updatedAt = o.optLong("updatedAt", 0L)
+        watchHistoryCache?.let { return it }
+        return synchronized(listCacheLock) {
+            watchHistoryCache?.let { return@synchronized it }
+            val raw = prefs.getString(KEY_WATCH_HISTORY, "[]").orEmpty()
+            val list = mutableListOf<WatchHistoryEntry>()
+            runCatching {
+                val arr = JSONArray(raw)
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val id = o.optString("id")
+                    val title = o.optString("title")
+                    val link = o.optString("link")
+                    if (id.isNotBlank() && title.isNotBlank() && link.isNotBlank()) {
+                        list.add(
+                            WatchHistoryEntry(
+                                id = id,
+                                title = title,
+                                link = link,
+                                fileId = o.optInt("fileId", 1),
+                                episodeLabel = o.optString("episodeLabel", ""),
+                                positionMs = o.optLong("positionMs", 0L),
+                                durationMs = o.optLong("durationMs", 0L),
+                                updatedAt = o.optLong("updatedAt", 0L)
+                            )
                         )
-                    )
+                    }
                 }
             }
+            val result = list.sortedByDescending { it.updatedAt }.take(15)
+            watchHistoryCache = result
+            result
         }
-        return list.sortedByDescending { it.updatedAt }.take(15)
     }
 
     fun saveWatchPosition(
@@ -527,7 +533,10 @@ class StorageManager(context: Context) {
     }
 
     fun clearWatchHistory() {
-        prefs.edit().putString(KEY_WATCH_HISTORY, "[]").apply()
+        synchronized(listCacheLock) {
+            watchHistoryCache = emptyList()
+            prefs.edit().putString(KEY_WATCH_HISTORY, "[]").apply()
+        }
     }
 
     fun getDailyTopMovies(dateKey: String): List<CatalogItem> {
@@ -611,8 +620,9 @@ class StorageManager(context: Context) {
     }
 
     private fun persistWatchHistory(items: List<WatchHistoryEntry>) {
+        val snapshot = items.sortedByDescending { it.updatedAt }.take(15)
         val arr = JSONArray()
-        for (item in items) {
+        for (item in snapshot) {
             arr.put(
                 JSONObject().apply {
                     put("id", item.id)
@@ -626,7 +636,10 @@ class StorageManager(context: Context) {
                 }
             )
         }
-        prefs.edit().putString(KEY_WATCH_HISTORY, arr.toString()).apply()
+        synchronized(listCacheLock) {
+            watchHistoryCache = snapshot
+            prefs.edit().putString(KEY_WATCH_HISTORY, arr.toString()).apply()
+        }
     }
 
     fun getSavedPositionMs(link: String, fileId: Int, hash: String = ""): Long {
@@ -748,40 +761,46 @@ class StorageManager(context: Context) {
     }
 
     fun getWatchlist(): List<CatalogItem> {
-        val raw = prefs.getString(KEY_WATCHLIST, "[]").orEmpty()
-        val list = mutableListOf<CatalogItem>()
-        runCatching {
-            val arr = JSONArray(raw)
-            for (i in 0 until arr.length()) {
-                val o = arr.optJSONObject(i) ?: continue
-                val title = o.optString("title").trim()
-                if (title.isBlank()) continue
-                val genres = mutableListOf<String>()
-                val gArr = o.optJSONArray("genres")
-                if (gArr != null) {
-                    for (g in 0 until gArr.length()) {
-                        val gn = gArr.optString(g).trim()
-                        if (gn.isNotBlank()) genres.add(gn)
+        watchlistCache?.let { return it }
+        return synchronized(listCacheLock) {
+            watchlistCache?.let { return@synchronized it }
+            val raw = prefs.getString(KEY_WATCHLIST, "[]").orEmpty()
+            val list = mutableListOf<CatalogItem>()
+            runCatching {
+                val arr = JSONArray(raw)
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val title = o.optString("title").trim()
+                    if (title.isBlank()) continue
+                    val genres = mutableListOf<String>()
+                    val gArr = o.optJSONArray("genres")
+                    if (gArr != null) {
+                        for (g in 0 until gArr.length()) {
+                            val gn = gArr.optString(g).trim()
+                            if (gn.isNotBlank()) genres.add(gn)
+                        }
                     }
-                }
-                list.add(
-                    CatalogItem(
-                        id = o.optInt("id", 0),
-                        mediaType = o.optString("mediaType", "movie"),
-                        title = title,
-                        originalTitle = o.optString("originalTitle", ""),
-                        year = o.optString("year", ""),
-                        rating = o.optDouble("rating", 0.0),
-                        overview = o.optString("overview", ""),
-                        posterPath = o.optString("posterPath", ""),
-                        genreNames = genres,
-                        source = o.optString("source", "tmdb"),
-                        runtimeMinutes = o.optInt("runtimeMinutes", 0)
+                    list.add(
+                        CatalogItem(
+                            id = o.optInt("id", 0),
+                            mediaType = o.optString("mediaType", "movie"),
+                            title = title,
+                            originalTitle = o.optString("originalTitle", ""),
+                            year = o.optString("year", ""),
+                            rating = o.optDouble("rating", 0.0),
+                            overview = o.optString("overview", ""),
+                            posterPath = o.optString("posterPath", ""),
+                            genreNames = genres,
+                            source = o.optString("source", "tmdb"),
+                            runtimeMinutes = o.optInt("runtimeMinutes", 0)
+                        )
                     )
-                )
+                }
             }
+            val result = list.take(50)
+            watchlistCache = result
+            result
         }
-        return list.take(50)
     }
 
     private fun watchlistMatches(a: CatalogItem, b: CatalogItem): Boolean {
@@ -818,12 +837,16 @@ class StorageManager(context: Context) {
     }
 
     fun clearWatchlist() {
-        prefs.edit().putString(KEY_WATCHLIST, "[]").apply()
+        synchronized(listCacheLock) {
+            watchlistCache = emptyList()
+            prefs.edit().putString(KEY_WATCHLIST, "[]").apply()
+        }
     }
 
     private fun persistWatchlist(items: List<CatalogItem>) {
+        val snapshot = items.take(50)
         val arr = JSONArray()
-        for (item in items) {
+        for (item in snapshot) {
             val gArr = JSONArray()
             for (g in item.genreNames) gArr.put(g)
             arr.put(
@@ -842,23 +865,32 @@ class StorageManager(context: Context) {
                 }
             )
         }
-        prefs.edit().putString(KEY_WATCHLIST, arr.toString()).apply()
+        synchronized(listCacheLock) {
+            watchlistCache = snapshot
+            prefs.edit().putString(KEY_WATCHLIST, arr.toString()).apply()
+        }
     }
 
     fun getFavorites(): List<FavoriteQuery> {
-        val raw = prefs.getString(KEY_FAVORITES, "[]").orEmpty()
-        val list = mutableListOf<FavoriteQuery>()
-        runCatching {
-            val arr = JSONArray(raw)
-            for (i in 0 until arr.length()) {
-                val o = arr.optJSONObject(i) ?: continue
-                val q = o.optString("query").trim()
-                if (q.isNotBlank()) {
-                    list.add(FavoriteQuery(query = q, addedAt = o.optLong("addedAt", 0L)))
+        favoritesCache?.let { return it }
+        return synchronized(listCacheLock) {
+            favoritesCache?.let { return@synchronized it }
+            val raw = prefs.getString(KEY_FAVORITES, "[]").orEmpty()
+            val list = mutableListOf<FavoriteQuery>()
+            runCatching {
+                val arr = JSONArray(raw)
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val q = o.optString("query").trim()
+                    if (q.isNotBlank()) {
+                        list.add(FavoriteQuery(query = q, addedAt = o.optLong("addedAt", 0L)))
+                    }
                 }
             }
+            val result = list.sortedByDescending { it.addedAt }.take(20)
+            favoritesCache = result
+            result
         }
-        return list.sortedByDescending { it.addedAt }.take(20)
     }
 
     fun isFavorite(query: String): Boolean {
@@ -892,48 +924,57 @@ class StorageManager(context: Context) {
     }
 
     fun clearFavorites() {
-        prefs.edit().putString(KEY_FAVORITES, "[]").apply()
+        synchronized(listCacheLock) {
+            favoritesCache = emptyList()
+            prefs.edit().putString(KEY_FAVORITES, "[]").apply()
+        }
     }
 
     fun getFavoriteTorrents(): List<FavoriteTorrent> {
-        val raw = prefs.getString(KEY_FAVORITE_TORRENTS, "[]").orEmpty()
-        val list = mutableListOf<FavoriteTorrent>()
-        runCatching {
-            val arr = JSONArray(raw)
-            for (i in 0 until arr.length()) {
-                val o = arr.optJSONObject(i) ?: continue
-                val id = o.optString("id").trim()
-                val title = o.optString("title").trim()
-                val magnet = o.optString("magnet").trim()
-                val torrentUrl = o.optString("torrentUrl").trim()
-                if (id.isNotBlank() && title.isNotBlank() && (magnet.isNotBlank() || torrentUrl.isNotBlank())) {
-                    val voices = mutableListOf<String>()
-                    val vArr = o.optJSONArray("voices")
-                    if (vArr != null) {
-                        for (v in 0 until vArr.length()) {
-                            val vs = vArr.optString(v).trim()
-                            if (vs.isNotBlank()) voices.add(vs)
+        favoriteTorrentsCache?.let { return it }
+        return synchronized(listCacheLock) {
+            favoriteTorrentsCache?.let { return@synchronized it }
+            val raw = prefs.getString(KEY_FAVORITE_TORRENTS, "[]").orEmpty()
+            val list = mutableListOf<FavoriteTorrent>()
+            runCatching {
+                val arr = JSONArray(raw)
+                for (i in 0 until arr.length()) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    val id = o.optString("id").trim()
+                    val title = o.optString("title").trim()
+                    val magnet = o.optString("magnet").trim()
+                    val torrentUrl = o.optString("torrentUrl").trim()
+                    if (id.isNotBlank() && title.isNotBlank() && (magnet.isNotBlank() || torrentUrl.isNotBlank())) {
+                        val voices = mutableListOf<String>()
+                        val vArr = o.optJSONArray("voices")
+                        if (vArr != null) {
+                            for (v in 0 until vArr.length()) {
+                                val vs = vArr.optString(v).trim()
+                                if (vs.isNotBlank()) voices.add(vs)
+                            }
                         }
-                    }
-                    list.add(
-                        FavoriteTorrent(
-                            id = id,
-                            title = title,
-                            magnet = magnet,
-                            torrentUrl = torrentUrl,
-                            sizeBytes = o.optLong("sizeBytes", 0L),
-                            sizeText = o.optString("sizeText", ""),
-                            quality = o.optString("quality", ""),
-                            isHdr = o.optBoolean("isHdr", false),
-                            tracker = o.optString("tracker", ""),
-                            voices = voices,
-                            addedAt = o.optLong("addedAt", 0L)
+                        list.add(
+                            FavoriteTorrent(
+                                id = id,
+                                title = title,
+                                magnet = magnet,
+                                torrentUrl = torrentUrl,
+                                sizeBytes = o.optLong("sizeBytes", 0L),
+                                sizeText = o.optString("sizeText", ""),
+                                quality = o.optString("quality", ""),
+                                isHdr = o.optBoolean("isHdr", false),
+                                tracker = o.optString("tracker", ""),
+                                voices = voices,
+                                addedAt = o.optLong("addedAt", 0L)
+                            )
                         )
-                    )
+                    }
                 }
             }
+            val result = list.sortedByDescending { it.addedAt }.take(40)
+            favoriteTorrentsCache = result
+            result
         }
-        return list.sortedByDescending { it.addedAt }.take(40)
     }
 
     fun isFavoriteTorrent(item: TorrentItem): Boolean {
@@ -975,12 +1016,16 @@ class StorageManager(context: Context) {
     }
 
     fun clearFavoriteTorrents() {
-        prefs.edit().putString(KEY_FAVORITE_TORRENTS, "[]").apply()
+        synchronized(listCacheLock) {
+            favoriteTorrentsCache = emptyList()
+            prefs.edit().putString(KEY_FAVORITE_TORRENTS, "[]").apply()
+        }
     }
 
     private fun persistFavoriteTorrents(items: List<FavoriteTorrent>) {
+        val snapshot = items.sortedByDescending { it.addedAt }.take(40)
         val arr = JSONArray()
-        for (item in items) {
+        for (item in snapshot) {
             val vArr = JSONArray()
             for (v in item.voices) vArr.put(v)
             arr.put(
@@ -999,12 +1044,16 @@ class StorageManager(context: Context) {
                 }
             )
         }
-        prefs.edit().putString(KEY_FAVORITE_TORRENTS, arr.toString()).apply()
+        synchronized(listCacheLock) {
+            favoriteTorrentsCache = snapshot
+            prefs.edit().putString(KEY_FAVORITE_TORRENTS, arr.toString()).apply()
+        }
     }
 
     private fun persistFavorites(items: List<FavoriteQuery>) {
+        val snapshot = items.sortedByDescending { it.addedAt }.take(20)
         val arr = JSONArray()
-        for (fav in items) {
+        for (fav in snapshot) {
             arr.put(
                 JSONObject().apply {
                     put("query", fav.query)
@@ -1012,20 +1061,29 @@ class StorageManager(context: Context) {
                 }
             )
         }
-        prefs.edit().putString(KEY_FAVORITES, arr.toString()).apply()
+        synchronized(listCacheLock) {
+            favoritesCache = snapshot
+            prefs.edit().putString(KEY_FAVORITES, arr.toString()).apply()
+        }
     }
 
     fun getRecentSearches(): List<String> {
-        val raw = prefs.getString(KEY_RECENT_SEARCHES, "[]").orEmpty()
-        val list = mutableListOf<String>()
-        runCatching {
-            val arr = JSONArray(raw)
-            for (i in 0 until arr.length()) {
-                val q = arr.optString(i).trim()
-                if (q.isNotBlank()) list.add(q)
+        recentSearchesCache?.let { return it }
+        return synchronized(listCacheLock) {
+            recentSearchesCache?.let { return@synchronized it }
+            val raw = prefs.getString(KEY_RECENT_SEARCHES, "[]").orEmpty()
+            val list = mutableListOf<String>()
+            runCatching {
+                val arr = JSONArray(raw)
+                for (i in 0 until arr.length()) {
+                    val q = arr.optString(i).trim()
+                    if (q.isNotBlank()) list.add(q)
+                }
             }
+            val result = list.take(8)
+            recentSearchesCache = result
+            result
         }
-        return list.take(8)
     }
 
     fun addRecentSearch(query: String) {
@@ -1047,15 +1105,28 @@ class StorageManager(context: Context) {
     }
 
     fun clearRecentSearches() {
-        prefs.edit().putString(KEY_RECENT_SEARCHES, "[]").apply()
+        synchronized(listCacheLock) {
+            recentSearchesCache = emptyList()
+            prefs.edit().putString(KEY_RECENT_SEARCHES, "[]").apply()
+        }
     }
 
     private fun persistRecentSearches(items: List<String>) {
+        val snapshot = items.take(8)
         val arr = JSONArray()
-        for (q in items) {
+        for (q in snapshot) {
             arr.put(q)
         }
-        prefs.edit().putString(KEY_RECENT_SEARCHES, arr.toString()).apply()
+        synchronized(listCacheLock) {
+            recentSearchesCache = snapshot
+            prefs.edit().putString(KEY_RECENT_SEARCHES, arr.toString()).apply()
+        }
+    }
+
+    private fun safeJsonArray(key: String): JSONArray {
+        val raw = prefs.getString(key, "[]").orEmpty().trim()
+        if (raw.isBlank()) return JSONArray()
+        return runCatching { JSONArray(raw) }.getOrElse { JSONArray() }
     }
 
     fun exportStateJson(): JSONObject {
@@ -1097,11 +1168,11 @@ class StorageManager(context: Context) {
             put(KEY_LAST_EPISODE_MAP, readLastEpisodeJson())
             put(KEY_TORRENT_AUDIO_BOOST_MAP, readTorrentAudioBoostJson())
             put(KEY_TORRENT_RESIZE_MODE_MAP, readTorrentResizeModeJson())
-            put(KEY_WATCHLIST, JSONArray(prefs.getString(KEY_WATCHLIST, "[]").orEmpty()))
-            put(KEY_WATCH_HISTORY, JSONArray(prefs.getString(KEY_WATCH_HISTORY, "[]") ?: "[]"))
-            put(KEY_FAVORITES, JSONArray(prefs.getString(KEY_FAVORITES, "[]") ?: "[]"))
-            put(KEY_FAVORITE_TORRENTS, JSONArray(prefs.getString(KEY_FAVORITE_TORRENTS, "[]") ?: "[]"))
-            put(KEY_RECENT_SEARCHES, JSONArray(prefs.getString(KEY_RECENT_SEARCHES, "[]") ?: "[]"))
+            put(KEY_WATCHLIST, safeJsonArray(KEY_WATCHLIST))
+            put(KEY_WATCH_HISTORY, safeJsonArray(KEY_WATCH_HISTORY))
+            put(KEY_FAVORITES, safeJsonArray(KEY_FAVORITES))
+            put(KEY_FAVORITE_TORRENTS, safeJsonArray(KEY_FAVORITE_TORRENTS))
+            put(KEY_RECENT_SEARCHES, safeJsonArray(KEY_RECENT_SEARCHES))
         }
     }
 
@@ -1209,10 +1280,44 @@ class StorageManager(context: Context) {
         obj.optJSONArray(KEY_RECENT_SEARCHES)?.let { arr ->
             editor.putString(KEY_RECENT_SEARCHES, arr.toString())
         }
-        editor.apply()
+        synchronized(listCacheLock) {
+            editor.apply()
+            invalidateListCachesLocked()
+        }
     }
 
     companion object {
+        private val listCacheLock = Any()
+
+        @Volatile
+        private var watchHistoryCache: List<WatchHistoryEntry>? = null
+
+        @Volatile
+        private var watchlistCache: List<CatalogItem>? = null
+
+        @Volatile
+        private var favoritesCache: List<FavoriteQuery>? = null
+
+        @Volatile
+        private var favoriteTorrentsCache: List<FavoriteTorrent>? = null
+
+        @Volatile
+        private var recentSearchesCache: List<String>? = null
+
+        private fun invalidateListCachesLocked() {
+            watchHistoryCache = null
+            watchlistCache = null
+            favoritesCache = null
+            favoriteTorrentsCache = null
+            recentSearchesCache = null
+        }
+
+        fun invalidateListCaches() {
+            synchronized(listCacheLock) {
+                invalidateListCachesLocked()
+            }
+        }
+
         private const val PREFS_NAME = "torplay_prefs"
         private const val KEY_USE_BUILTIN_PLAYER = "use_builtin_player"
         private const val KEY_PLAYER_ENGINE = "player_engine"

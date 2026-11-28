@@ -4,15 +4,12 @@ import android.app.Activity
 import android.app.Dialog
 import android.content.Context
 import android.content.Intent
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.os.StatFs
 import android.provider.Settings
-import android.graphics.Typeface
 import android.view.View
-import android.widget.ScrollView
 import android.view.Window
 import android.view.WindowManager
 import android.widget.LinearLayout
@@ -21,7 +18,14 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.OkHttpClient
@@ -31,10 +35,12 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
-class UpdateManager(private val context: Context) {
+class UpdateManager(
+    private val context: Context,
+    private val storage: StorageManager = StorageManager(context)
+) {
 
     data class ReleaseInfo(
         val tagName: String,
@@ -51,21 +57,19 @@ class UpdateManager(private val context: Context) {
         val error: String? = null
     )
 
-    private val apiClient = OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .build()
+    private val apiClient: OkHttpClient
+        get() = NetworkHelper.getExternalClient(storage, connectSec = 8L, readSec = 15L)
 
-    private val downloadClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(90, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .build()
+    private val downloadClient: OkHttpClient
+        get() = NetworkHelper.getExternalClient(storage, connectSec = 15L, readSec = 90L)
 
-    private val mainHandler = Handler(Looper.getMainLooper())
     private var isDialogShowing: Boolean = false
+
+    @Volatile
+    private var cachedAssetChangelog: List<ChangelogEntry>? = null
+
+    @Volatile
+    private var cachedRemoteChangelog: List<ChangelogEntry> = emptyList()
 
     suspend fun checkLatestRelease(): ReleaseInfo? = checkLatestReleaseDetailed().release
 
@@ -249,6 +253,7 @@ class UpdateManager(private val context: Context) {
         }
         isDialogShowing = true
 
+        val dialogScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val dialog = Dialog(activityContext)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
         dialog.setContentView(R.layout.dialog_update)
@@ -287,7 +292,18 @@ class UpdateManager(private val context: Context) {
         tvSize.text = "${release.apkName}$sizePart (${release.tagName})"
         tvNotes.text = resolvePatchNotes(release.versionLabel, release.body)
 
+        if (!isMeaningfulReleaseBody(release.body)) {
+            dialogScope.launch {
+                val remoteEntries = withContext(Dispatchers.IO) { fetchRemoteChangelogJson() }
+                if (remoteEntries.isNotEmpty() && dialog.isShowing) {
+                    cachedRemoteChangelog = remoteEntries
+                    tvNotes.text = resolvePatchNotes(release.versionLabel, release.body, remoteEntries)
+                }
+            }
+        }
+
         var activeCall: Call? = null
+        var downloadJob: Job? = null
         val cancelled = AtomicBoolean(false)
         var isDownloading = false
         var downloadedApkFile: File? = null
@@ -317,6 +333,7 @@ class UpdateManager(private val context: Context) {
             if (isDownloading) {
                 cancelled.set(true)
                 activeCall?.cancel()
+                downloadJob?.cancel()
             } else {
                 dialog.dismiss()
             }
@@ -377,118 +394,124 @@ class UpdateManager(private val context: Context) {
             btnSecondary.text = activityContext.getString(R.string.update_btn_cancel_download)
             btnSecondary.requestFocus()
 
-            Thread {
+            downloadJob = dialogScope.launch {
                 val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
-                cleanOldApks(updatesDir)
                 val outFile = File(updatesDir, "TorPlay-latest.apk")
 
-                val req = Request.Builder()
-                    .url(release.apkUrl)
-                    .header("User-Agent", "TorPlay-TV")
-                    .build()
-                val call = downloadClient.newCall(req)
-                activeCall = call
+                val result = try {
+                    withContext(Dispatchers.IO) {
+                        cleanOldApks(updatesDir)
+                        val req = Request.Builder()
+                            .url(release.apkUrl)
+                            .header("User-Agent", "TorPlay-TV")
+                            .build()
+                        val call = downloadClient.newCall(req)
+                        activeCall = call
 
-                val result = runCatching {
-                    call.execute().use { resp ->
-                        if (!resp.isSuccessful) error("HTTP ${resp.code}")
-                        val body = resp.body ?: error("Пустой ответ сервера")
-                        val totalBytes = body.contentLength().takeIf { it > 0L } ?: release.apkSizeBytes
-                        var downloaded = 0L
-                        var lastUiUpdate = 0L
-                        val buf = ByteArray(16_384)
+                        call.execute().use { resp ->
+                            if (!resp.isSuccessful) error("HTTP ${resp.code}")
+                            val body = resp.body ?: error("Пустой ответ сервера")
+                            val totalBytes = body.contentLength().takeIf { it > 0L } ?: release.apkSizeBytes
+                            var downloaded = 0L
+                            var lastUiUpdate = 0L
+                            val buf = ByteArray(16_384)
 
-                        body.byteStream().use { input ->
-                            FileOutputStream(outFile).use { output ->
-                                while (true) {
-                                    if (cancelled.get()) {
-                                        throw InterruptedException("CANCELLED")
-                                    }
-                                    val read = input.read(buf)
-                                    if (read == -1) break
-                                    output.write(buf, 0, read)
-                                    downloaded += read
+                            body.byteStream().use { input ->
+                                FileOutputStream(outFile).use { output ->
+                                    while (true) {
+                                        if (cancelled.get() || !isActive) {
+                                            throw CancellationException("CANCELLED")
+                                        }
+                                        val read = input.read(buf)
+                                        if (read == -1) break
+                                        output.write(buf, 0, read)
+                                        downloaded += read
 
-                                    val now = System.currentTimeMillis()
-                                    if (now - lastUiUpdate >= 120L || (totalBytes > 0L && downloaded >= totalBytes)) {
-                                        lastUiUpdate = now
-                                        val snapDown = downloaded
-                                        mainHandler.post {
-                                            if (!dialog.isShowing) return@post
-                                            if (totalBytes > 0L) {
-                                                val pct = ((snapDown * 100L) / totalBytes).toInt().coerceIn(0, 100)
-                                                progressBar.isIndeterminate = false
-                                                progressBar.progress = pct
-                                                tvProgressText.text = "Загрузка: $pct% (${formatBytes(snapDown)} / ${formatBytes(totalBytes)})"
-                                            } else {
-                                                progressBar.isIndeterminate = true
-                                                tvProgressText.text = "Загрузка: ${formatBytes(snapDown)}"
+                                        val now = System.currentTimeMillis()
+                                        if (now - lastUiUpdate >= 120L || (totalBytes > 0L && downloaded >= totalBytes)) {
+                                            lastUiUpdate = now
+                                            val snapDown = downloaded
+                                            withContext(Dispatchers.Main) {
+                                                if (!dialog.isShowing) return@withContext
+                                                if (totalBytes > 0L) {
+                                                    val pct = ((snapDown * 100L) / totalBytes).toInt().coerceIn(0, 100)
+                                                    progressBar.isIndeterminate = false
+                                                    progressBar.progress = pct
+                                                    tvProgressText.text = "Загрузка: $pct% (${formatBytes(snapDown)} / ${formatBytes(totalBytes)})"
+                                                } else {
+                                                    progressBar.isIndeterminate = true
+                                                    tvProgressText.text = "Загрузка: ${formatBytes(snapDown)}"
+                                                }
                                             }
                                         }
                                     }
+                                    output.flush()
                                 }
-                                output.flush()
                             }
                         }
+                        Result.success(outFile)
                     }
-                    outFile
+                } catch (ce: CancellationException) {
+                    cancelled.set(true)
+                    Result.failure(ce)
+                } catch (err: Exception) {
+                    Result.failure(err)
                 }
 
-                mainHandler.post {
-                    isDownloading = false
-                    activeCall = null
-                    dialog.setCancelable(true)
-                    btnPrimary.isEnabled = true
-                    btnPrimary.alpha = 1.0f
+                isDownloading = false
+                activeCall = null
+                downloadJob = null
+                dialog.setCancelable(true)
+                btnPrimary.isEnabled = true
+                btnPrimary.alpha = 1.0f
 
-                    if (cancelled.get()) {
-                        outFile.delete()
-                        if (dialog.isShowing) {
-                            progressBar.isIndeterminate = false
-                            progressBar.progress = 0
-                            tvProgressText.setTextColor(ContextCompat.getColor(activityContext, R.color.status_warn))
-                            tvProgressText.text = activityContext.getString(R.string.update_cancelled)
-                            btnSecondary.text = activityContext.getString(R.string.update_btn_close)
-                            btnPrimary.text = activityContext.getString(
-                                if (isNewer) R.string.update_btn_download else R.string.update_btn_reinstall
-                            )
-                            btnPrimary.requestFocus()
-                        }
-                        return@post
+                if (cancelled.get()) {
+                    runCatching { outFile.delete() }
+                    if (dialog.isShowing) {
+                        progressBar.isIndeterminate = false
+                        progressBar.progress = 0
+                        tvProgressText.setTextColor(ContextCompat.getColor(activityContext, R.color.status_warn))
+                        tvProgressText.text = activityContext.getString(R.string.update_cancelled)
+                        btnSecondary.text = activityContext.getString(R.string.update_btn_close)
+                        btnPrimary.text = activityContext.getString(
+                            if (isNewer) R.string.update_btn_download else R.string.update_btn_reinstall
+                        )
+                        btnPrimary.requestFocus()
                     }
+                    return@launch
+                }
 
-                    result.onSuccess { readyApk ->
-                        downloadedApkFile = readyApk
-                        if (dialog.isShowing) {
-                            progressBar.isIndeterminate = false
-                            progressBar.progress = 100
-                            tvProgressText.setTextColor(ContextCompat.getColor(activityContext, R.color.status_ok))
-                            tvProgressText.text = activityContext.getString(R.string.update_ready)
-                            btnSecondary.text = activityContext.getString(R.string.update_btn_close)
-                            btnPrimary.text = activityContext.getString(R.string.update_btn_install)
-                            tryInstallOrRequestPermission(readyApk)
-                        }
-                    }.onFailure { err ->
-                        outFile.delete()
-                        if (dialog.isShowing) {
-                            progressBar.isIndeterminate = false
-                            tvProgressText.setTextColor(ContextCompat.getColor(activityContext, R.color.status_err))
-                            tvProgressText.text = "Ошибка загрузки: ${err.message ?: "нет ответа"}"
-                            btnSecondary.text = activityContext.getString(R.string.update_btn_close)
-                            btnPrimary.text = activityContext.getString(R.string.update_btn_download)
-                            btnPrimary.requestFocus()
-                        }
+                result.onSuccess { readyApk ->
+                    downloadedApkFile = readyApk
+                    if (dialog.isShowing) {
+                        progressBar.isIndeterminate = false
+                        progressBar.progress = 100
+                        tvProgressText.setTextColor(ContextCompat.getColor(activityContext, R.color.status_ok))
+                        tvProgressText.text = activityContext.getString(R.string.update_ready)
+                        btnSecondary.text = activityContext.getString(R.string.update_btn_close)
+                        btnPrimary.text = activityContext.getString(R.string.update_btn_install)
+                        tryInstallOrRequestPermission(readyApk)
+                    }
+                }.onFailure { err ->
+                    runCatching { outFile.delete() }
+                    if (dialog.isShowing) {
+                        progressBar.isIndeterminate = false
+                        tvProgressText.setTextColor(ContextCompat.getColor(activityContext, R.color.status_err))
+                        tvProgressText.text = "Ошибка загрузки: ${err.message ?: "нет ответа"}"
+                        btnSecondary.text = activityContext.getString(R.string.update_btn_close)
+                        btnPrimary.text = activityContext.getString(R.string.update_btn_download)
+                        btnPrimary.requestFocus()
                     }
                 }
-            }.start()
+            }
         }
 
         dialog.setOnDismissListener {
             isDialogShowing = false
-            if (isDownloading) {
-                cancelled.set(true)
-                activeCall?.cancel()
-            }
+            cancelled.set(true)
+            activeCall?.cancel()
+            downloadJob?.cancel()
+            dialogScope.cancel()
         }
 
         dialog.show()
@@ -587,6 +610,7 @@ class UpdateManager(private val context: Context) {
         if (activityContext is Activity && (activityContext.isFinishing || activityContext.isDestroyed)) {
             return
         }
+        val dialogScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val dialog = Dialog(activityContext)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
         dialog.setContentView(R.layout.dialog_changelog)
@@ -647,31 +671,114 @@ class UpdateManager(private val context: Context) {
             }
         }
 
-        renderEntries(BUILT_IN_CHANGELOG)
+        val initialEntries = mergeChangelogLists(loadLocalChangelog(), cachedRemoteChangelog)
+        renderEntries(initialEntries)
         btnClose.setOnClickListener { dialog.dismiss() }
+        dialog.setOnDismissListener { dialogScope.cancel() }
 
         dialog.show()
         SystemUiHelper.applyImmersiveToDialog(dialog)
         btnClose.requestFocus()
 
-        // Background refresh from GitHub to include any newer releases published after this build
         progress.visibility = View.VISIBLE
-        Thread {
-            val merged = buildMergedChangelogFromGitHub()
-            mainHandler.post {
-                if (!dialog.isShowing) return@post
-                progress.visibility = View.GONE
-                if (merged.isNotEmpty()) {
-                    renderEntries(merged)
+        dialogScope.launch {
+            val merged = withContext(Dispatchers.IO) {
+                buildMergedChangelogFromGitHub()
+            }
+            if (!dialog.isShowing || !isActive) return@launch
+            progress.visibility = View.GONE
+            if (merged.isNotEmpty()) {
+                renderEntries(merged)
+            }
+        }
+    }
+
+    private fun loadLocalChangelog(): List<ChangelogEntry> {
+        cachedAssetChangelog?.let { return it }
+        val parsed = runCatching {
+            context.assets.open(CHANGELOG_ASSET_FILE).bufferedReader(Charsets.UTF_8).use { reader ->
+                parseChangelogJson(reader.readText())
+            }
+        }.getOrDefault(emptyList())
+        val resolved = if (parsed.isNotEmpty()) parsed else FALLBACK_CHANGELOG
+        cachedAssetChangelog = resolved
+        return resolved
+    }
+
+    private fun fetchRemoteChangelogJson(): List<ChangelogEntry> {
+        return runCatching {
+            val req = Request.Builder()
+                .url(RAW_CHANGELOG_URL)
+                .header("Accept", "application/json,text/plain,*/*")
+                .header("User-Agent", "TorPlay-TV")
+                .build()
+            apiClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use emptyList()
+                val raw = resp.body?.string().orEmpty().trim()
+                if (raw.isBlank()) return@use emptyList()
+                parseChangelogJson(raw)
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun parseChangelogJson(raw: String): List<ChangelogEntry> {
+        val trimmed = raw.trim()
+        if (!trimmed.startsWith("[")) return emptyList()
+        val arr = runCatching { JSONArray(trimmed) }.getOrNull() ?: return emptyList()
+        val out = mutableListOf<ChangelogEntry>()
+        for (i in 0 until arr.length()) {
+            val obj = arr.optJSONObject(i) ?: continue
+            val ver = obj.optString("version", "").trim().removePrefix("v").removePrefix("V")
+            if (ver.isBlank()) continue
+            val dateLabel = obj.optString("dateLabel", obj.optString("date", "")).trim()
+            var notes = obj.optString("notes", "").trim()
+            if (notes.isBlank()) {
+                val itemsArr = obj.optJSONArray("items") ?: obj.optJSONArray("changes")
+                if (itemsArr != null) {
+                    val lines = mutableListOf<String>()
+                    for (j in 0 until itemsArr.length()) {
+                        val line = itemsArr.optString(j, "").trim()
+                        if (line.isNotBlank()) {
+                            lines.add(if (line.startsWith("•") || line.startsWith("-")) line else "• $line")
+                        }
+                    }
+                    notes = lines.joinToString("\n")
                 }
             }
-        }.start()
+            if (notes.isNotBlank()) {
+                out.add(ChangelogEntry(version = ver, dateLabel = dateLabel, notes = notes))
+            }
+        }
+        return out.sortedWith { a, b -> compareVersions(b.version, a.version) }
+    }
+
+    private fun mergeChangelogLists(
+        base: List<ChangelogEntry>,
+        overlay: List<ChangelogEntry>
+    ): List<ChangelogEntry> {
+        val byVersion = LinkedHashMap<String, ChangelogEntry>()
+        for (entry in base) {
+            byVersion[entry.version] = entry
+        }
+        for (entry in overlay) {
+            byVersion[entry.version] = entry
+        }
+        return byVersion.values.sortedWith { a, b -> compareVersions(b.version, a.version) }
     }
 
     private fun buildMergedChangelogFromGitHub(): List<ChangelogEntry> {
+        val localEntries = loadLocalChangelog()
+        val remoteJsonEntries = fetchRemoteChangelogJson()
+        if (remoteJsonEntries.isNotEmpty()) {
+            cachedRemoteChangelog = remoteJsonEntries
+        }
+
         val byVersion = LinkedHashMap<String, ChangelogEntry>()
-        for (local in BUILT_IN_CHANGELOG) {
-            byVersion[local.version] = local
+        for (entry in localEntries) {
+            byVersion[entry.version] = entry
+        }
+        for (entry in remoteJsonEntries) {
+            byVersion[entry.version] = entry
         }
 
         runCatching {
@@ -689,13 +796,14 @@ class UpdateManager(private val context: Context) {
                     val obj = arr.optJSONObject(i) ?: continue
                     if (obj.optBoolean("draft", false)) continue
                     val rel = parseReleaseJson(obj) ?: continue
-                    val ver = rel.versionLabel.trim()
+                    val ver = rel.versionLabel.trim().removePrefix("v").removePrefix("V")
                     if (ver.isBlank()) continue
                     val published = obj.optString("published_at", "").take(10)
                     val existing = byVersion[ver]
-                    val resolvedNotes = resolvePatchNotes(ver, rel.body)
                     if (existing == null) {
-                        byVersion[ver] = ChangelogEntry(ver, published, resolvedNotes)
+                        if (isMeaningfulReleaseBody(rel.body)) {
+                            byVersion[ver] = ChangelogEntry(ver, published, rel.body.trim())
+                        }
                     } else if (isMeaningfulReleaseBody(rel.body)) {
                         byVersion[ver] = existing.copy(
                             dateLabel = existing.dateLabel.ifBlank { published },
@@ -714,22 +822,29 @@ class UpdateManager(private val context: Context) {
         if (clean.length < 18) return false
         val lower = clean.lowercase(Locale.ROOT)
         if (lower.startsWith("релиз ") && lower.contains("на github")) return false
+        if (lower.contains("автоматическая сборка")) return false
+        if (lower.contains("автоподстановка версии в имя apk")) return false
         if (lower.startsWith("auto-built") || lower.startsWith("automated build") || lower.startsWith("автосборка")) {
             return false
         }
         return true
     }
 
-    private fun resolvePatchNotes(versionLabel: String, githubBody: String): String {
+    private fun resolvePatchNotes(
+        versionLabel: String,
+        githubBody: String,
+        extraEntries: List<ChangelogEntry> = cachedRemoteChangelog
+    ): String {
         if (isMeaningfulReleaseBody(githubBody)) {
             return githubBody.trim()
         }
         val cleanVer = versionLabel.trim().removePrefix("v").removePrefix("V")
-        val exact = BUILT_IN_CHANGELOG.firstOrNull { it.version.equals(cleanVer, ignoreCase = true) }
+        val allEntries = mergeChangelogLists(loadLocalChangelog(), extraEntries)
+        val exact = allEntries.firstOrNull { it.version.equals(cleanVer, ignoreCase = true) }
         if (exact != null) {
             return "Что нового в v${exact.version}:\n${exact.notes}"
         }
-        val latest = BUILT_IN_CHANGELOG.first()
+        val latest = allEntries.firstOrNull() ?: return "Доступна сборка v$cleanVer на GitHub."
         return if (compareVersions(cleanVer, latest.version) > 0) {
             "Доступна новая сборка v$cleanVer на GitHub.\n\nПоследний известный патч (v${latest.version}):\n${latest.notes}"
         } else {
@@ -744,6 +859,9 @@ class UpdateManager(private val context: Context) {
     )
 
     companion object {
+        private const val CHANGELOG_ASSET_FILE = "changelog.json"
+        private const val RAW_CHANGELOG_URL =
+            "https://raw.githubusercontent.com/pskovland007/TorPlay/main/app/src/main/assets/changelog.json"
         private const val LATEST_RELEASE_URL =
             "https://api.github.com/repos/pskovland007/TorPlay/releases/latest"
         private const val ALL_RELEASES_URL =
@@ -751,64 +869,14 @@ class UpdateManager(private val context: Context) {
         private const val CHANGELOG_RELEASES_URL =
             "https://api.github.com/repos/pskovland007/TorPlay/releases?per_page=15"
 
-        private val BUILT_IN_CHANGELOG: List<ChangelogEntry> = listOf(
+        private val FALLBACK_CHANGELOG: List<ChangelogEntry> = listOf(
             ChangelogEntry(
-                version = "1.0.17",
-                dateLabel = "Последний патч",
-                notes = "• Окно обновлений теперь показывает список изменений патча и кнопку «История изменений».\n" +
-                    "• Добавлен фильтр «Дубляж» и улучшена верхняя панель фильтров (4K / 1080p / 720p / Дубляж) в поиске и в окне «Раздачи» плеера.\n" +
-                    "• Умное соотношение сторон экрана: для нового фильма сбрасывается на стандарт, а при продолжении просмотра запоминается.\n" +
-                    "• В карточке фильма теперь всегда подгружается длительность.\n" +
-                    "• Добавлен список фильмов «Буду смотреть» — кнопка в карточке фильма и рядом с «Избранным» и «Историей»."
-            ),
-            ChangelogEntry(
-                version = "1.0.16",
-                dateLabel = "Витрина и постеры",
-                notes = "• Исправлена загрузка обложек TMDB через автоматическую цепочку резервных зеркал.\n" +
-                    "• На плитках фильмов добавлены год в скобках, главный жанр, цветной рейтинг, длительность и сиды/качество.\n" +
-                    "• Новая полка «Случайный топ дня (7.5+ с сидами)» — 6–8 проверенных фильмов, обновляются каждый день."
-            ),
-            ChangelogEntry(
-                version = "1.0.15",
-                dateLabel = "Облегчённый APK",
-                notes = "• Вес APK уменьшен примерно в 3 раза (ARM-only сборка со сжатием библиотек для Mi Box).\n" +
-                    "• Добавлена автоочистка кэша и проверка свободной памяти перед обновлением."
-            ),
-            ChangelogEntry(
-                version = "1.0.14",
-                dateLabel = "Плеер и шторка Android",
-                notes = "• Исправлено перекрытие интерфейса верхней шторкой Android (полноэкранный режим).\n" +
-                    "• Оптимизированы флаги VLC (убрано рассыпание картинки, возвращён быстрый многопоточный декодер).\n" +
-                    "• Добавлена подсказка при запуске 4K на устройствах без аппаратного 4K."
-            ),
-            ChangelogEntry(
-                version = "1.0.13",
-                dateLabel = "Иконки и избранное",
-                notes = "• Новые полноразмерный ТВ-баннер Android TV без текста и адаптивные иконки для телефонов/планшетов.\n" +
-                    "• Плашка скорости/пиров сделана более прозрачной.\n" +
-                    "• Добавление в избранное прямо из истории просмотров."
-            ),
-            ChangelogEntry(
-                version = "1.0.11",
-                dateLabel = "Хаб настроек и плашка",
-                notes = "• Новое меню настроек в виде 6 крупных плиток (2×3) со статусами.\n" +
-                    "• Постоянная плашка скорости и пиров в углу плеера со сдвигом пикселей для плазмы/OLED.\n" +
-                    "• Кнопка «Раздачи» прямо в плеере для быстрой смены потока с той же секунды."
-            ),
-            ChangelogEntry(
-                version = "1.0.10",
-                dateLabel = "Буст звука и мёртвые раздачи",
-                notes = "• Умный буст звука: сброс на новом фильме, запоминание при продолжении из истории.\n" +
-                    "• Окно альтернативных источников при запуске раздачи без сидов.\n" +
-                    "• Кнопка быстрого переключения движка (VLC HW / VLC SW / Media3) в плеере."
-            ),
-            ChangelogEntry(
-                version = "1.0.9",
-                dateLabel = "Сеть и DoH DNS",
-                notes = "• Встроенный DoH DNS (AdGuard / Google / Cloudflare / Quad9), обход DPI и поддержка прокси.\n" +
-                    "• Инструмент «Проверить зеркала» и авто-резерв витрины."
+                version = BuildConfig.VERSION_NAME,
+                dateLabel = "Текущая версия",
+                notes = "• История изменений доступна в файле assets/changelog.json."
             )
         )
+
         private const val WEB_LATEST_RELEASE_URL =
             "https://github.com/pskovland007/TorPlay/releases/latest"
         private const val WEB_EXPANDED_ASSETS_PREFIX =
@@ -843,7 +911,6 @@ class UpdateManager(private val context: Context) {
                     if (rStage[i] != cStage[i]) return rStage[i].compareTo(cStage[i])
                 }
             } else if (rSem != null && cSem != null) {
-                // Same semver; release without "-stage..." suffix is considered newer than stage pre-release
                 if (rStage == null && cStage != null) return 1
                 if (rStage != null && cStage == null) return -1
             }

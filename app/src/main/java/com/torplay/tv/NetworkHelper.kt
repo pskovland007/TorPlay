@@ -38,7 +38,19 @@ object NetworkHelper {
         val proxyUrl: String
     )
 
-    private val clientCache = ConcurrentHashMap<String, OkHttpClient>()
+    private const val MAX_CLIENT_CACHE_SIZE = 10
+    private val clientCacheLock = Any()
+    private val clientCache = object : LinkedHashMap<String, OkHttpClient>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, OkHttpClient>?): Boolean {
+            if (size > MAX_CLIENT_CACHE_SIZE) {
+                eldest?.value?.let { evicted ->
+                    runCatching { evicted.connectionPool.evictAll() }
+                }
+                return true
+            }
+            return false
+        }
+    }
 
     private val directStreamClientInstance: OkHttpClient by lazy {
         OkHttpClient.Builder()
@@ -66,16 +78,31 @@ object NetworkHelper {
 
     fun buildDirectStreamClient(): OkHttpClient = directStreamClientInstance
 
+    fun clearClientCache() {
+        val evictedClients = synchronized(clientCacheLock) {
+            val snapshot = clientCache.values.toList()
+            clientCache.clear()
+            snapshot
+        }
+        for (client in evictedClients) {
+            runCatching { client.connectionPool.evictAll() }
+        }
+        DohDns.clearCache()
+        AppLogger.i("Net", "Кэш сетевых клиентов и DoH DNS очищен")
+    }
+
     fun buildLocalApiClient(connectSec: Long, readSec: Long): OkHttpClient {
         val key = "local|$connectSec|$readSec"
-        return clientCache.getOrPut(key) {
-            OkHttpClient.Builder()
-                .proxy(Proxy.NO_PROXY)
-                .dns(Dns.SYSTEM)
-                .connectTimeout(connectSec, TimeUnit.SECONDS)
-                .readTimeout(readSec, TimeUnit.SECONDS)
-                .retryOnConnectionFailure(true)
-                .build()
+        return synchronized(clientCacheLock) {
+            clientCache.getOrPut(key) {
+                OkHttpClient.Builder()
+                    .proxy(Proxy.NO_PROXY)
+                    .dns(Dns.SYSTEM)
+                    .connectTimeout(connectSec, TimeUnit.SECONDS)
+                    .readTimeout(readSec, TimeUnit.SECONDS)
+                    .retryOnConnectionFailure(true)
+                    .build()
+            }
         }
     }
 
@@ -91,8 +118,10 @@ object NetworkHelper {
             proxyUrl = storage.networkProxyUrl.trim()
         )
         val key = "ext|${cfg.useDoh}|${cfg.useDpiBypass}|${cfg.proxyUrl}|$connectSec|$readSec"
-        return clientCache.getOrPut(key) {
-            buildExternalClient(cfg, connectSec, readSec)
+        return synchronized(clientCacheLock) {
+            clientCache.getOrPut(key) {
+                buildExternalClient(cfg, connectSec, readSec)
+            }
         }
     }
 
@@ -218,6 +247,12 @@ object NetworkHelper {
 
         @Volatile
         private var preferredTargetName: String? = null
+
+        fun clearCache() {
+            cache.clear()
+            loggedHosts.clear()
+            preferredTargetName = null
+        }
 
         private val resolverTargets = listOf(
             ResolverTarget("DoH-AdGuard", "wire", "https://94.140.14.140/dns-query"),

@@ -5,16 +5,24 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
 import android.widget.ImageView
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 
 class PosterLoader(context: Context, private val storage: StorageManager = StorageManager(context)) {
+
+    private class LoadTag(
+        val cacheKey: String,
+        var job: Job? = null
+    )
 
     private val cacheDir = File(context.applicationContext.cacheDir, "posters").apply { mkdirs() }
 
@@ -33,29 +41,48 @@ class PosterLoader(context: Context, private val storage: StorageManager = Stora
         get() = NetworkHelper.getExternalClient(storage, connectSec = 6L, readSec = 10L)
 
     fun load(scope: CoroutineScope, imageView: ImageView, url: String) {
+        val prevTag = imageView.tag as? LoadTag
         if (url.isBlank()) {
+            prevTag?.job?.cancel()
             imageView.tag = null
             imageView.setImageDrawable(null)
             return
         }
 
         val cacheKey = normalizeCacheKey(url)
-        imageView.tag = cacheKey
         val cached = memoryCache.get(cacheKey)
         if (cached != null && !cached.isRecycled) {
+            prevTag?.job?.cancel()
+            imageView.tag = LoadTag(cacheKey)
             imageView.setImageBitmap(cached)
             return
         }
 
+        if (prevTag != null && prevTag.cacheKey == cacheKey && prevTag.job?.isActive == true) {
+            return
+        }
+        prevTag?.job?.cancel()
+
+        val tag = LoadTag(cacheKey)
+        imageView.tag = tag
         imageView.setImageDrawable(null)
-        scope.launch {
-            val bitmap = withContext(Dispatchers.IO) {
-                fetchOrDecode(url, cacheKey)
+
+        val job = scope.launch {
+            val bitmap = try {
+                withContext(Dispatchers.IO) {
+                    fetchOrDecode(url, cacheKey)
+                }
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (_: Exception) {
+                null
             }
-            if (bitmap != null && imageView.tag == cacheKey) {
+            val currentTag = imageView.tag as? LoadTag
+            if (bitmap != null && !bitmap.isRecycled && currentTag === tag && currentTag.cacheKey == cacheKey) {
                 imageView.setImageBitmap(bitmap)
             }
         }
+        tag.job = job
     }
 
     private fun fetchOrDecode(primaryUrl: String, cacheKey: String): Bitmap? {
@@ -96,8 +123,12 @@ class PosterLoader(context: Context, private val storage: StorageManager = Stora
                         lastError = "Пустой ответ (${extractHost(candidateUrl)})"
                         return@use null
                     }
-                    diskFile.writeBytes(bytes)
-                    val decoded = decodeSampled(diskFile)
+                    val writtenFile = writeBytesAtomically(diskFile, bytes)
+                    if (writtenFile == null) {
+                        lastError = "Ошибка записи кэша (${extractHost(candidateUrl)})"
+                        return@use null
+                    }
+                    val decoded = decodeSampled(writtenFile)
                     if (decoded == null) {
                         runCatching { diskFile.delete() }
                         lastError = "Некорректное изображение (${extractHost(candidateUrl)})"
@@ -131,6 +162,33 @@ class PosterLoader(context: Context, private val storage: StorageManager = Stora
         return null
     }
 
+    private fun writeBytesAtomically(targetFile: File, bytes: ByteArray): File? {
+        if (!cacheDir.exists()) {
+            cacheDir.mkdirs()
+        }
+        val tmpFile = File(cacheDir, "${targetFile.name}.${Thread.currentThread().id}.${System.nanoTime()}.tmp")
+        return try {
+            FileOutputStream(tmpFile).use { out ->
+                out.write(bytes)
+                out.flush()
+            }
+            if (tmpFile.renameTo(targetFile)) {
+                targetFile
+            } else {
+                runCatching { targetFile.delete() }
+                if (tmpFile.renameTo(targetFile)) {
+                    targetFile
+                } else {
+                    runCatching { tmpFile.delete() }
+                    null
+                }
+            }
+        } catch (_: Exception) {
+            runCatching { tmpFile.delete() }
+            null
+        }
+    }
+
     private fun buildCandidateUrls(primaryUrl: String): List<String> {
         val clean = primaryUrl.trim()
         val tpIdx = clean.indexOf("/t/p/", ignoreCase = true)
@@ -139,7 +197,6 @@ class PosterLoader(context: Context, private val storage: StorageManager = Stora
         val suffix = clean.substring(tpIdx)
         val result = LinkedHashSet<String>()
 
-        // Try last known working TMDB image CDN first to avoid repeated timeouts
         val stickyHost = preferredTmdbHost
         if (stickyHost.isNotBlank()) {
             result.add("https://$stickyHost$suffix")
@@ -186,9 +243,20 @@ class PosterLoader(context: Context, private val storage: StorageManager = Stora
     }
 
     private fun pruneDiskCacheIfNeeded() {
-        val files = cacheDir.listFiles() ?: return
-        if (files.size <= MAX_DISK_FILES) return
-        val sorted = files.sortedBy { it.lastModified() }
+        val allFiles = cacheDir.listFiles() ?: return
+        val now = System.currentTimeMillis()
+        val imgFiles = mutableListOf<File>()
+        for (f in allFiles) {
+            if (f.name.endsWith(".tmp")) {
+                if (now - f.lastModified() > 5 * 60_000L) {
+                    runCatching { f.delete() }
+                }
+            } else {
+                imgFiles.add(f)
+            }
+        }
+        if (imgFiles.size <= MAX_DISK_FILES) return
+        val sorted = imgFiles.sortedBy { it.lastModified() }
         val toDelete = sorted.size - (MAX_DISK_FILES - 20)
         for (i in 0 until toDelete.coerceAtLeast(0)) {
             runCatching { sorted[i].delete() }
