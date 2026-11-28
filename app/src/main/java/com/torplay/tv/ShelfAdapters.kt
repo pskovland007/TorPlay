@@ -45,8 +45,14 @@ class HistoryAdapter(
 
         fun bind(entry: WatchHistoryEntry) {
             tvTitle.text = entry.title
-            tvQuality.text = "▶"
-            tvQuality.setBackgroundResource(R.drawable.bg_badge_1080)
+            val epCode = entry.episodeCode()
+            if (epCode.isNotBlank()) {
+                tvQuality.text = epCode
+                tvQuality.setBackgroundResource(R.drawable.bg_badge_4k)
+            } else {
+                tvQuality.text = "▶"
+                tvQuality.setBackgroundResource(R.drawable.bg_badge_1080)
+            }
             tvHdr.visibility = View.GONE
             tvSize.text = entry.progressText()
             tvSize.visibility = View.VISIBLE
@@ -186,5 +192,64 @@ class RecentSearchAdapter(
                 }
             }
         }
+    }
+}
+
+class GenreFilterAdapter(
+    private val onGenreSelected: (String?) -> Unit
+) : RecyclerView.Adapter<GenreFilterAdapter.ViewHolder>() {
+
+    private val genres = mutableListOf<String>()
+    private var selectedGenre: String? = null
+
+    fun submitGenres(availableGenres: List<String>, activeGenre: String?) {
+        genres.clear()
+        genres.add(ALL_GENRES_TOKEN)
+        genres.addAll(availableGenres)
+        selectedGenre = activeGenre
+        notifyDataSetChanged()
+    }
+
+    fun setSelectedGenre(activeGenre: String?) {
+        selectedGenre = activeGenre
+        notifyDataSetChanged()
+    }
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
+        val view = LayoutInflater.from(parent.context)
+            .inflate(R.layout.item_recent_chip, parent, false)
+        return ViewHolder(view)
+    }
+
+    override fun onBindViewHolder(holder: ViewHolder, position: Int) {
+        holder.bind(genres[position])
+    }
+
+    override fun getItemCount(): Int = genres.size
+
+    inner class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        private val tvChip: TextView = itemView.findViewById(R.id.tvRecentChip)
+
+        fun bind(token: String) {
+            val isAll = token == ALL_GENRES_TOKEN
+            tvChip.text = if (isAll) {
+                itemView.context.getString(R.string.catalog_genre_all)
+            } else {
+                token
+            }
+            val isSelected = if (isAll) {
+                selectedGenre.isNullOrBlank()
+            } else {
+                selectedGenre.equals(token, ignoreCase = true)
+            }
+            itemView.isSelected = isSelected
+            itemView.setOnClickListener {
+                onGenreSelected(if (isAll) null else token)
+            }
+        }
+    }
+
+    companion object {
+        private const val ALL_GENRES_TOKEN = "__ALL__"
     }
 }

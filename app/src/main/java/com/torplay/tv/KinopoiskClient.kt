@@ -106,6 +106,56 @@ class KinopoiskClient(private val storage: StorageManager) {
         }.getOrNull()
     }
 
+    suspend fun fetchSimilarMovies(filmId: Int): List<CatalogItem> = withContext(Dispatchers.IO) {
+        val apiKey = storage.kinopoiskApiKey
+        if (filmId <= 0 || apiKey.isBlank()) return@withContext emptyList()
+
+        val req = buildRequest(apiKey, "/api/v2.2/films/$filmId/similars")
+        runCatching {
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use emptyList()
+                val raw = resp.body?.string().orEmpty().trim()
+                if (raw.isBlank() || !raw.startsWith("{")) return@use emptyList()
+                val root = JSONObject(raw)
+                val arr = root.optJSONArray("items") ?: return@use emptyList()
+                parseItemsArray(arr, maxItems = 12)
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    suspend fun fetchTrailerUrl(filmId: Int): String? = withContext(Dispatchers.IO) {
+        val apiKey = storage.kinopoiskApiKey
+        if (filmId <= 0 || apiKey.isBlank()) return@withContext null
+
+        val req = buildRequest(apiKey, "/api/v2.2/films/$filmId/videos")
+        runCatching {
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val raw = resp.body?.string().orEmpty().trim()
+                if (raw.isBlank() || !raw.startsWith("{")) return@use null
+                val root = JSONObject(raw)
+                val arr = root.optJSONArray("items") ?: return@use null
+                var bestYt: String? = null
+                var fallbackYt: String? = null
+                for (i in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(i) ?: continue
+                    val site = cleanJsonString(obj, "site").uppercase(Locale.US)
+                    val url = TrailerLauncher.normalizeTrailerUrl(cleanJsonString(obj, "url"))
+                    if (url.isBlank()) continue
+                    val isYt = site.contains("YOUTUBE") || url.contains("youtube.com", ignoreCase = true) || url.contains("youtu.be", ignoreCase = true)
+                    if (!isYt) continue
+                    val name = cleanJsonString(obj, "name").lowercase(Locale.ROOT)
+                    if (name.contains("трейлер") || name.contains("trailer")) {
+                        if (bestYt == null) bestYt = url
+                    } else if (fallbackYt == null) {
+                        fallbackYt = url
+                    }
+                }
+                bestYt ?: fallbackYt
+            }
+        }.getOrNull()
+    }
+
     suspend fun probeConnection(
         apiKeyInput: String,
         networkOverride: NetworkHelper.NetworkConfig? = null

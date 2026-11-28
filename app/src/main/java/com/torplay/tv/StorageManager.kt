@@ -143,6 +143,12 @@ class StorageManager(context: Context) {
             prefs.edit().putString(KEY_KINOPOISK_API_KEY, value.trim()).apply()
         }
 
+    var kinopoiskDevApiKey: String
+        get() = prefs.getString(KEY_KINOPOISK_DEV_API_KEY, "")?.trim().orEmpty()
+        set(value) {
+            prefs.edit().putString(KEY_KINOPOISK_DEV_API_KEY, value.trim()).apply()
+        }
+
     var audioBoostDb: Int
         get() = prefs.getInt(KEY_AUDIO_BOOST_DB, 0).coerceIn(0, 12)
         set(value) {
@@ -194,7 +200,7 @@ class StorageManager(context: Context) {
 
     fun activeCatalogKey(): String {
         return when (catalogProvider) {
-            CATALOG_PROVIDER_KINOPOISK -> kinopoiskApiKey
+            CATALOG_PROVIDER_KINOPOISK -> kinopoiskApiKey.ifBlank { kinopoiskDevApiKey }
             CATALOG_PROVIDER_TMDB -> tmdbApiKey
             else -> ""
         }
@@ -848,6 +854,59 @@ class StorageManager(context: Context) {
         persistWatchlist(updated)
     }
 
+    fun removeWatchedFromWatchlistIfMatched(
+        watchedTitle: String,
+        positionMs: Long,
+        durationMs: Long,
+        completed: Boolean
+    ): Boolean {
+        val reachedThreshold = completed || (durationMs > 60_000L && positionMs * 100L >= durationMs * 85L)
+        if (!reachedThreshold || watchedTitle.isBlank()) return false
+
+        val current = getWatchlist()
+        if (current.isEmpty()) return false
+
+        val normWatched = normalizeTitleForMatch(watchedTitle)
+        if (normWatched.length < 2) return false
+
+        var removedItem: CatalogItem? = null
+        val remaining = mutableListOf<CatalogItem>()
+        for (item in current) {
+            if (removedItem == null && !item.isSeries() && matchesWatchedTitle(normWatched, item)) {
+                removedItem = item
+            } else {
+                remaining.add(item)
+            }
+        }
+        if (removedItem != null) {
+            persistWatchlist(remaining)
+            AppLogger.i("Watchlist", "Авто-уборка просмотренного фильма (>85%) из «Буду смотреть»: ${removedItem.title}")
+            return true
+        }
+        return false
+    }
+
+    private fun matchesWatchedTitle(normWatched: String, item: CatalogItem): Boolean {
+        val candidates = listOf(item.title, item.originalTitle)
+            .map { normalizeTitleForMatch(it) }
+            .filter { it.length >= 2 }
+        for (cand in candidates) {
+            if (normWatched == cand) return true
+            if (cand.length >= 4 && (normWatched.startsWith("$cand ") || normWatched.contains(" $cand "))) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun normalizeTitleForMatch(raw: String): String {
+        var s = raw.trim().lowercase(Locale.ROOT)
+        s = s.substringBefore(" / ").substringBefore(" | ")
+        s = WATCHLIST_NOISE_REGEX.replace(s, " ")
+        s = s.replace(Regex("[^\p{L}\p{N}\s]+"), " ")
+        return s.replace(Regex("\s+"), " ").trim()
+    }
+
     fun clearWatchlist() {
         synchronized(listCacheLock) {
             watchlistCache = emptyList()
@@ -1169,6 +1228,7 @@ class StorageManager(context: Context) {
             put(KEY_SHOW_TMDB_SHOWCASE, showTmdbShowcase)
             put(KEY_CATALOG_PROVIDER, catalogProvider)
             put(KEY_KINOPOISK_API_KEY, kinopoiskApiKey)
+            put(KEY_KINOPOISK_DEV_API_KEY, kinopoiskDevApiKey)
             put(KEY_TMDB_API_KEY, tmdbApiKey)
             put(KEY_TMDB_API_BASE, tmdbApiBaseUrl)
             put(KEY_TMDB_IMAGE_BASE, tmdbImageBaseUrl)
@@ -1234,6 +1294,9 @@ class StorageManager(context: Context) {
         }
         if (obj.has(KEY_KINOPOISK_API_KEY)) {
             editor.putString(KEY_KINOPOISK_API_KEY, obj.optString(KEY_KINOPOISK_API_KEY, "").trim())
+        }
+        if (obj.has(KEY_KINOPOISK_DEV_API_KEY)) {
+            editor.putString(KEY_KINOPOISK_DEV_API_KEY, obj.optString(KEY_KINOPOISK_DEV_API_KEY, "").trim())
         }
         if (obj.has(KEY_TMDB_API_KEY)) editor.putString(KEY_TMDB_API_KEY, obj.optString(KEY_TMDB_API_KEY, "").trim())
         if (obj.has(KEY_TMDB_API_BASE)) {
@@ -1346,6 +1409,11 @@ class StorageManager(context: Context) {
         private const val KEY_SHOW_TMDB_SHOWCASE = "show_tmdb_showcase"
         private const val KEY_CATALOG_PROVIDER = "catalog_provider"
         private const val KEY_KINOPOISK_API_KEY = "kinopoisk_api_key"
+        private const val KEY_KINOPOISK_DEV_API_KEY = "kinopoisk_dev_api_key"
+        private val WATCHLIST_NOISE_REGEX = Regex(
+            "(?:\b(?:19|20)\d{2}\b|\b(?:2160p|1080p|720p|4k|uhd|hdr10?|dv|dolby|vision|bdrip|bdremux|web-?dl|webrip|hdtv|remux|hevc|x264|x265|h264|h265|avc|ac3|eac3|dts|dub|mvo|avo|sub|rus|eng|itunes|netflix|exkinoray|hdrezka|lostfilm)\b|\[[^\]]*]|\([^)]*\))",
+            RegexOption.IGNORE_CASE
+        )
         private const val KEY_TMDB_API_KEY = "tmdb_api_key"
         private const val KEY_TMDB_API_BASE = "tmdb_api_base"
         private const val KEY_TMDB_IMAGE_BASE = "tmdb_image_base"

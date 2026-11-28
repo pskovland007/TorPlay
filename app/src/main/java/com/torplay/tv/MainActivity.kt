@@ -70,6 +70,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var updateManager: UpdateManager
     private lateinit var tmdbClient: TmdbClient
     private lateinit var kinopoiskClient: KinopoiskClient
+    private lateinit var kinopoiskDevClient: KinopoiskDevClient
     private lateinit var torrentShowcaseClient: TorrentShowcaseClient
     private lateinit var posterLoader: PosterLoader
     private lateinit var savedListsDialogHelper: SavedListsDialogHelper
@@ -78,6 +79,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var historyAdapter: HistoryAdapter
     private lateinit var favoriteTorrentAdapter: FavoriteTorrentAdapter
     private lateinit var recentSearchAdapter: RecentSearchAdapter
+    private lateinit var genreFilterAdapter: GenreFilterAdapter
     private lateinit var tmdbDailyAdapter: CatalogAdapter
     private lateinit var tmdbTrendingAdapter: CatalogAdapter
     private lateinit var tmdbNowPlayingAdapter: CatalogAdapter
@@ -115,6 +117,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var layoutTmdbNotice: LinearLayout
     private lateinit var progressTmdb: ProgressBar
     private lateinit var tvTmdbNotice: TextView
+    private lateinit var rvGenreFilter: RecyclerView
     private lateinit var layoutDailyTopHeader: LinearLayout
     private lateinit var tvTmdbDailyHeader: TextView
     private lateinit var progressDailyTop: ProgressBar
@@ -159,6 +162,9 @@ class MainActivity : AppCompatActivity() {
     private var runtimeBatchJob: Job? = null
     private var dailyTopItems: List<CatalogItem> = emptyList()
     private var dailyTopLoading: Boolean = false
+    private var selectedShowcaseGenre: String? = null
+    private var genreDiscoverItems: List<CatalogItem> = emptyList()
+    private var genreDiscoverJob: Job? = null
     private val catalogMetaCache = ConcurrentHashMap<String, CatalogEnrichedMeta>()
     private val catalogMetaInFlight = ConcurrentHashMap.newKeySet<String>()
     private var pendingStorageAction: (() -> Unit)? = null
@@ -235,6 +241,7 @@ class MainActivity : AppCompatActivity() {
         updateManager = UpdateManager(this, storage)
         tmdbClient = TmdbClient(storage)
         kinopoiskClient = KinopoiskClient(storage)
+        kinopoiskDevClient = KinopoiskDevClient(storage)
         torrentShowcaseClient = TorrentShowcaseClient(storage)
         posterLoader = PosterLoader(this, storage)
         movieDetailsDialogHelper = MovieDetailsDialogHelper(
@@ -243,6 +250,7 @@ class MainActivity : AppCompatActivity() {
             uiScope = uiScope,
             tmdbClient = tmdbClient,
             kinopoiskClient = kinopoiskClient,
+            kinopoiskDevClient = kinopoiskDevClient,
             posterLoader = posterLoader,
             enrichFromCache = { item ->
                 val cachedMeta = catalogMetaCache[item.stableKey()]
@@ -354,6 +362,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+        updateWatchlistButtonUi()
         if (layoutFilters.visibility != View.VISIBLE && rvResults.visibility != View.VISIBLE) {
             refreshHomeShelves()
         }
@@ -511,6 +520,7 @@ class MainActivity : AppCompatActivity() {
         layoutTmdbNotice = findViewById(R.id.layoutTmdbNotice)
         progressTmdb = findViewById(R.id.progressTmdb)
         tvTmdbNotice = findViewById(R.id.tvTmdbNotice)
+        rvGenreFilter = findViewById(R.id.rvGenreFilter)
         layoutDailyTopHeader = findViewById(R.id.layoutDailyTopHeader)
         tvTmdbDailyHeader = findViewById(R.id.tvTmdbDailyHeader)
         progressDailyTop = findViewById(R.id.progressDailyTop)
@@ -653,6 +663,12 @@ class MainActivity : AppCompatActivity() {
         rvHistory.adapter = historyAdapter
         rvFavorites.isNestedScrollingEnabled = false
         rvHistory.isNestedScrollingEnabled = false
+
+        genreFilterAdapter = GenreFilterAdapter { genre ->
+            onShowcaseGenreSelected(genre)
+        }
+        rvGenreFilter.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
+        rvGenreFilter.adapter = genreFilterAdapter
 
         tmdbDailyAdapter = CatalogAdapter(
             scope = uiScope,
@@ -931,6 +947,7 @@ class MainActivity : AppCompatActivity() {
             if (tmdbSearchVisible) sections.add(rvTmdbSearchResults)
             if (homeVisible) {
                 if (layoutTmdbNotice.visibility == View.VISIBLE) sections.add(layoutTmdbNotice)
+                if (rvGenreFilter.visibility == View.VISIBLE) sections.add(rvGenreFilter)
                 if (layoutDailyTopHeader.visibility == View.VISIBLE && btnRefreshDailyTop.visibility == View.VISIBLE) {
                     sections.add(btnRefreshDailyTop)
                 }
@@ -1077,7 +1094,11 @@ class MainActivity : AppCompatActivity() {
                     AppLogger.w("Catalog", "Ошибка витрины торрентов: ${shelves.error}")
                 }
             } else if (provider == StorageManager.CATALOG_PROVIDER_KINOPOISK) {
-                val kpShelves = kinopoiskClient.fetchShelves()
+                val kpShelves = if (storage.kinopoiskApiKey.isNotBlank()) {
+                    kinopoiskClient.fetchShelves()
+                } else {
+                    CatalogShelves(emptyList(), emptyList(), emptyList(), "Не указан основной ключ")
+                }
                 if (kpShelves.hasAnyItems()) {
                     tmdbIsLoading = false
                     tmdbLoadedOnce = true
@@ -1087,7 +1108,21 @@ class MainActivity : AppCompatActivity() {
                     val kpErr = kpShelves.error ?: "нет ответа"
                     AppLogger.w("Catalog", "Кинопоиск недоступен ($kpErr), пробуем авто-резерв витрины")
                     var fallbackApplied = false
-                    if (storage.tmdbApiKey.isNotBlank()) {
+                    if (storage.kinopoiskDevApiKey.isNotBlank()) {
+                        val fbKpDev = kinopoiskDevClient.fetchShelves()
+                        if (fbKpDev.hasAnyItems()) {
+                            tmdbShelves = fbKpDev
+                            torrentShelves = null
+                            catalogFallbackNotice = if (storage.kinopoiskApiKey.isNotBlank()) {
+                                "Кинопоиск недоступен ($kpErr) • запасной источник kinopoisk.dev"
+                            } else {
+                                null
+                            }
+                            fallbackApplied = true
+                            AppLogger.i("Catalog", "Витрина загружена через запасной источник kinopoisk.dev")
+                        }
+                    }
+                    if (!fallbackApplied && storage.tmdbApiKey.isNotBlank()) {
                         val fbTmdb = tmdbClient.fetchShelves()
                         if (fbTmdb.hasAnyItems()) {
                             tmdbShelves = fbTmdb
@@ -1617,7 +1652,75 @@ class MainActivity : AppCompatActivity() {
         btnFavorites.text = if (count > 0) "★ Избранное ($count)" else getString(R.string.btn_favorites_header)
     }
 
+    private fun onShowcaseGenreSelected(genre: String?) {
+        val normalized = genre?.trim()?.takeIf { it.isNotBlank() }
+        if (selectedShowcaseGenre.equals(normalized, ignoreCase = true)) {
+            if (normalized != null) {
+                selectedShowcaseGenre = null
+                genreDiscoverJob?.cancel()
+                genreDiscoverItems = emptyList()
+                refreshHomeShelves()
+            }
+            return
+        }
+        selectedShowcaseGenre = normalized
+        genreDiscoverJob?.cancel()
+        genreDiscoverItems = emptyList()
+        refreshHomeShelves()
+
+        if (normalized != null && storage.tmdbApiKey.isNotBlank()) {
+            genreDiscoverJob = uiScope.launch {
+                val extra = tmdbClient.fetchByGenre(normalized)
+                if (selectedShowcaseGenre.equals(normalized, ignoreCase = true) && extra.isNotEmpty()) {
+                    genreDiscoverItems = extra
+                    if (layoutFilters.visibility != View.VISIBLE && rvResults.visibility != View.VISIBLE) {
+                        refreshHomeShelves()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun collectShowcaseGenres(shelves: CatalogShelves): List<String> {
+        val counts = LinkedHashMap<String, Int>()
+        val all = dailyTopItems + shelves.trending + shelves.nowPlaying + shelves.popularSeries
+        for (item in all) {
+            for (g in item.genreNames) {
+                val clean = g.trim().replaceFirstChar { ch ->
+                    if (ch.isLowerCase()) ch.titlecase(Locale.getDefault()) else ch.toString()
+                }
+                if (clean.isNotBlank()) {
+                    counts[clean] = (counts[clean] ?: 0) + 1
+                }
+            }
+        }
+        val preferredOrder = listOf(
+            "Боевик", "Комедия", "Фантастика", "Триллер", "Драма",
+            "Приключения", "Ужасы", "Детектив", "Криминал", "Фэнтези",
+            "Мультфильм", "Мелодрама", "Семейный", "Военный", "История"
+        )
+        val result = LinkedHashSet<String>()
+        for (pref in preferredOrder) {
+            if (counts.keys.any { it.equals(pref, ignoreCase = true) }) {
+                val exact = counts.keys.first { it.equals(pref, ignoreCase = true) }
+                result.add(exact)
+            }
+        }
+        counts.entries
+            .sortedByDescending { it.value }
+            .forEach { (name, _) -> result.add(name) }
+        return result.take(14)
+    }
+
+    private fun filterBySelectedGenre(items: List<CatalogItem>): List<CatalogItem> {
+        val active = selectedShowcaseGenre ?: return items
+        return items.filter { item ->
+            item.genreNames.any { it.equals(active, ignoreCase = true) }
+        }
+    }
+
     private fun hideAllShowcaseShelves() {
+        rvGenreFilter.visibility = View.GONE
         layoutDailyTopHeader.visibility = View.GONE
         rvTmdbDailyTop.visibility = View.GONE
         tvTmdbTrendingHeader.visibility = View.GONE
@@ -1728,7 +1831,29 @@ class MainActivity : AppCompatActivity() {
                 }
                 hasShowcaseContent = true
 
-                if (dailyTopItems.isNotEmpty() || dailyTopLoading) {
+                val availableGenres = collectShowcaseGenres(shelves)
+                if (availableGenres.isNotEmpty()) {
+                    if (selectedShowcaseGenre != null && availableGenres.none { it.equals(selectedShowcaseGenre, ignoreCase = true) }) {
+                        selectedShowcaseGenre = null
+                    }
+                    rvGenreFilter.visibility = View.VISIBLE
+                    genreFilterAdapter.submitGenres(availableGenres, selectedShowcaseGenre)
+                }
+
+                val activeGenre = selectedShowcaseGenre
+                val filteredDaily = filterBySelectedGenre(dailyTopItems)
+                val filteredTrending = run {
+                    val baseList = filterBySelectedGenre(shelves.trending)
+                    if (activeGenre != null && genreDiscoverItems.isNotEmpty()) {
+                        (baseList + genreDiscoverItems).distinctBy { it.title.lowercase(Locale.ROOT) + "|" + it.year }
+                    } else {
+                        baseList
+                    }
+                }
+                val filteredNow = filterBySelectedGenre(shelves.nowPlaying)
+                val filteredSeries = filterBySelectedGenre(shelves.popularSeries)
+
+                if (activeGenre == null && (dailyTopItems.isNotEmpty() || dailyTopLoading)) {
                     layoutDailyTopHeader.visibility = View.VISIBLE
                     progressDailyTop.visibility = if (dailyTopLoading) View.VISIBLE else View.GONE
                     btnRefreshDailyTop.visibility = if (dailyTopLoading) View.GONE else View.VISIBLE
@@ -1738,21 +1863,45 @@ class MainActivity : AppCompatActivity() {
                     } else {
                         rvTmdbDailyTop.visibility = View.GONE
                     }
+                } else if (activeGenre != null && filteredDaily.isNotEmpty()) {
+                    layoutDailyTopHeader.visibility = View.VISIBLE
+                    progressDailyTop.visibility = View.GONE
+                    btnRefreshDailyTop.visibility = View.GONE
+                    rvTmdbDailyTop.visibility = View.VISIBLE
+                    tmdbDailyAdapter.submitList(applyCachedMeta(filteredDaily))
                 }
-                if (shelves.trending.isNotEmpty()) {
+
+                tvTmdbTrendingHeader.text = if (activeGenre != null) {
+                    "${getString(R.string.catalog_trending_title)} • $activeGenre"
+                } else {
+                    getString(R.string.catalog_trending_title)
+                }
+                if (filteredTrending.isNotEmpty()) {
                     tvTmdbTrendingHeader.visibility = View.VISIBLE
                     rvTmdbTrending.visibility = View.VISIBLE
-                    tmdbTrendingAdapter.submitList(applyCachedMeta(shelves.trending))
+                    tmdbTrendingAdapter.submitList(applyCachedMeta(filteredTrending))
                 }
-                if (shelves.nowPlaying.isNotEmpty()) {
+
+                tvTmdbNowPlayingHeader.text = if (activeGenre != null) {
+                    "${getString(R.string.catalog_now_playing_title)} • $activeGenre"
+                } else {
+                    getString(R.string.catalog_now_playing_title)
+                }
+                if (filteredNow.isNotEmpty()) {
                     tvTmdbNowPlayingHeader.visibility = View.VISIBLE
                     rvTmdbNowPlaying.visibility = View.VISIBLE
-                    tmdbNowPlayingAdapter.submitList(applyCachedMeta(shelves.nowPlaying))
+                    tmdbNowPlayingAdapter.submitList(applyCachedMeta(filteredNow))
                 }
-                if (shelves.popularSeries.isNotEmpty()) {
+
+                tvTmdbSeriesHeader.text = if (activeGenre != null) {
+                    "${getString(R.string.catalog_series_title)} • $activeGenre"
+                } else {
+                    getString(R.string.catalog_series_title)
+                }
+                if (filteredSeries.isNotEmpty()) {
                     tvTmdbSeriesHeader.visibility = View.VISIBLE
                     rvTmdbSeries.visibility = View.VISIBLE
-                    tmdbSeriesAdapter.submitList(applyCachedMeta(shelves.popularSeries))
+                    tmdbSeriesAdapter.submitList(applyCachedMeta(filteredSeries))
                 }
             } else if (shelves != null && !shelves.error.isNullOrBlank()) {
                 layoutTmdbNotice.visibility = View.VISIBLE
@@ -1936,8 +2085,17 @@ class MainActivity : AppCompatActivity() {
             val useKinopoisk = storage.catalogProvider == StorageManager.CATALOG_PROVIDER_KINOPOISK
             tmdbSearchJob = uiScope.launch {
                 val catalogMatches = if (useKinopoisk) {
-                    val kpFound = kinopoiskClient.searchMovies(query)
-                    if (kpFound.isNotEmpty() || storage.tmdbApiKey.isBlank()) kpFound else tmdbClient.searchMulti(query)
+                    val kpFound = if (storage.kinopoiskApiKey.isNotBlank()) kinopoiskClient.searchMovies(query) else emptyList()
+                    if (kpFound.isNotEmpty()) {
+                        kpFound
+                    } else {
+                        val kpDevFound = if (storage.kinopoiskDevApiKey.isNotBlank()) kinopoiskDevClient.searchMovies(query) else emptyList()
+                        when {
+                            kpDevFound.isNotEmpty() -> kpDevFound
+                            storage.tmdbApiKey.isNotBlank() -> tmdbClient.searchMulti(query)
+                            else -> emptyList()
+                        }
+                    }
                 } else {
                     tmdbClient.searchMulti(query)
                 }
@@ -2503,6 +2661,7 @@ class MainActivity : AppCompatActivity() {
         val btnCatalogKinopoisk = dialog.findViewById<TextView>(R.id.btnCatalogKinopoisk)
         val btnCatalogTmdb = dialog.findViewById<TextView>(R.id.btnCatalogTmdb)
         val etKinopoiskApiKey = dialog.findViewById<EditText>(R.id.etKinopoiskApiKey)
+        val etKinopoiskDevApiKey = dialog.findViewById<EditText>(R.id.etKinopoiskDevApiKey)
         val etTmdbApiKey = dialog.findViewById<EditText>(R.id.etTmdbApiKey)
         val etTmdbApiUrl = dialog.findViewById<EditText>(R.id.etTmdbApiUrl)
         val etTmdbImageUrl = dialog.findViewById<EditText>(R.id.etTmdbImageUrl)
@@ -2672,6 +2831,7 @@ class MainActivity : AppCompatActivity() {
             selectedCatalogProvider = storage.catalogProvider
             etRutorMirror.setText(storage.rutorMirrorUrl)
             etKinopoiskApiKey.setText(storage.kinopoiskApiKey)
+            etKinopoiskDevApiKey.setText(storage.kinopoiskDevApiKey)
             etTmdbApiKey.setText(storage.tmdbApiKey)
             etTmdbApiUrl.setText(storage.tmdbApiBaseUrl)
             etTmdbImageUrl.setText(storage.tmdbImageBaseUrl)
@@ -2691,6 +2851,7 @@ class MainActivity : AppCompatActivity() {
             etApiKey,
             etRutorMirror,
             etKinopoiskApiKey,
+            etKinopoiskDevApiKey,
             etTmdbApiKey,
             etTmdbApiUrl,
             etTmdbImageUrl,
@@ -2987,6 +3148,7 @@ class MainActivity : AppCompatActivity() {
             storage.showTmdbShowcase = tmdbShowcaseEnabled
             storage.catalogProvider = selectedCatalogProvider
             storage.kinopoiskApiKey = etKinopoiskApiKey.text.toString()
+            storage.kinopoiskDevApiKey = etKinopoiskDevApiKey.text.toString()
             storage.tmdbApiKey = etTmdbApiKey.text.toString()
             storage.tmdbApiBaseUrl = etTmdbApiUrl.text.toString()
             storage.tmdbImageBaseUrl = etTmdbImageUrl.text.toString()
@@ -3081,6 +3243,7 @@ class MainActivity : AppCompatActivity() {
             val apiKeyInput = etApiKey.text.toString()
             val rutorInput = etRutorMirror.text.toString()
             val kpKeyInput = etKinopoiskApiKey.text.toString()
+            val kpDevKeyInput = etKinopoiskDevApiKey.text.toString()
             val tmdbKeyInput = etTmdbApiKey.text.toString()
             val tmdbApiInput = etTmdbApiUrl.text.toString()
             val netOverride = NetworkHelper.NetworkConfig(
@@ -3098,6 +3261,9 @@ class MainActivity : AppCompatActivity() {
                 ).toMutableList()
                 if (kpKeyInput.isNotBlank()) {
                     results.add(kinopoiskClient.probeConnection(kpKeyInput, networkOverride = netOverride))
+                }
+                if (kpDevKeyInput.isNotBlank()) {
+                    results.add(kinopoiskDevClient.probeConnection(kpDevKeyInput, networkOverride = netOverride))
                 }
                 if (tmdbKeyInput.isNotBlank()) {
                     results.add(tmdbClient.probeConnection(tmdbKeyInput, tmdbApiInput, networkOverride = netOverride))
@@ -3168,6 +3334,7 @@ class MainActivity : AppCompatActivity() {
             val catalogChanged = storage.showTmdbShowcase != tmdbShowcaseEnabled ||
                 storage.catalogProvider != selectedCatalogProvider ||
                 storage.kinopoiskApiKey != etKinopoiskApiKey.text.toString().trim() ||
+                storage.kinopoiskDevApiKey != etKinopoiskDevApiKey.text.toString().trim() ||
                 storage.tmdbApiKey != etTmdbApiKey.text.toString().trim() ||
                 storage.tmdbApiBaseUrl != etTmdbApiUrl.text.toString().trim().trimEnd('/').ifBlank { StorageManager.DEFAULT_TMDB_API_URL } ||
                 storage.tmdbImageBaseUrl != etTmdbImageUrl.text.toString().trim().trimEnd('/').ifBlank { StorageManager.DEFAULT_TMDB_IMAGE_URL } ||

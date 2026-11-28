@@ -299,6 +299,94 @@ class TmdbClient(private val storage: StorageManager) {
         }.getOrDefault(emptyList())
     }
 
+    suspend fun fetchSimilarMovies(id: Int, isSeries: Boolean): List<CatalogItem> = withContext(Dispatchers.IO) {
+        val apiKey = storage.tmdbApiKey
+        val baseUrl = storage.tmdbApiBaseUrl
+        if (id <= 0 || apiKey.isBlank()) return@withContext emptyList()
+
+        val type = if (isSeries) "tv" else "movie"
+        val rec = runCatching {
+            fetchList(baseUrl, apiKey, "/$type/$id/recommendations", "language=ru-RU&page=1", type, maxItems = 12)
+        }.getOrDefault(emptyList())
+        if (rec.isNotEmpty()) return@withContext rec
+
+        runCatching {
+            fetchList(baseUrl, apiKey, "/$type/$id/similar", "language=ru-RU&page=1", type, maxItems = 12)
+        }.getOrDefault(emptyList())
+    }
+
+    suspend fun fetchTrailerUrl(id: Int, isSeries: Boolean): String? = withContext(Dispatchers.IO) {
+        val apiKey = storage.tmdbApiKey
+        val baseUrl = storage.tmdbApiBaseUrl
+        if (id <= 0 || apiKey.isBlank()) return@withContext null
+
+        val type = if (isSeries) "tv" else "movie"
+        val ruUrl = fetchYoutubeVideoUrl(baseUrl, apiKey, "/$type/$id/videos", "language=ru-RU")
+        if (!ruUrl.isNullOrBlank()) return@withContext ruUrl
+        fetchYoutubeVideoUrl(baseUrl, apiKey, "/$type/$id/videos", "language=en-US")
+    }
+
+    private fun fetchYoutubeVideoUrl(baseUrl: String, apiKey: String, endpoint: String, queryParams: String): String? {
+        val req = buildRequest(baseUrl, apiKey, endpoint, queryParams)
+        return runCatching {
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val raw = resp.body?.string().orEmpty().trim()
+                if (raw.isBlank() || !raw.startsWith("{")) return@use null
+                val arr = JSONObject(raw).optJSONArray("results") ?: return@use null
+                var officialTrailer: String? = null
+                var anyTrailer: String? = null
+                var anyTeaser: String? = null
+                for (i in 0 until arr.length()) {
+                    val v = arr.optJSONObject(i) ?: continue
+                    val site = v.optString("site", "")
+                    val key = v.optString("key", "").trim()
+                    if (!site.equals("YouTube", ignoreCase = true) || key.isBlank()) continue
+                    val vType = v.optString("type", "")
+                    val isOfficial = v.optBoolean("official", false)
+                    val watchUrl = "https://www.youtube.com/watch?v=$key"
+                    when {
+                        vType.equals("Trailer", ignoreCase = true) && isOfficial -> {
+                            if (officialTrailer == null) officialTrailer = watchUrl
+                        }
+                        vType.equals("Trailer", ignoreCase = true) -> {
+                            if (anyTrailer == null) anyTrailer = watchUrl
+                        }
+                        vType.equals("Teaser", ignoreCase = true) -> {
+                            if (anyTeaser == null) anyTeaser = watchUrl
+                        }
+                    }
+                }
+                officialTrailer ?: anyTrailer ?: anyTeaser
+            }
+        }.getOrNull()
+    }
+
+    suspend fun fetchByGenre(genreName: String): List<CatalogItem> = withContext(Dispatchers.IO) {
+        val apiKey = storage.tmdbApiKey
+        val baseUrl = storage.tmdbApiBaseUrl
+        val genreId = findMovieGenreId(genreName) ?: return@withContext emptyList()
+        if (apiKey.isBlank()) return@withContext emptyList()
+        runCatching {
+            fetchList(
+                baseUrl,
+                apiKey,
+                "/discover/movie",
+                "language=ru-RU&sort_by=popularity.desc&vote_count.gte=150&with_genres=$genreId&page=1",
+                "movie",
+                maxItems = 18
+            )
+        }.getOrDefault(emptyList())
+    }
+
+    private fun findMovieGenreId(genreName: String): Int? {
+        val target = genreName.trim().lowercase(Locale.ROOT)
+        if (target.isBlank()) return null
+        return GENRE_MAP.entries.firstOrNull { (_, name) ->
+            name.lowercase(Locale.ROOT) == target
+        }?.key
+    }
+
     suspend fun probeConnection(
         apiKeyInput: String,
         apiBaseUrlInput: String,

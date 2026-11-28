@@ -3574,6 +3574,14 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                 completed = completed
             )
         }
+        if (episodes.size <= 1 && title.isNotBlank()) {
+            storage.removeWatchedFromWatchlistIfMatched(
+                watchedTitle = title,
+                positionMs = pos,
+                durationMs = dur,
+                completed = completed
+            )
+        }
     }
 
     private fun extractHashFromStreamOrLink(url: String, magnetLink: String): String {

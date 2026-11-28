@@ -27,4 +27,8 @@
     <string name="settings_tmdb_api_label">TMDB API URL / прокси (необязательно)</string>
     <string name="settings_tmdb_img_label">TMDB URL постеров / прокси (необязательно)</string>
     <string name="catalog_search_header">Фильмы и сериалы — выберите карточку для описания и уточнения раздач</string>
+    <string name="catalog_btn_trailer">▶ Трейлер</string>
+    <string name="catalog_similar_title">Похожие фильмы и сериалы</string>
+    <string name="catalog_genre_all">Все жанры</string>
+    <string name="settings_kp_dev_key_label">Резервный API-ключ Кинопоиска (kinopoisk.dev, необязательно)</string>
 </resources>

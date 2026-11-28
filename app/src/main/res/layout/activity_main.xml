@@ -546,6 +546,15 @@
                         android:textStyle="bold" />
                 </LinearLayout>
 
+                <!-- Quick Genre Filter Bar for Catalog Showcase -->
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rvGenreFilter"
+                    android:layout_width="match_parent"
+                    android:layout_height="36dp"
+                    android:layout_marginBottom="10dp"
+                    android:clipToPadding="false"
+                    android:visibility="gone" />
+
                 <!-- Daily Random Top 6-8 Shelf (high rating + verified live seeds, rotates daily) -->
                 <LinearLayout
                     android:id="@+id/layoutDailyTopHeader"

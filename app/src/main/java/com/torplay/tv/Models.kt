@@ -124,16 +124,45 @@ data class WatchHistoryEntry(
     val durationMs: Long,
     val updatedAt: Long
 ) {
+    fun episodeCode(): String {
+        return extractSeasonEpisodeCode(episodeLabel, title)
+    }
+
+    fun remainingTimeText(): String {
+        if (durationMs <= 0L || positionMs <= 0L) return ""
+        val remainingMs = (durationMs - positionMs).coerceAtLeast(0L)
+        val pct = (positionMs * 100L) / durationMs
+        if (remainingMs < 30_000L || pct >= 95L) return "просмотрено"
+        val totalMin = ((remainingMs + 30_000L) / 60_000L).coerceAtLeast(1L)
+        val hours = totalMin / 60L
+        val mins = totalMin % 60L
+        return when {
+            hours > 0L && mins > 0L -> "осталось ${hours}ч ${mins} мин"
+            hours > 0L -> "осталось ${hours}ч"
+            else -> "осталось $totalMin мин"
+        }
+    }
+
     fun progressText(): String {
+        val code = episodeCode()
+        val rem = remainingTimeText()
+        if (code.isNotBlank()) {
+            return if (rem.isNotBlank()) {
+                "$code • $rem"
+            } else {
+                "$code • Начато"
+            }
+        }
         if (durationMs <= 0L || positionMs <= 0L) {
             return if (episodeLabel.isNotBlank()) episodeLabel else "Начато"
         }
         val cur = formatDuration(positionMs)
         val tot = formatDuration(durationMs)
         return if (episodeLabel.isNotBlank()) {
-            "$episodeLabel • $cur / $tot"
+            val shortEp = episodeLabel.substringBeforeLast('.').take(28)
+            if (rem.isNotBlank()) "$shortEp • $rem" else "$shortEp • $cur / $tot"
         } else {
-            "$cur / $tot"
+            if (rem.isNotBlank()) "$rem • $cur / $tot" else "$cur / $tot"
         }
     }
 
@@ -263,4 +292,57 @@ fun formatDate(epochMs: Long): String {
     val day = cal.get(Calendar.DAY_OF_MONTH)
     val month = cal.get(Calendar.MONTH) + 1
     return String.format(Locale.US, "%02d.%02d.%04d", day, month, year)
+}
+
+private val SE_CODE_REGEX = Regex("(?i)(?:^|[^a-z0-9])s(\d{1,2})[\s._-]*e(\d{1,3})(?:$|[^a-z0-9])")
+private val SE_X_REGEX = Regex("(?i)(?:^|[^0-9])(\d{1,2})x(\d{1,3})(?:$|[^0-9])")
+private val RU_SE_REGEX = Regex("(?i)(\d{1,2})\s*(?:сезон|season)[^\d]{0,12}(\d{1,3})\s*(?:серия|сер\.?|episode|ep\.?)")
+private val RU_SE_ALT_REGEX = Regex("(?i)(?:сезон|season)\s*(\d{1,2})[^\d]{0,12}(?:серия|сер\.?|episode|ep\.?)\s*(\d{1,3})")
+private val EP_ONLY_REGEX = Regex("(?i)(?:^|[^a-zа-я0-9])(?:e|ep\.?|episode|серия|сер\.?)\s*(\d{1,3})(?:$|[^a-zа-я0-9])")
+private val SEASON_ONLY_REGEX = Regex("(?i)(?:(?:сезон|season)\s*(\d{1,2})|(\d{1,2})\s*(?:сезон|season)|\bs(\d{1,2})\b)")
+
+fun extractSeasonEpisodeCode(episodeLabel: String, torrentTitle: String = ""): String {
+    val sources = listOf(episodeLabel, "$torrentTitle $episodeLabel").filter { it.isNotBlank() }
+    for (src in sources) {
+        SE_CODE_REGEX.find(src)?.let { m ->
+            val s = m.groupValues[1].toIntOrNull() ?: return@let
+            val e = m.groupValues[2].toIntOrNull() ?: return@let
+            return String.format(Locale.US, "S%02dE%02d", s, e)
+        }
+        SE_X_REGEX.find(src)?.let { m ->
+            val s = m.groupValues[1].toIntOrNull() ?: return@let
+            val e = m.groupValues[2].toIntOrNull() ?: return@let
+            if (s in 1..40 && e in 1..999) {
+                return String.format(Locale.US, "S%02dE%02d", s, e)
+            }
+        }
+        RU_SE_REGEX.find(src)?.let { m ->
+            val s = m.groupValues[1].toIntOrNull() ?: return@let
+            val e = m.groupValues[2].toIntOrNull() ?: return@let
+            return String.format(Locale.US, "S%02dE%02d", s, e)
+        }
+        RU_SE_ALT_REGEX.find(src)?.let { m ->
+            val s = m.groupValues[1].toIntOrNull() ?: return@let
+            val e = m.groupValues[2].toIntOrNull() ?: return@let
+            return String.format(Locale.US, "S%02dE%02d", s, e)
+        }
+    }
+    if (episodeLabel.isNotBlank()) {
+        val epMatch = EP_ONLY_REGEX.find(episodeLabel)
+        val epNum = epMatch?.groupValues?.get(1)?.toIntOrNull()
+        if (epNum != null && epNum in 1..999) {
+            val sMatch = SEASON_ONLY_REGEX.find("$torrentTitle $episodeLabel")
+            val sNum = sMatch?.let { m ->
+                m.groupValues[1].toIntOrNull()
+                    ?: m.groupValues[2].toIntOrNull()
+                    ?: m.groupValues[3].toIntOrNull()
+            }
+            return if (sNum != null && sNum in 1..40) {
+                String.format(Locale.US, "S%02dE%02d", sNum, epNum)
+            } else {
+                String.format(Locale.US, "E%02d", epNum)
+            }
+        }
+    }
+    return ""
 }
