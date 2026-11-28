@@ -18,6 +18,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.view.GestureDetector
 import android.view.Gravity
@@ -51,8 +52,12 @@ import androidx.media3.exoplayer.mediacodec.MediaCodecInfo
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.SubtitleView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.CoroutineScope
@@ -102,7 +107,11 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private lateinit var btnForward: TextView
     private lateinit var btnAudioTrack: TextView
     private lateinit var btnAudioBoost: TextView
+    private lateinit var btnSkipIntro: TextView
     private lateinit var btnSubtitles: TextView
+    private lateinit var btnPlaybackSpeed: TextView
+    private lateinit var btnAudioSync: TextView
+    private lateinit var btnSleepTimer: TextView
     private lateinit var layoutCornerStats: LinearLayout
     private lateinit var viewCornerStatsDot: View
     private lateinit var tvCornerSpeed: TextView
@@ -200,6 +209,14 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private var resumeOnAudioFocusGain: Boolean = false
     private var isAudioDucked: Boolean = false
     private var isNoisyReceiverRegistered: Boolean = false
+
+    private val afrHelper = AutoFrameRateHelper()
+    private val audioDelayProcessor = AudioDelayAudioProcessor()
+    private var playbackSpeedIndex: Int = 1 // 1.0x
+    private var audioDelayMs: Long = 0L
+    private var sleepTimerDeadlineMs: Long = 0L
+    private var sleepAtEndOfEpisode: Boolean = false
+    private var lastSleepLabelMinute: Int = -1
     private var initialTorrentHash: String = ""
     private var fromHistoryLaunch: Boolean = false
     private var warnedNoHw4kForCurrent: Boolean = false
@@ -259,6 +276,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     private val progressUpdateRunnable = object : Runnable {
         override fun run() {
             updateOsdProgress()
+            checkSleepTimer()
             checkAutoNextTrigger()
             checkPlaybackStallWatchdog()
             if (layoutOsd.visibility == View.VISIBLE || isBufferingNow || showCornerStatsHud) {
@@ -545,6 +563,10 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         configureCornerStatsHud()
         updateEngineSwitchUi()
         updateAudioBoostUi()
+        updatePlaybackSpeedUi()
+        updateAudioSyncUi()
+        updateSleepTimerUi()
+        applyMedia3SubtitleStyle()
         updateAutoNextUi()
         updateSeriesControlsUi()
         initActivePlayer(startPositionMs)
@@ -568,6 +590,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        afrHelper.resetForNewVideo()
         registerBecomingNoisyReceiver()
         mainHandler.post(progressUpdateRunnable)
         if (showCornerStatsHud && plasmaPixelShiftEnabled) {
@@ -588,12 +611,14 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         resumeOnAudioFocusGain = false
         pausePlayback()
         abandonAudioFocus()
+        afrHelper.restoreOriginalMode(this)
     }
 
     override fun onDestroy() {
         super.onDestroy()
         unregisterBecomingNoisyReceiver()
         abandonAudioFocus()
+        afrHelper.restoreOriginalMode(this)
         runCatching { altSourcesDialog?.dismiss() }
         altSourcesDialog = null
         savePlaybackProgress()
@@ -709,7 +734,11 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         btnForward = findViewById(R.id.btnForward)
         btnAudioTrack = findViewById(R.id.btnAudioTrack)
         btnAudioBoost = findViewById(R.id.btnAudioBoost)
+        btnSkipIntro = findViewById(R.id.btnSkipIntro)
         btnSubtitles = findViewById(R.id.btnSubtitles)
+        btnPlaybackSpeed = findViewById(R.id.btnPlaybackSpeed)
+        btnAudioSync = findViewById(R.id.btnAudioSync)
+        btnSleepTimer = findViewById(R.id.btnSleepTimer)
         layoutCornerStats = findViewById(R.id.layoutCornerStats)
         viewCornerStatsDot = findViewById(R.id.viewCornerStatsDot)
         tvCornerSpeed = findViewById(R.id.tvCornerSpeed)
@@ -784,8 +813,34 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             prepareActiveMedia(streamUrl, 0L)
             showQuickHudMessage("▶ Запуск с начала")
         }
+        btnSkipIntro.setOnClickListener {
+            skipIntro()
+            scheduleOsdAutoHide()
+        }
         btnSubtitles.setOnClickListener {
             showSubtitleTrackDialog()
+            scheduleOsdAutoHide()
+        }
+        btnSubtitles.setOnLongClickListener {
+            showSubtitleStyleDialog()
+            scheduleOsdAutoHide()
+            true
+        }
+        btnPlaybackSpeed.setOnClickListener {
+            cyclePlaybackSpeed()
+            scheduleOsdAutoHide()
+        }
+        btnPlaybackSpeed.setOnLongClickListener {
+            resetPlaybackSpeed()
+            scheduleOsdAutoHide()
+            true
+        }
+        btnAudioSync.setOnClickListener {
+            showAudioSyncDialog()
+            scheduleOsdAutoHide()
+        }
+        btnSleepTimer.setOnClickListener {
+            showSleepTimerDialog()
             scheduleOsdAutoHide()
         }
         btnResizeMode.setOnClickListener {
@@ -1144,7 +1199,18 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         }
 
         // Dynamic single-row left/right focus routing
-        val rowButtons = mutableListOf<TextView>(btnAudioTrack, btnAudioBoost, btnSubtitles, btnResizeMode, btnEngineSwitch, btnAltSources)
+        val rowButtons = mutableListOf<TextView>(
+            btnAudioTrack,
+            btnAudioBoost,
+            btnSkipIntro,
+            btnSubtitles,
+            btnPlaybackSpeed,
+            btnAudioSync,
+            btnSleepTimer,
+            btnResizeMode,
+            btnEngineSwitch,
+            btnAltSources
+        )
         if (multi) rowButtons.add(btnEpisodes)
         if (hasNext) rowButtons.add(btnNextEpisode)
         if (multi) rowButtons.add(btnAutoNext)
@@ -1177,6 +1243,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
 
     private fun prepareActiveMedia(url: String, seekPosMs: Long) {
         warnedNoHw4kForCurrent = false
+        afrHelper.resetForNewVideo()
         maybeWarnUnsupported4k(videoWidth = 0, videoHeight = 0)
         if (isVlcEngine()) {
             prepareVlcMedia(url, seekPosMs)
@@ -1346,7 +1413,21 @@ class BuiltInPlayerActivity : AppCompatActivity() {
         } else {
             DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
         }
-        val renderersFactory = DefaultRenderersFactory(this)
+        val renderersFactory = object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean
+            ): AudioSink {
+                return DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .setAudioProcessorChain(
+                        DefaultAudioSink.DefaultAudioProcessorChain(audioDelayProcessor)
+                    )
+                    .build()
+            }
+        }
             .setExtensionRendererMode(extensionMode)
             .setEnableDecoderFallback(true)
             .setMediaCodecSelector(buildSmartCodecSelector(preferHevcForDv = forceHevcFallback))
@@ -1381,6 +1462,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
 
         player = exo
         playerView.player = exo
+        applyMedia3SubtitleStyle()
 
         exo.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -1471,6 +1553,8 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                     btnStartFromBeginning.visibility = View.GONE
 
                     applyAudioBoostToSession(exo.audioSessionId)
+                    applyPlaybackSpeed(showFeedback = false)
+                    applyAudioDelay(showFeedback = false)
 
                     if (pendingInitialSeekMs > 2_000L) {
                         val targetSeek = pendingInitialSeekMs
@@ -1492,6 +1576,10 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                     isBufferingNow = false
                     layoutPlayerBuffering.visibility = View.GONE
                     savePlaybackProgress(completed = true)
+                    if (sleepAtEndOfEpisode) {
+                        triggerSleepAtEndOfEpisode()
+                        return
+                    }
                     if (autoNextEnabled && hasNextEpisode()) {
                         if (!nextCardActive) {
                             showNextEpisodeCard(countdownSec = 5)
@@ -1525,6 +1613,12 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             add("--audio-time-stretch")
             add("--avcodec-fast")
             add("--avcodec-threads=0")
+            add("--freetype-rel-fontsize=${vlcSubtitleRelSize(playerPrefs.subtitleSizeIndex)}")
+            add("--freetype-background-opacity=${vlcSubtitleBgOpacity(playerPrefs.subtitleBgIndex)}")
+            add("--freetype-background-color=0")
+            if (playerPrefs.subtitleBgIndex != PlayerPrefs.SUB_BG_BLACK) {
+                add("--freetype-outline-thickness=4")
+            }
         }
 
         val vlcInstance = runCatching { LibVLC(this, options) }.getOrElse { err ->
@@ -1595,6 +1689,8 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                     btnPlayPause.text = "❚❚"
 
                     applyVlcAudioBoost()
+                    applyPlaybackSpeed(showFeedback = false)
+                    applyAudioDelay(showFeedback = false)
                     applyResizeMode(showFeedback = false)
                     maybePerformPendingVlcInitialSeek()
                     if (!appliedSavedTracksForItem) {
@@ -1681,6 +1777,10 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                     mainHandler.post {
                         if (isFinishing || isDestroyed) return@post
                         savePlaybackProgress(completed = true)
+                        if (sleepAtEndOfEpisode) {
+                            triggerSleepAtEndOfEpisode()
+                            return@post
+                        }
                         if (autoNextEnabled && hasNextEpisode()) {
                             if (!nextCardActive) {
                                 showNextEpisodeCard(countdownSec = 5)
@@ -2530,6 +2630,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     }
 
     private fun checkAutoNextTrigger() {
+        if (sleepAtEndOfEpisode) return
         if (!autoNextEnabled || nextCardActive || nextCardDismissedForCurrent || !hasNextEpisode()) return
         if (!isCurrentlyPlaying()) return
         val dur = currentDurationMs()
@@ -2719,6 +2820,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                 if (vt.frameRateNum > 0 && vt.frameRateDen > 0) {
                     val fps = vt.frameRateNum.toFloat() / vt.frameRateDen.toFloat()
                     if (fps in 1f..240f) {
+                        maybeApplyAutoFrameRate(fps)
                         parts.add(
                             String.format(Locale.US, "%.2f fps", fps)
                                 .removeSuffix(".00 fps")
@@ -2781,6 +2883,7 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                 }
 
                 if (vf.frameRate > 1f) {
+                    maybeApplyAutoFrameRate(vf.frameRate)
                     parts.add(String.format(Locale.US, "%.2f fps", vf.frameRate).removeSuffix(".00 fps").let { s ->
                         if (s.endsWith("fps")) s else "$s fps"
                     })
@@ -3009,10 +3112,14 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                 }
             }
         }
-        val labels = choices.map { it.label }.toTypedArray()
+        val labels = (choices.map { it.label } + "⚙ Настройка вида субтитров…").toTypedArray()
         AlertDialog.Builder(this)
             .setTitle("Субтитры")
             .setItems(labels) { _, which ->
+                if (which == choices.size) {
+                    showSubtitleStyleDialog()
+                    return@setItems
+                }
                 val chosen = choices[which]
                 val builder = selector.buildUponParameters()
                 if (chosen.disableType) {
@@ -3042,10 +3149,16 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             val mark = if (td.id == activeId) " ✓" else ""
             labels.add("${td.name}$mark")
         }
+        val styleIndex = labels.size
+        labels.add("⚙ Настройка вида субтитров…")
 
         AlertDialog.Builder(this)
             .setTitle("Субтитры (VLC)")
             .setItems(labels.toTypedArray()) { _, which ->
+                if (which == styleIndex) {
+                    showSubtitleStyleDialog()
+                    return@setItems
+                }
                 if (which == 0) {
                     playerPrefs.subtitlesDisabled = true
                     runCatching { vlc.setSpuTrack(-1) }
@@ -3061,6 +3174,379 @@ class BuiltInPlayerActivity : AppCompatActivity() {
                 }
             }
             .show()
+    }
+
+
+    private fun skipIntro() {
+        val dur = currentDurationMs()
+        if (dur > 0L) {
+            val target = (currentPositionMs() + SKIP_INTRO_MS).coerceIn(0L, (dur - 2_000L).coerceAtLeast(0L))
+            seekToPositionMs(target)
+            updateOsdProgress()
+            showQuickHudMessage("⏭ Пропуск заставки (+85с)   ${formatDuration(target)} / ${formatDuration(dur)}")
+        } else {
+            seekBy(SKIP_INTRO_MS, showQuickHud = false)
+            showQuickHudMessage("⏭ Пропуск заставки (+85с)")
+        }
+    }
+
+    private fun currentPlaybackSpeed(): Float = PLAYBACK_SPEEDS[playbackSpeedIndex]
+
+    private fun formatSpeedLabel(speed: Float): String {
+        val formatted = String.format(Locale.US, "%.2f", speed)
+            .trimEnd('0')
+            .let { if (it.endsWith('.')) "${it}0" else it }
+        return "${formatted}×"
+    }
+
+    private fun updatePlaybackSpeedUi() {
+        val speed = currentPlaybackSpeed()
+        btnPlaybackSpeed.text = formatSpeedLabel(speed)
+        btnPlaybackSpeed.isSelected = kotlin.math.abs(speed - 1.0f) > 0.01f
+    }
+
+    private fun cyclePlaybackSpeed() {
+        playbackSpeedIndex = (playbackSpeedIndex + 1) % PLAYBACK_SPEEDS.size
+        applyPlaybackSpeed(showFeedback = true)
+    }
+
+    private fun resetPlaybackSpeed() {
+        playbackSpeedIndex = 1
+        applyPlaybackSpeed(showFeedback = true)
+    }
+
+    private fun applyPlaybackSpeed(showFeedback: Boolean) {
+        val speed = currentPlaybackSpeed()
+        if (isVlcEngine()) {
+            runCatching { vlcPlayer?.rate = speed }
+        } else {
+            runCatching { player?.setPlaybackSpeed(speed) }
+        }
+        updatePlaybackSpeedUi()
+        if (showFeedback) {
+            showQuickHudMessage("⏩ Скорость: ${formatSpeedLabel(speed)}")
+        }
+    }
+
+    private fun formatAudioDelayShort(ms: Long): String {
+        if (ms == 0L) return getString(R.string.player_audio_sync_btn)
+        val sec = ms / 1000.0
+        val sign = if (ms > 0L) "+" else ""
+        return String.format(Locale.US, "%s%.1fс", sign, sec)
+    }
+
+    private fun formatAudioDelayDetailed(ms: Long): String {
+        val sec = ms / 1000.0
+        val sign = if (ms > 0L) "+" else ""
+        return String.format(Locale.US, "%s%.1f с (%s%d мс)", sign, sec, sign, ms)
+    }
+
+    private fun updateAudioSyncUi() {
+        btnAudioSync.text = formatAudioDelayShort(audioDelayMs)
+        btnAudioSync.isSelected = audioDelayMs != 0L
+    }
+
+    private fun applyAudioDelay(showFeedback: Boolean) {
+        audioDelayProcessor.setDelayMs(audioDelayMs)
+        if (isVlcEngine()) {
+            runCatching { vlcPlayer?.setAudioDelay(audioDelayMs * 1_000L) }
+        }
+        updateAudioSyncUi()
+        if (showFeedback) {
+            val label = if (audioDelayMs == 0L) "0.0 с (сброс)" else formatAudioDelayDetailed(audioDelayMs)
+            showQuickHudMessage("🎵 Синхр. звука: $label")
+        }
+    }
+
+    private fun showAudioSyncDialog() {
+        if (isFinishing || isDestroyed) return
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(R.layout.dialog_audio_sync)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.56).toInt(),
+            WindowManager.LayoutParams.WRAP_CONTENT
+        )
+
+        val tvValue = dialog.findViewById<TextView>(R.id.tvAudioSyncValue)
+        val btnMinus500 = dialog.findViewById<TextView>(R.id.btnSyncMinus500)
+        val btnMinus100 = dialog.findViewById<TextView>(R.id.btnSyncMinus100)
+        val btnReset = dialog.findViewById<TextView>(R.id.btnSyncReset)
+        val btnPlus100 = dialog.findViewById<TextView>(R.id.btnSyncPlus100)
+        val btnPlus500 = dialog.findViewById<TextView>(R.id.btnSyncPlus500)
+        val btnDone = dialog.findViewById<TextView>(R.id.btnSyncDone)
+
+        fun renderValue() {
+            tvValue.text = formatAudioDelayDetailed(audioDelayMs)
+        }
+
+        fun adjust(deltaMs: Long) {
+            audioDelayMs = (audioDelayMs + deltaMs).coerceIn(-3_000L, 3_000L)
+            applyAudioDelay(showFeedback = false)
+            renderValue()
+        }
+
+        btnMinus500.setOnClickListener { adjust(-500L) }
+        btnMinus100.setOnClickListener { adjust(-100L) }
+        btnReset.setOnClickListener {
+            audioDelayMs = 0L
+            applyAudioDelay(showFeedback = false)
+            renderValue()
+        }
+        btnPlus100.setOnClickListener { adjust(100L) }
+        btnPlus500.setOnClickListener { adjust(500L) }
+        btnDone.setOnClickListener { dialog.dismiss() }
+
+        renderValue()
+        dialog.show()
+        SystemUiHelper.applyImmersiveToDialog(dialog)
+        btnPlus100.requestFocus()
+    }
+
+    private fun updateSleepTimerUi() {
+        when {
+            sleepAtEndOfEpisode -> {
+                btnSleepTimer.isSelected = true
+                btnSleepTimer.text = "Сон: серия"
+            }
+            sleepTimerDeadlineMs > 0L -> {
+                val remMs = (sleepTimerDeadlineMs - System.currentTimeMillis()).coerceAtLeast(0L)
+                val remMin = ((remMs + 59_999L) / 60_000L).toInt().coerceAtLeast(1)
+                lastSleepLabelMinute = remMin
+                btnSleepTimer.isSelected = true
+                btnSleepTimer.text = "Сон ${remMin}м"
+            }
+            else -> {
+                lastSleepLabelMinute = -1
+                btnSleepTimer.isSelected = false
+                btnSleepTimer.text = getString(R.string.player_sleep_btn)
+            }
+        }
+    }
+
+    private fun showSleepTimerDialog() {
+        if (isFinishing || isDestroyed) return
+        val hasActive = sleepAtEndOfEpisode || sleepTimerDeadlineMs > 0L
+        val labels = mutableListOf<String>()
+        if (hasActive) {
+            labels.add("Выключить таймер сна")
+        }
+        labels.add("30 минут")
+        labels.add("60 минут")
+        labels.add("90 минут")
+        labels.add(if (episodes.size > 1) "До конца серии" else "До конца фильма")
+
+        AlertDialog.Builder(this)
+            .setTitle("Таймер сна")
+            .setItems(labels.toTypedArray()) { _, which ->
+                val idx = if (hasActive) which else which + 1
+                when (idx) {
+                    0 -> {
+                        sleepTimerDeadlineMs = 0L
+                        sleepAtEndOfEpisode = false
+                        updateSleepTimerUi()
+                        showQuickHudMessage("🌙 Таймер сна выключен")
+                    }
+                    1 -> setSleepMinutes(30)
+                    2 -> setSleepMinutes(60)
+                    3 -> setSleepMinutes(90)
+                    4 -> {
+                        sleepTimerDeadlineMs = 0L
+                        sleepAtEndOfEpisode = true
+                        if (nextCardActive) {
+                            hideNextEpisodeCard(dismissed = true)
+                        }
+                        updateSleepTimerUi()
+                        showQuickHudMessage(
+                            if (episodes.size > 1) "🌙 Таймер сна: до конца серии" else "🌙 Таймер сна: до конца фильма"
+                        )
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun setSleepMinutes(minutes: Int) {
+        sleepAtEndOfEpisode = false
+        sleepTimerDeadlineMs = System.currentTimeMillis() + minutes.toLong() * 60_000L
+        updateSleepTimerUi()
+        showQuickHudMessage("🌙 Таймер сна: $minutes мин")
+    }
+
+    private fun checkSleepTimer() {
+        val deadline = sleepTimerDeadlineMs
+        if (deadline <= 0L) return
+        val remMs = deadline - System.currentTimeMillis()
+        if (remMs <= 0L) {
+            sleepTimerDeadlineMs = 0L
+            sleepAtEndOfEpisode = false
+            updateSleepTimerUi()
+            savePlaybackProgress()
+            resumeOnAudioFocusGain = false
+            pausePlayback()
+            updateOsdProgress()
+            showQuickHudMessage("🌙 Таймер сна: воспроизведение на паузе", durationMs = 4_000L)
+            return
+        }
+        val remMin = ((remMs + 59_999L) / 60_000L).toInt().coerceAtLeast(1)
+        if (remMin != lastSleepLabelMinute) {
+            updateSleepTimerUi()
+        }
+    }
+
+    private fun triggerSleepAtEndOfEpisode() {
+        sleepAtEndOfEpisode = false
+        sleepTimerDeadlineMs = 0L
+        updateSleepTimerUi()
+        hideNextEpisodeCard(dismissed = true)
+        resumeOnAudioFocusGain = false
+        pausePlayback()
+        updateOsdProgress()
+        showQuickHudMessage("🌙 Таймер сна: воспроизведение завершено", durationMs = 4_000L)
+    }
+
+    private fun vlcSubtitleRelSize(sizeIndex: Int): Int {
+        return when (sizeIndex) {
+            PlayerPrefs.SUB_SIZE_SMALL -> 20
+            PlayerPrefs.SUB_SIZE_LARGE -> 13
+            PlayerPrefs.SUB_SIZE_HUGE -> 10
+            else -> 16
+        }
+    }
+
+    private fun vlcSubtitleBgOpacity(bgIndex: Int): Int {
+        return when (bgIndex) {
+            PlayerPrefs.SUB_BG_TRANSPARENT -> 0
+            PlayerPrefs.SUB_BG_BLACK -> 235
+            else -> 140
+        }
+    }
+
+    private fun applyMedia3SubtitleStyle() {
+        val subView = playerView.subtitleView ?: return
+        val fraction = when (playerPrefs.subtitleSizeIndex) {
+            PlayerPrefs.SUB_SIZE_SMALL -> 0.040f
+            PlayerPrefs.SUB_SIZE_LARGE -> 0.068f
+            PlayerPrefs.SUB_SIZE_HUGE -> 0.085f
+            else -> SubtitleView.DEFAULT_TEXT_SIZE_FRACTION
+        }
+        val (bgColor, edgeType) = when (playerPrefs.subtitleBgIndex) {
+            PlayerPrefs.SUB_BG_TRANSPARENT -> Color.TRANSPARENT to CaptionStyleCompat.EDGE_TYPE_OUTLINE
+            PlayerPrefs.SUB_BG_BLACK -> Color.argb(235, 0, 0, 0) to CaptionStyleCompat.EDGE_TYPE_NONE
+            else -> Color.argb(150, 0, 0, 0) to CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW
+        }
+        val style = CaptionStyleCompat(
+            Color.WHITE,
+            bgColor,
+            Color.TRANSPARENT,
+            edgeType,
+            Color.BLACK,
+            null
+        )
+        subView.setApplyEmbeddedStyles(false)
+        subView.setApplyEmbeddedFontSizes(false)
+        subView.setStyle(style)
+        subView.setFractionalTextSize(fraction)
+    }
+
+    private fun showSubtitleStyleDialog() {
+        if (isFinishing || isDestroyed) return
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(R.layout.dialog_subtitle_style)
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.62).toInt(),
+            WindowManager.LayoutParams.WRAP_CONTENT
+        )
+
+        val tvPreview = dialog.findViewById<TextView>(R.id.tvSubStylePreview)
+        val btnSmall = dialog.findViewById<TextView>(R.id.btnSubSizeSmall)
+        val btnNormal = dialog.findViewById<TextView>(R.id.btnSubSizeNormal)
+        val btnLarge = dialog.findViewById<TextView>(R.id.btnSubSizeLarge)
+        val btnHuge = dialog.findViewById<TextView>(R.id.btnSubSizeHuge)
+        val btnBgTrans = dialog.findViewById<TextView>(R.id.btnSubBgTransparent)
+        val btnBgSemi = dialog.findViewById<TextView>(R.id.btnSubBgTranslucent)
+        val btnBgBlack = dialog.findViewById<TextView>(R.id.btnSubBgBlack)
+        val btnApply = dialog.findViewById<TextView>(R.id.btnSubStyleApply)
+
+        val initialSize = playerPrefs.subtitleSizeIndex
+        val initialBg = playerPrefs.subtitleBgIndex
+        var selSize = initialSize
+        var selBg = initialBg
+
+        fun renderPreview() {
+            btnSmall.isSelected = selSize == PlayerPrefs.SUB_SIZE_SMALL
+            btnNormal.isSelected = selSize == PlayerPrefs.SUB_SIZE_NORMAL
+            btnLarge.isSelected = selSize == PlayerPrefs.SUB_SIZE_LARGE
+            btnHuge.isSelected = selSize == PlayerPrefs.SUB_SIZE_HUGE
+
+            btnBgTrans.isSelected = selBg == PlayerPrefs.SUB_BG_TRANSPARENT
+            btnBgSemi.isSelected = selBg == PlayerPrefs.SUB_BG_TRANSLUCENT
+            btnBgBlack.isSelected = selBg == PlayerPrefs.SUB_BG_BLACK
+
+            tvPreview.textSize = when (selSize) {
+                PlayerPrefs.SUB_SIZE_SMALL -> 15f
+                PlayerPrefs.SUB_SIZE_LARGE -> 23f
+                PlayerPrefs.SUB_SIZE_HUGE -> 27f
+                else -> 19f
+            }
+            val bgColor = when (selBg) {
+                PlayerPrefs.SUB_BG_TRANSPARENT -> Color.TRANSPARENT
+                PlayerPrefs.SUB_BG_BLACK -> Color.argb(235, 0, 0, 0)
+                else -> Color.argb(150, 0, 0, 0)
+            }
+            tvPreview.setBackgroundColor(bgColor)
+            if (selBg == PlayerPrefs.SUB_BG_TRANSPARENT) {
+                tvPreview.setShadowLayer(4f, 0f, 0f, Color.BLACK)
+            } else {
+                tvPreview.setShadowLayer(0f, 0f, 0f, Color.TRANSPARENT)
+            }
+        }
+
+        btnSmall.setOnClickListener { selSize = PlayerPrefs.SUB_SIZE_SMALL; renderPreview() }
+        btnNormal.setOnClickListener { selSize = PlayerPrefs.SUB_SIZE_NORMAL; renderPreview() }
+        btnLarge.setOnClickListener { selSize = PlayerPrefs.SUB_SIZE_LARGE; renderPreview() }
+        btnHuge.setOnClickListener { selSize = PlayerPrefs.SUB_SIZE_HUGE; renderPreview() }
+
+        btnBgTrans.setOnClickListener { selBg = PlayerPrefs.SUB_BG_TRANSPARENT; renderPreview() }
+        btnBgSemi.setOnClickListener { selBg = PlayerPrefs.SUB_BG_TRANSLUCENT; renderPreview() }
+        btnBgBlack.setOnClickListener { selBg = PlayerPrefs.SUB_BG_BLACK; renderPreview() }
+
+        btnApply.setOnClickListener {
+            val changed = selSize != initialSize || selBg != initialBg
+            playerPrefs.subtitleSizeIndex = selSize
+            playerPrefs.subtitleBgIndex = selBg
+            applyMedia3SubtitleStyle()
+            dialog.dismiss()
+            if (changed && isVlcEngine()) {
+                val resumeAt = currentPositionMs().coerceAtLeast(pendingInitialSeekMs)
+                showQuickHudMessage("Применяем стиль субтитров (VLC)…")
+                initVlcPlayer(resumePositionMs = resumeAt)
+            } else {
+                showQuickHudMessage("Стиль субтитров обновлён")
+            }
+        }
+
+        renderPreview()
+        dialog.show()
+        SystemUiHelper.applyImmersiveToDialog(dialog)
+        when (selSize) {
+            PlayerPrefs.SUB_SIZE_SMALL -> btnSmall
+            PlayerPrefs.SUB_SIZE_LARGE -> btnLarge
+            PlayerPrefs.SUB_SIZE_HUGE -> btnHuge
+            else -> btnNormal
+        }.requestFocus()
+    }
+
+    private fun maybeApplyAutoFrameRate(videoFps: Float) {
+        if (!storage.autoFrameRate) return
+        val appliedHz = afrHelper.applyFrameRate(this, videoFps, enabled = true)
+        if (appliedHz != null) {
+            val hzText = String.format(Locale.US, "%.2f", appliedHz).removeSuffix(".00")
+            showQuickHudMessage("📺 AFR: экран переключён на $hzText Гц")
+        }
     }
 
     private fun savePlaybackProgress(completed: Boolean = false) {
@@ -3243,9 +3729,16 @@ class BuiltInPlayerActivity : AppCompatActivity() {
             val currentHashLower = torrentHash.trim().lowercase(Locale.US)
             val currentLinkTrim = link.trim()
 
+            val hide4k = storage.hide4kReleases
+            if (hide4k) {
+                btnAltFilter4k.visibility = View.GONE
+                btnAltFilterAll.nextFocusRightId = R.id.btnAltFilter1080
+                btnAltFilter1080.nextFocusLeftId = R.id.btnAltFilterAll
+            }
+
             fun filterLive(items: List<TorrentItem>): List<TorrentItem> {
                 return items
-                    .filter { it.seeds > 0 && it.playableLink.isNotBlank() }
+                    .filter { it.seeds > 0 && it.playableLink.isNotBlank() && (!hide4k || !it.quality.equals("4K", ignoreCase = true)) }
                     .filterNot { item ->
                         val sameLink = currentLinkTrim.isNotBlank() && item.playableLink.trim() == currentLinkTrim
                         val sameHash = currentHashLower.isNotBlank() &&
@@ -3412,6 +3905,9 @@ class BuiltInPlayerActivity : AppCompatActivity() {
     }
 
     companion object {
+        private const val SKIP_INTRO_MS = 85_000L
+        private val PLAYBACK_SPEEDS = floatArrayOf(0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
+
         const val EXTRA_STREAM_URL = "extra_stream_url"
         const val EXTRA_TITLE = "extra_title"
         const val EXTRA_EPISODE_LABEL = "extra_episode_label"

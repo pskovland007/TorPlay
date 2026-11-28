@@ -110,6 +110,18 @@ class StorageManager(context: Context) {
             prefs.edit().putBoolean(KEY_ONLY_DUB_RELEASES, value).apply()
         }
 
+    var hide4kReleases: Boolean
+        get() = prefs.getBoolean(KEY_HIDE_4K_RELEASES, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_HIDE_4K_RELEASES, value).apply()
+        }
+
+    var autoFrameRate: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_FRAME_RATE, true)
+        set(value) {
+            prefs.edit().putBoolean(KEY_AUTO_FRAME_RATE, value).apply()
+        }
+
     var showTmdbShowcase: Boolean
         get() = prefs.getBoolean(KEY_SHOW_TMDB_SHOWCASE, true)
         set(value) {
@@ -1152,6 +1164,8 @@ class StorageManager(context: Context) {
             put(KEY_HIDE_CAM_RELEASES, hideCamReleases)
             put(KEY_ONLY_LIVE_SEEDS, onlyLiveSeeds)
             put(KEY_ONLY_DUB_RELEASES, onlyDubReleases)
+            put(KEY_HIDE_4K_RELEASES, hide4kReleases)
+            put(KEY_AUTO_FRAME_RATE, autoFrameRate)
             put(KEY_SHOW_TMDB_SHOWCASE, showTmdbShowcase)
             put(KEY_CATALOG_PROVIDER, catalogProvider)
             put(KEY_KINOPOISK_API_KEY, kinopoiskApiKey)
@@ -1208,6 +1222,8 @@ class StorageManager(context: Context) {
         if (obj.has(KEY_HIDE_CAM_RELEASES)) editor.putBoolean(KEY_HIDE_CAM_RELEASES, obj.optBoolean(KEY_HIDE_CAM_RELEASES, false))
         if (obj.has(KEY_ONLY_LIVE_SEEDS)) editor.putBoolean(KEY_ONLY_LIVE_SEEDS, obj.optBoolean(KEY_ONLY_LIVE_SEEDS, false))
         if (obj.has(KEY_ONLY_DUB_RELEASES)) editor.putBoolean(KEY_ONLY_DUB_RELEASES, obj.optBoolean(KEY_ONLY_DUB_RELEASES, false))
+        if (obj.has(KEY_HIDE_4K_RELEASES)) editor.putBoolean(KEY_HIDE_4K_RELEASES, obj.optBoolean(KEY_HIDE_4K_RELEASES, false))
+        if (obj.has(KEY_AUTO_FRAME_RATE)) editor.putBoolean(KEY_AUTO_FRAME_RATE, obj.optBoolean(KEY_AUTO_FRAME_RATE, true))
         if (obj.has(KEY_SHOW_TMDB_SHOWCASE)) editor.putBoolean(KEY_SHOW_TMDB_SHOWCASE, obj.optBoolean(KEY_SHOW_TMDB_SHOWCASE, true))
         if (obj.has(KEY_CATALOG_PROVIDER)) {
             editor.putInt(
@@ -1337,6 +1353,8 @@ class StorageManager(context: Context) {
         private const val KEY_TORRENT_AUDIO_BOOST_MAP = "torrent_audio_boost_map"
         private const val KEY_TORRENT_RESIZE_MODE_MAP = "torrent_resize_mode_map"
         private const val KEY_ONLY_DUB_RELEASES = "only_dub_releases"
+        private const val KEY_HIDE_4K_RELEASES = "hide_4k_releases"
+        private const val KEY_AUTO_FRAME_RATE = "auto_frame_rate"
         private const val KEY_WATCHLIST = "movie_watchlist"
         private const val KEY_USE_DOH_DNS = "use_doh_dns"
         private const val KEY_USE_DPI_BYPASS = "use_dpi_bypass"

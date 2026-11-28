@@ -48,6 +48,20 @@ class PlayerPrefs(context: Context) {
             prefs.edit().putString(KEY_SUB_LABEL, value.trim()).apply()
         }
 
+    // 0 = Small, 1 = Normal (default), 2 = Large, 3 = Huge
+    var subtitleSizeIndex: Int
+        get() = prefs.getInt(KEY_SUB_SIZE, SUB_SIZE_NORMAL).coerceIn(SUB_SIZE_SMALL, SUB_SIZE_HUGE)
+        set(value) {
+            prefs.edit().putInt(KEY_SUB_SIZE, value.coerceIn(SUB_SIZE_SMALL, SUB_SIZE_HUGE)).apply()
+        }
+
+    // 0 = Transparent, 1 = Translucent (default), 2 = Black
+    var subtitleBgIndex: Int
+        get() = prefs.getInt(KEY_SUB_BG, SUB_BG_TRANSLUCENT).coerceIn(SUB_BG_TRANSPARENT, SUB_BG_BLACK)
+        set(value) {
+            prefs.edit().putInt(KEY_SUB_BG, value.coerceIn(SUB_BG_TRANSPARENT, SUB_BG_BLACK)).apply()
+        }
+
     companion object {
         private const val PREFS_NAME = "torplay_player_prefs"
         private const val KEY_RESIZE_MODE = "resize_mode"
@@ -57,5 +71,16 @@ class PlayerPrefs(context: Context) {
         private const val KEY_SUB_DISABLED = "subtitles_disabled"
         private const val KEY_SUB_LANG = "preferred_sub_lang"
         private const val KEY_SUB_LABEL = "preferred_sub_label"
+        private const val KEY_SUB_SIZE = "subtitle_size_index"
+        private const val KEY_SUB_BG = "subtitle_bg_index"
+
+        const val SUB_SIZE_SMALL = 0
+        const val SUB_SIZE_NORMAL = 1
+        const val SUB_SIZE_LARGE = 2
+        const val SUB_SIZE_HUGE = 3
+
+        const val SUB_BG_TRANSPARENT = 0
+        const val SUB_BG_TRANSLUCENT = 1
+        const val SUB_BG_BLACK = 2
     }
 }

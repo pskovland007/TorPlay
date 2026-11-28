@@ -182,6 +182,7 @@ class MainActivity : AppCompatActivity() {
     private var hideCamReleases: Boolean = false
     private var onlyLiveSeeds: Boolean = false
     private var onlyDubReleases: Boolean = false
+    private var hide4kReleases: Boolean = false
 
     private var speechRecognizer: SpeechRecognizer? = null
     private var voiceDialog: Dialog? = null
@@ -296,6 +297,7 @@ class MainActivity : AppCompatActivity() {
         hideCamReleases = storage.hideCamReleases
         onlyLiveSeeds = storage.onlyLiveSeeds
         onlyDubReleases = storage.onlyDubReleases
+        hide4kReleases = storage.hide4kReleases
 
         bindViews()
         setupListeners()
@@ -1797,6 +1799,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateFilterChipsUi() {
+        if (hide4kReleases && currentFilter == QualityFilter.UHD_4K) {
+            currentFilter = QualityFilter.ALL
+        }
+        btnFilter4k.visibility = if (hide4kReleases) View.GONE else View.VISIBLE
+        if (hide4kReleases) {
+            btnFilterAll.nextFocusRightId = R.id.btnFilter1080
+            btnFilter1080.nextFocusLeftId = R.id.btnFilterAll
+        } else {
+            btnFilterAll.nextFocusRightId = R.id.btnFilter4k
+            btnFilter1080.nextFocusLeftId = R.id.btnFilter4k
+        }
         btnFilterAll.isSelected = currentFilter == QualityFilter.ALL
         btnFilter4k.isSelected = currentFilter == QualityFilter.UHD_4K
         btnFilter1080.isSelected = currentFilter == QualityFilter.FHD_1080
@@ -1809,6 +1822,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderFilteredResults(focusFirst: Boolean) {
         val filtered = allResults.filter { item ->
+            val uhdOk = !hide4kReleases || !item.quality.equals("4K", ignoreCase = true)
             val qualityOk = when (currentFilter) {
                 QualityFilter.ALL -> true
                 QualityFilter.UHD_4K -> item.quality == "4K"
@@ -1819,7 +1833,7 @@ class MainActivity : AppCompatActivity() {
             val dubOk = !onlyDubReleases || isDubbedTorrent(item)
             val camOk = !hideCamReleases || !item.isCamRelease()
             val seedsOk = !onlyLiveSeeds || item.seeds > 0
-            qualityOk && dubOk && camOk && seedsOk
+            uhdOk && qualityOk && dubOk && camOk && seedsOk
         }
 
         val sorted = when (currentSort) {
@@ -2471,6 +2485,7 @@ class MainActivity : AppCompatActivity() {
         val btnCornerTopRight = dialog.findViewById<TextView>(R.id.btnCornerTopRight)
         val btnCornerTopLeft = dialog.findViewById<TextView>(R.id.btnCornerTopLeft)
         val btnCornerBottomRight = dialog.findViewById<TextView>(R.id.btnCornerBottomRight)
+        val btnToggleAfr = dialog.findViewById<TextView>(R.id.btnToggleAfr)
 
         // Section 2: Network controls
         val btnToggleDoh = dialog.findViewById<TextView>(R.id.btnToggleDoh)
@@ -2495,6 +2510,7 @@ class MainActivity : AppCompatActivity() {
         // Section 4: Search controls
         val btnTogglePublicJacRed = dialog.findViewById<TextView>(R.id.btnTogglePublicJacRed)
         val btnToggleRutorFallback = dialog.findViewById<TextView>(R.id.btnToggleRutorFallback)
+        val btnToggleHide4k = dialog.findViewById<TextView>(R.id.btnToggleHide4k)
         val etCustomParser = dialog.findViewById<EditText>(R.id.etCustomParserUrl)
         val etApiKey = dialog.findViewById<EditText>(R.id.etApiKey)
         val etRutorMirror = dialog.findViewById<EditText>(R.id.etRutorMirror)
@@ -2522,8 +2538,10 @@ class MainActivity : AppCompatActivity() {
         var showCornerStats = storage.showPlayerStatsHud
         var plasmaShiftEnabled = storage.plasmaPixelShift
         var selectedStatsCorner = storage.playerStatsCorner
+        var afrEnabled = storage.autoFrameRate
         var publicJacRedEnabled = storage.usePublicJacRed
         var rutorFallbackEnabled = storage.useRutorFallback
+        var hide4kEnabled = storage.hide4kReleases
         var autoCheckUpdatesEnabled = storage.autoCheckUpdates
         var tmdbShowcaseEnabled = storage.showTmdbShowcase
         var selectedCatalogProvider = storage.catalogProvider
@@ -2545,7 +2563,8 @@ class MainActivity : AppCompatActivity() {
                 else -> "Стандарт"
             }
             val hudShort = if (showCornerStats) "Плашка ВКЛ" else "Плашка ВЫКЛ"
-            tvTilePlayerStatus.text = "$engShort • $bufShort • $hudShort"
+            val afrShort = if (afrEnabled) " • AFR" else ""
+            tvTilePlayerStatus.text = "$engShort • $bufShort • $hudShort$afrShort"
 
             val dohShort = if (dohEnabled) "DoH ВКЛ" else "DoH ВЫКЛ"
             val dpiShort = if (dpiBypassEnabled) " • DPI" else ""
@@ -2564,7 +2583,9 @@ class MainActivity : AppCompatActivity() {
             if (publicJacRedEnabled) srcParts.add("JacRed")
             if (rutorFallbackEnabled) srcParts.add("Rutor")
             if (etCustomParser.text.toString().trim().isNotBlank()) srcParts.add("Свой")
-            tvTileSearchStatus.text = if (srcParts.isEmpty()) "Отключено" else srcParts.joinToString(" • ")
+            val no4kShort = if (hide4kEnabled) " • Без 4K" else ""
+            val srcBase = if (srcParts.isEmpty()) "Отключено" else srcParts.joinToString(" • ")
+            tvTileSearchStatus.text = "$srcBase$no4kShort"
 
             val tsClean = etTorrServe.text.toString().trim()
                 .removePrefix("http://")
@@ -2590,6 +2611,8 @@ class MainActivity : AppCompatActivity() {
             btnCornerTopRight.isSelected = selectedStatsCorner == StorageManager.STATS_CORNER_TOP_RIGHT
             btnCornerTopLeft.isSelected = selectedStatsCorner == StorageManager.STATS_CORNER_TOP_LEFT
             btnCornerBottomRight.isSelected = selectedStatsCorner == StorageManager.STATS_CORNER_BOTTOM_RIGHT
+            btnToggleAfr.isSelected = afrEnabled
+            btnToggleAfr.text = getString(if (afrEnabled) R.string.player_afr_on else R.string.player_afr_off)
             refreshHubSubtitles()
         }
 
@@ -2608,6 +2631,10 @@ class MainActivity : AppCompatActivity() {
             btnToggleRutorFallback.isSelected = rutorFallbackEnabled
             btnToggleRutorFallback.text = getString(
                 if (rutorFallbackEnabled) R.string.source_rutor_on else R.string.source_rutor_off
+            )
+            btnToggleHide4k.isSelected = hide4kEnabled
+            btnToggleHide4k.text = getString(
+                if (hide4kEnabled) R.string.search_hide_4k_on else R.string.search_hide_4k_off
             )
             btnToggleAutoUpdate.isSelected = autoCheckUpdatesEnabled
             btnToggleAutoUpdate.text = getString(
@@ -2633,8 +2660,10 @@ class MainActivity : AppCompatActivity() {
             showCornerStats = storage.showPlayerStatsHud
             plasmaShiftEnabled = storage.plasmaPixelShift
             selectedStatsCorner = storage.playerStatsCorner
+            afrEnabled = storage.autoFrameRate
             publicJacRedEnabled = storage.usePublicJacRed
             rutorFallbackEnabled = storage.useRutorFallback
+            hide4kEnabled = storage.hide4kReleases
             autoCheckUpdatesEnabled = storage.autoCheckUpdates
             etTorrServe.setText(storage.torrServeUrl)
             etCustomParser.setText(storage.customParserUrl)
@@ -2721,8 +2750,8 @@ class MainActivity : AppCompatActivity() {
                         StorageManager.PLAYER_ENGINE_EXTERNAL -> btnPlayerExternal
                         else -> btnPlayerBuiltin
                     }
-                    footerUpLeftId = R.id.btnCornerTopRight
-                    footerUpRightId = R.id.btnCornerBottomRight
+                    footerUpLeftId = R.id.btnToggleAfr
+                    footerUpRightId = R.id.btnToggleAfr
                 }
                 2 -> {
                     lastOpenedTile = tileNetwork
@@ -2878,6 +2907,11 @@ class MainActivity : AppCompatActivity() {
             selectedStatsCorner = StorageManager.STATS_CORNER_BOTTOM_RIGHT
             refreshPlayerChips()
         }
+        btnToggleAfr.setOnClickListener {
+            hideDialogKeyboard()
+            afrEnabled = !afrEnabled
+            refreshPlayerChips()
+        }
         btnTogglePublicJacRed.setOnClickListener {
             hideDialogKeyboard()
             publicJacRedEnabled = !publicJacRedEnabled
@@ -2886,6 +2920,11 @@ class MainActivity : AppCompatActivity() {
         btnToggleRutorFallback.setOnClickListener {
             hideDialogKeyboard()
             rutorFallbackEnabled = !rutorFallbackEnabled
+            refreshSourceChips()
+        }
+        btnToggleHide4k.setOnClickListener {
+            hideDialogKeyboard()
+            hide4kEnabled = !hide4kEnabled
             refreshSourceChips()
         }
         btnToggleAutoUpdate.setOnClickListener {
@@ -2936,8 +2975,10 @@ class MainActivity : AppCompatActivity() {
             storage.showPlayerStatsHud = showCornerStats
             storage.plasmaPixelShift = plasmaShiftEnabled
             storage.playerStatsCorner = selectedStatsCorner
+            storage.autoFrameRate = afrEnabled
             storage.usePublicJacRed = publicJacRedEnabled
             storage.useRutorFallback = rutorFallbackEnabled
+            storage.hide4kReleases = hide4kEnabled
             storage.autoCheckUpdates = autoCheckUpdatesEnabled
             storage.torrServeUrl = etTorrServe.text.toString()
             storage.customParserUrl = etCustomParser.text.toString()
@@ -2974,6 +3015,7 @@ class MainActivity : AppCompatActivity() {
                     hideCamReleases = storage.hideCamReleases
                     onlyLiveSeeds = storage.onlyLiveSeeds
                     onlyDubReleases = storage.onlyDubReleases
+                    hide4kReleases = storage.hide4kReleases
                     updateFilterChipsUi()
                     updateFavoriteButtonUi()
                     updateWatchlistButtonUi()
@@ -3131,7 +3173,15 @@ class MainActivity : AppCompatActivity() {
                 storage.tmdbImageBaseUrl != etTmdbImageUrl.text.toString().trim().trimEnd('/').ifBlank { StorageManager.DEFAULT_TMDB_IMAGE_URL } ||
                 networkChanged
 
+            val hide4kChanged = hide4kReleases != hide4kEnabled
             persistDraftToStorage()
+            hide4kReleases = storage.hide4kReleases
+            if (hide4kChanged) {
+                updateFilterChipsUi()
+                if (layoutFilters.visibility == View.VISIBLE && allResults.isNotEmpty()) {
+                    renderFilteredResults(focusFirst = false)
+                }
+            }
             if (networkChanged) {
                 NetworkHelper.clearClientCache()
             }

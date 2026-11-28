@@ -47,6 +47,8 @@ class MaintenanceManager(private val context: Context) {
                         put("subtitlesDisabled", playerPrefs.subtitlesDisabled)
                         put("preferredSubLang", playerPrefs.preferredSubLang)
                         put("preferredSubLabel", playerPrefs.preferredSubLabel)
+                        put("subtitleSizeIndex", playerPrefs.subtitleSizeIndex)
+                        put("subtitleBgIndex", playerPrefs.subtitleBgIndex)
                     }
                 )
             }
@@ -88,6 +90,8 @@ class MaintenanceManager(private val context: Context) {
                 if (p.has("subtitlesDisabled")) playerPrefs.subtitlesDisabled = p.optBoolean("subtitlesDisabled", false)
                 if (p.has("preferredSubLang")) playerPrefs.preferredSubLang = p.optString("preferredSubLang", "rus")
                 if (p.has("preferredSubLabel")) playerPrefs.preferredSubLabel = p.optString("preferredSubLabel", "")
+                if (p.has("subtitleSizeIndex")) playerPrefs.subtitleSizeIndex = p.optInt("subtitleSizeIndex", PlayerPrefs.SUB_SIZE_NORMAL)
+                if (p.has("subtitleBgIndex")) playerPrefs.subtitleBgIndex = p.optInt("subtitleBgIndex", PlayerPrefs.SUB_BG_TRANSLUCENT)
             }
 
             val favCount = storage.getFavorites().size
