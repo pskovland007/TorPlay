@@ -1415,7 +1415,7 @@ class StorageManager(context: Context) {
     }
 
     fun mergeSyncPayloadJson(remote: JSONObject): SyncMergeStats {
-        synchronized(listCacheLock) {
+        return synchronized(listCacheLock) {
             // 1. Merge Watchlist (deduplicated + enrich missing metadata)
             val localWatchlist = getWatchlist()
             val remoteWatchlist = parseWatchlistArray(remote.optJSONArray(KEY_WATCHLIST))
