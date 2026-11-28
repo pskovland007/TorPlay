@@ -903,8 +903,8 @@ class StorageManager(context: Context) {
         var s = raw.trim().lowercase(Locale.ROOT)
         s = s.substringBefore(" / ").substringBefore(" | ")
         s = WATCHLIST_NOISE_REGEX.replace(s, " ")
-        s = s.replace(Regex("[^\p{L}\p{N}\s]+"), " ")
-        return s.replace(Regex("\s+"), " ").trim()
+        s = s.replace(Regex("[^\\p{L}\\p{N}\\s]+"), " ")
+        return s.replace(Regex("\\s+"), " ").trim()
     }
 
     fun clearWatchlist() {
@@ -1411,7 +1411,7 @@ class StorageManager(context: Context) {
         private const val KEY_KINOPOISK_API_KEY = "kinopoisk_api_key"
         private const val KEY_KINOPOISK_DEV_API_KEY = "kinopoisk_dev_api_key"
         private val WATCHLIST_NOISE_REGEX = Regex(
-            "(?:\b(?:19|20)\d{2}\b|\b(?:2160p|1080p|720p|4k|uhd|hdr10?|dv|dolby|vision|bdrip|bdremux|web-?dl|webrip|hdtv|remux|hevc|x264|x265|h264|h265|avc|ac3|eac3|dts|dub|mvo|avo|sub|rus|eng|itunes|netflix|exkinoray|hdrezka|lostfilm)\b|\[[^\]]*]|\([^)]*\))",
+            "(?:\\b(?:19|20)\\d{2}\\b|\\b(?:2160p|1080p|720p|4k|uhd|hdr10?|dv|dolby|vision|bdrip|bdremux|web-?dl|webrip|hdtv|remux|hevc|x264|x265|h264|h265|avc|ac3|eac3|dts|dub|mvo|avo|sub|rus|eng|itunes|netflix|exkinoray|hdrezka|lostfilm)\\b|\\[[^\\]]*]|\\([^)]*\\))",
             RegexOption.IGNORE_CASE
         )
         private const val KEY_TMDB_API_KEY = "tmdb_api_key"

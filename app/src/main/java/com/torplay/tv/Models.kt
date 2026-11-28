@@ -294,12 +294,12 @@ fun formatDate(epochMs: Long): String {
     return String.format(Locale.US, "%02d.%02d.%04d", day, month, year)
 }
 
-private val SE_CODE_REGEX = Regex("(?i)(?:^|[^a-z0-9])s(\d{1,2})[\s._-]*e(\d{1,3})(?:$|[^a-z0-9])")
-private val SE_X_REGEX = Regex("(?i)(?:^|[^0-9])(\d{1,2})x(\d{1,3})(?:$|[^0-9])")
-private val RU_SE_REGEX = Regex("(?i)(\d{1,2})\s*(?:сезон|season)[^\d]{0,12}(\d{1,3})\s*(?:серия|сер\.?|episode|ep\.?)")
-private val RU_SE_ALT_REGEX = Regex("(?i)(?:сезон|season)\s*(\d{1,2})[^\d]{0,12}(?:серия|сер\.?|episode|ep\.?)\s*(\d{1,3})")
-private val EP_ONLY_REGEX = Regex("(?i)(?:^|[^a-zа-я0-9])(?:e|ep\.?|episode|серия|сер\.?)\s*(\d{1,3})(?:$|[^a-zа-я0-9])")
-private val SEASON_ONLY_REGEX = Regex("(?i)(?:(?:сезон|season)\s*(\d{1,2})|(\d{1,2})\s*(?:сезон|season)|\bs(\d{1,2})\b)")
+private val SE_CODE_REGEX = Regex("(?i)(?:^|[^a-z0-9])s(\\d{1,2})[\\s._-]*e(\\d{1,3})(?:$|[^a-z0-9])")
+private val SE_X_REGEX = Regex("(?i)(?:^|[^0-9])(\\d{1,2})x(\\d{1,3})(?:$|[^0-9])")
+private val RU_SE_REGEX = Regex("(?i)(\\d{1,2})\\s*(?:сезон|season)[^\\d]{0,12}(\\d{1,3})\\s*(?:серия|сер\\.?|episode|ep\\.?)")
+private val RU_SE_ALT_REGEX = Regex("(?i)(?:сезон|season)\\s*(\\d{1,2})[^\\d]{0,12}(?:серия|сер\\.?|episode|ep\\.?)\\s*(\\d{1,3})")
+private val EP_ONLY_REGEX = Regex("(?i)(?:^|[^a-zа-я0-9])(?:e|ep\\.?|episode|серия|сер\\.?)\\s*(\\d{1,3})(?:$|[^a-zа-я0-9])")
+private val SEASON_ONLY_REGEX = Regex("(?i)(?:(?:сезон|season)\\s*(\\d{1,2})|(\\d{1,2})\\s*(?:сезон|season)|\\bs(\\d{1,2})\\b)")
 
 fun extractSeasonEpisodeCode(episodeLabel: String, torrentTitle: String = ""): String {
     val sources = listOf(episodeLabel, "$torrentTitle $episodeLabel").filter { it.isNotBlank() }
